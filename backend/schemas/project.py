@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field
 
-from schemas.structural import RenderedStructuralElement
+from schemas.elements import ProjectElementMm
 
 
 class ProjectState(BaseModel):
-    """Universal parametric project state (version 2)."""
+    """Milestone 1 project payload (millimeter elements)."""
 
-    version: int = 2
-    elements: list[RenderedStructuralElement] = Field(default_factory=list)
+    version: int = 3
+    projectElements: list[ProjectElementMm] = Field(default_factory=list)

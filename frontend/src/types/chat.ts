@@ -1,4 +1,4 @@
-import type { ProjectState } from "@/types/project";
+import type { ProjectElementMm, ProjectState } from "@/types/project";
 
 export type ChatRole = "user" | "assistant";
 
@@ -15,5 +15,6 @@ export interface ChatResponseMessage {
 export interface ChatResponse {
   message: ChatResponseMessage;
   statuses: string[];
-  projectState: ProjectState;
+  projectElements: ProjectElementMm[];
+  projectState?: ProjectState;
 }

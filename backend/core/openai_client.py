@@ -1,40 +1,62 @@
 import json
 import os
-from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
 from openai import OpenAI
-
-_backend_dir = Path(__file__).resolve().parent.parent
-load_dotenv(_backend_dir / ".env", override=True)
 from pydantic import ValidationError
 
-from core.structural_engine import generate_structural_elements_from_dicts
+from catalog_loader import list_profiles
+from core.env_loader import load_env
+from core.geometry_engine import parse_add_structural_element
+from core.spatial_context import format_project_context
 from schemas.chat import ChatMessage
+from schemas.elements import ProjectElementMm
 from schemas.project import ProjectState
-from tools.structural_tool import STRUCTURAL_TOOLS
+from tools.element_tool import ELEMENT_TOOLS
+
+load_env()
 
 MODEL = "gpt-4o-mini"
-MAX_TURNS = 3
+MAX_TURNS = 5
 
-SYSTEM_PROMPT = """You are Steelera AI, an assistant for parametric structural steel design.
+_CATALOG_SUMMARY = ", ".join(
+    f"{p['profile_name']} (h={p['h_mm']} b={p['b_mm']} tw={p['tw_mm']} tf={p['tf_mm']} mm)"
+    for p in list_profiles()
+)
 
-When the user asks to build, add, or replace structural members, you MUST call
-generate_structural_elements with an array of member objects. Each object needs:
-shape_type (I-beam | C-channel | Box | Pipe), height, width, thickness, length,
-position {x, y, z}, and axis (x | y | z) for the direction the member runs in meters.
+BASE_SYSTEM_PROMPT = f"""You are Steelera AI for parametric structural steel design.
 
-Rules:
-- Convert feet to meters (1 ft = 0.3048 m).
-- position is the member start point (min corner of the bounding box).
-- length is along the local X axis from that start point.
-- For sheds/frames, decompose into columns (I-beam or Box), rafters (I-beam),
-  purlins (C-channel), and bracing (Box/Pipe) with realistic section sizes.
-- Use typical steel sizes (e.g. 0.2–0.4 m depth) unless the user specifies otherwise.
-- Do not invent geometry only in prose—use the tool for all structural generation.
-- For general questions without structure to generate, respond without calling tools.
+When the user asks to add or build members, call add_structural_element once per member.
+
+Required on every call:
+- shape_type, length, width, position, profile_name, axis, anchor_element_id, anchor_point
+
+Section definition:
+1) **Catalog** — profile_name = IPE200 | IPE300 | HEA200 (shape_type I-beam). Set width to {{value:0, unit:"mm"}}.
+   Available: {_CATALOG_SUMMARY}
+2) **Parametric** — profile_name = NONE and set width.
+
+Spatial anchoring (relative placement):
+- When placing relative to existing steel, set anchor_element_id to the target id from CURRENT MODEL
+  and anchor_point to TOP | BOTTOM | START | END | CENTER. Set position to {{0,0,0}} (ignored).
+- CENTER = midpoint of target member (column on center of beam). END = far tip only.
+- TOP = top face (e.g. beam on column top). BOTTOM = base. START/END = along member length axis.
+- When anchor_element_id is NONE, use absolute position coordinates.
+
+Axis: y = vertical column, x = horizontal beam along X, z = along Z.
+
+Units: m, mm, ft, in, or auto (value<20 => meters, value>=20 => mm).
+
+When adding to an existing model, APPEND new members — do not replace unless the user asks to rebuild.
+Do not invent geometry in prose only—use the tool for every member.
+For general questions without structure, respond without tools.
 """
+
+
+def build_system_prompt(project_elements: list[ProjectElementMm]) -> str:
+    """Base prompt + readable inventory of already-built members."""
+    context = format_project_context(project_elements)
+    return f"{BASE_SYSTEM_PROMPT}\n\n---\n{context}"
 
 
 def _client() -> OpenAI:
@@ -48,63 +70,69 @@ def _messages_to_openai(messages: list[ChatMessage]) -> list[dict[str, Any]]:
     return [{"role": m.role, "content": m.content} for m in messages]
 
 
-def _execute_tool(name: str, arguments: str) -> tuple[ProjectState, dict[str, Any]]:
-    if name != "generate_structural_elements":
-        raise ValueError(f"Unknown tool: {name}")
-
+def _execute_add_element(
+    arguments: str,
+    elements: list[ProjectElementMm],
+    replace_next: bool,
+) -> tuple[list[ProjectElementMm], dict[str, Any], bool]:
     try:
         args = json.loads(arguments)
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid tool arguments JSON: {e}") from e
 
-    if "elements" not in args or not isinstance(args["elements"], list):
-        raise ValueError("Missing or invalid 'elements' array")
+    working = [] if replace_next else list(elements)
+    index = len(working)
+    element = parse_add_structural_element(args, index, existing_elements=working)
+    working.append(element)
 
-    if len(args["elements"]) == 0:
-        raise ValueError("elements array must not be empty")
-
-    state = generate_structural_elements_from_dicts(args["elements"])
-    summary = {
+    summary: dict[str, Any] = {
         "success": True,
-        "element_count": len(state.elements),
-        "shape_types": [e.shape_type for e in state.elements],
+        "element_id": element.id,
+        "total_elements": len(working),
+        "length_mm": element.length_mm,
+        "position_mm": element.position_mm,
+        "section_source": element.section_source,
     }
-    return state, summary
+    if element.anchor_element_id:
+        summary["anchored_to"] = element.anchor_element_id
+        summary["anchor_point"] = element.anchor_point
+    if element.profile_name and element.section_mm:
+        summary["profile_name"] = element.profile_name
+        summary["section_mm"] = element.section_mm.model_dump()
+    else:
+        summary["width_mm"] = element.width_mm
+
+    return working, summary, False
 
 
 def run_chat_turn(
     messages: list[ChatMessage],
     project_state: ProjectState,
+    *,
+    spatial_context: str | None = None,
 ) -> tuple[str, list[str], ProjectState]:
-    """Run one chat turn: OpenAI tool call -> geometry engine -> final reply."""
+    """GPT-4o-mini tool loop with spatial context from existing projectElements."""
     statuses: list[str] = ["Parsing request..."]
     client = _client()
-    statuses.append("Calling Steelera AI...")
+    statuses.append("Calling Steelera AI (gpt-4o-mini)...")
+
+    elements: list[ProjectElementMm] = list(project_state.projectElements)
+    system_content = spatial_context or build_system_prompt(elements)
 
     openai_messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_content},
         *_messages_to_openai(messages),
     ]
 
-    if project_state.elements:
-        openai_messages.append(
-            {
-                "role": "system",
-                "content": (
-                    f"Current model has {len(project_state.elements)} elements on screen. "
-                    "Replace the full model when the user requests a new structure."
-                ),
-            }
-        )
-
-    current_state = project_state
+    # Append mode when model already has members (supports "add beam on column")
+    replace_next = len(elements) == 0
     assistant_content = ""
 
     for _ in range(MAX_TURNS):
         response = client.chat.completions.create(
             model=MODEL,
             messages=openai_messages,
-            tools=STRUCTURAL_TOOLS,
+            tools=ELEMENT_TOOLS,
             tool_choice="auto",
         )
         msg = response.choices[0].message
@@ -133,15 +161,26 @@ def run_chat_turn(
 
         for tc in msg.tool_calls:
             name = tc.function.name
-            if name == "generate_structural_elements":
-                statuses.append("Steelera AI is generating structure...")
-                statuses.append("Computing member geometry...")
-
-            try:
-                new_state, summary = _execute_tool(name, tc.function.arguments or "{}")
-                current_state = new_state
-            except (ValueError, ValidationError) as e:
-                summary = {"success": False, "error": str(e)}
+            if name == "add_structural_element":
+                statuses.append("Adding structural element...")
+                try:
+                    elements, summary, replace_next = _execute_add_element(
+                        tc.function.arguments or "{}",
+                        elements,
+                        replace_next,
+                    )
+                    if summary.get("anchored_to"):
+                        statuses.append(
+                            f"Anchored to {summary['anchored_to']} ({summary.get('anchor_point')})..."
+                        )
+                    elif summary.get("profile_name"):
+                        statuses.append(
+                            f"Loaded catalog {summary['profile_name']}..."
+                        )
+                except (ValueError, ValidationError) as e:
+                    summary = {"success": False, "error": str(e)}
+            else:
+                summary = {"success": False, "error": f"Unknown tool: {name}"}
 
             openai_messages.append(
                 {
@@ -151,10 +190,10 @@ def run_chat_turn(
                 }
             )
 
-        statuses.append("Rendering structure...")
+        statuses.append("Building millimeter geometry...")
     else:
         assistant_content = assistant_content or (
-            "I completed the structural update. Let me know if you want changes."
+            "Structural update complete. Check the 3D viewport."
         )
 
     if not assistant_content:
@@ -163,7 +202,10 @@ def run_chat_turn(
             messages=openai_messages,
         )
         assistant_content = followup.choices[0].message.content or (
-            "Your structural model has been updated in the 3D viewport."
+            "Members were added with spatial context applied."
         )
 
-    return assistant_content, statuses, current_state
+    statuses.append("Rendering structure...")
+    return assistant_content, statuses, ProjectState(
+        version=3, projectElements=elements
+    )

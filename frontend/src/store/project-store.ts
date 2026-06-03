@@ -4,11 +4,31 @@ import { create } from "zustand";
 
 import { postChat } from "@/lib/api";
 import type { ChatMessage } from "@/types/chat";
-import { emptyProjectState, type ProjectState } from "@/types/project";
+import type {
+  ElementAlignment,
+  ElementRotation,
+  ProjectElementMm,
+} from "@/types/project";
+import { emptyProjectState, normalizeElement } from "@/types/project";
+
+function mergeElementsFromApi(
+  incoming: ProjectElementMm[],
+  existing: ProjectElementMm[],
+): ProjectElementMm[] {
+  return incoming.map((element) => {
+    const prior = existing.find((item) => item.id === element.id);
+    return normalizeElement({
+      ...element,
+      rotation: prior?.rotation ?? element.rotation,
+      alignment: prior?.alignment ?? element.alignment,
+    });
+  });
+}
 
 interface ProjectStore {
   messages: ChatMessage[];
-  projectState: ProjectState;
+  projectElements: ProjectElementMm[];
+  selectedElementId: string | null;
   statuses: string[];
   isLoading: boolean;
   error: string | null;
@@ -16,6 +36,10 @@ interface ProjectStore {
   sendMessage: (content: string) => Promise<void>;
   toggleViewport: () => void;
   clearError: () => void;
+  selectElement: (id: string) => void;
+  clearSelection: () => void;
+  updateElementRotation: (id: string, rotation: ElementRotation) => void;
+  updateElementAlignment: (id: string, alignment: ElementAlignment) => void;
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -23,19 +47,38 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     {
       role: "assistant",
       content:
-        "Welcome to Steelera. Describe a structure (e.g. “Build a 30×12 m shed, 4.5 m eave height”) and I’ll generate steel members in 3D.",
+        "Welcome to Steelera (Milestone 1). Describe members to add, e.g. “Add a 6 m box beam at the origin”.",
     },
   ],
-  projectState: emptyProjectState(),
+  projectElements: emptyProjectState().projectElements,
+  selectedElementId: null,
   statuses: [],
   isLoading: false,
   error: null,
   viewportExpanded: false,
 
   toggleViewport: () =>
-    set((s) => ({ viewportExpanded: !s.viewportExpanded })),
+    set((state) => ({ viewportExpanded: !state.viewportExpanded })),
 
   clearError: () => set({ error: null }),
+
+  selectElement: (id) => set({ selectedElementId: id }),
+
+  clearSelection: () => set({ selectedElementId: null }),
+
+  updateElementRotation: (id, rotation) =>
+    set((state) => ({
+      projectElements: state.projectElements.map((element) =>
+        element.id === id ? { ...element, rotation } : element,
+      ),
+    })),
+
+  updateElementAlignment: (id, alignment) =>
+    set((state) => ({
+      projectElements: state.projectElements.map((element) =>
+        element.id === id ? { ...element, alignment } : element,
+      ),
+    })),
 
   sendMessage: async (content: string) => {
     const trimmed = content.trim();
@@ -43,6 +86,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     const userMessage: ChatMessage = { role: "user", content: trimmed };
     const nextMessages = [...get().messages, userMessage];
+    const projectState = {
+      version: 3 as const,
+      projectElements: get().projectElements,
+    };
 
     set({
       messages: nextMessages,
@@ -52,12 +99,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
 
     try {
-      const response = await postChat(nextMessages, get().projectState);
+      const response = await postChat(nextMessages, projectState);
+      const incoming =
+        response.projectElements ??
+        response.projectState?.projectElements ??
+        [];
+      const elements = mergeElementsFromApi(incoming, get().projectElements);
+      const selectedStillExists = elements.some(
+        (element) => element.id === get().selectedElementId,
+      );
+
       set({
         messages: [...nextMessages, response.message],
-        projectState: response.projectState,
+        projectElements: elements,
         statuses: response.statuses,
         isLoading: false,
+        selectedElementId: selectedStillExists ? get().selectedElementId : null,
       });
     } catch (err) {
       const message =
@@ -77,3 +134,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 }));
+
+export function useSelectedElement(): ProjectElementMm | null {
+  const selectedElementId = useProjectStore((state) => state.selectedElementId);
+  const projectElements = useProjectStore((state) => state.projectElements);
+  if (!selectedElementId) return null;
+  return projectElements.find((element) => element.id === selectedElementId) ?? null;
+}

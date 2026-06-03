@@ -1,26 +1,70 @@
 export type ShapeType = "I-beam" | "C-channel" | "Box" | "Pipe";
-export type AxisType = "x" | "y" | "z";
+export type SectionSource = "catalog" | "parametric";
+export type ExtrusionAxis = "x" | "y" | "z";
+export type ElementRotation = 0 | 90 | 180 | 270;
+export type ElementAlignment = "center" | "top" | "bottom";
 
-export interface StructuralElement {
+export interface SectionDimensionsMm {
+  h: number;
+  b: number;
+  tw: number;
+  tf: number;
+}
+
+/** Millimeter-based element from backend geometry_engine */
+export interface ProjectElementMm {
   id: string;
   shape_type: ShapeType;
-  axis: AxisType;
-  position: [number, number, number];
-  rotation: [number, number, number];
-  size: [number, number, number];
-  height: number;
-  width: number;
-  thickness: number;
-  length: number;
-  color?: string | null;
+  position_mm: { x: number; y: number; z: number };
+  size_mm: { x: number; y: number; z: number };
+  length_mm: number;
+  width_mm: number;
+  depth_mm: number;
+  section_source?: SectionSource;
+  profile_name?: string | null;
+  section_mm?: SectionDimensionsMm | null;
+  /** World axis along which the member is extruded (Y = vertical column) */
+  axis?: ExtrusionAxis;
+  /** Set when placed relative to another member */
+  anchor_element_id?: string | null;
+  anchor_point?: "TOP" | "BOTTOM" | "START" | "END" | "CENTER" | null;
+  /** Connection nodes in backend coords (Y = vertical). */
+  nodes?: Record<string, [number, number, number]>;
+  /** Local display rotation around vertical (Y) axis in degrees */
+  rotation?: ElementRotation;
+  /** Cross-section vertical alignment at the placement reference */
+  alignment?: ElementAlignment;
 }
 
 export interface ProjectState {
   version: number;
-  elements: StructuralElement[];
+  projectElements: ProjectElementMm[];
 }
 
+export const DEFAULT_ELEMENT_ROTATION: ElementRotation = 0;
+export const DEFAULT_ELEMENT_ALIGNMENT: ElementAlignment = "center";
+
 export const emptyProjectState = (): ProjectState => ({
-  version: 2,
-  elements: [],
+  version: 3,
+  projectElements: [],
 });
+
+export function normalizeElement(element: ProjectElementMm): ProjectElementMm {
+  const rotation = (element.rotation ?? DEFAULT_ELEMENT_ROTATION) as ElementRotation;
+  const alignment = element.alignment ?? DEFAULT_ELEMENT_ALIGNMENT;
+
+  return {
+    ...element,
+    rotation,
+    alignment,
+  };
+}
+
+export function isExtrudedIBeam(element: ProjectElementMm): boolean {
+  return (
+    element.shape_type === "I-beam" &&
+    element.section_mm != null &&
+    element.section_mm.h > 0 &&
+    element.section_mm.b > 0
+  );
+}

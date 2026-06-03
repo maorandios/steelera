@@ -11,7 +11,11 @@ export async function postChat(
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, projectState }),
+    body: JSON.stringify({
+      messages,
+      projectElements: projectState.projectElements,
+      projectState,
+    }),
   });
 
   if (!res.ok) {
@@ -20,15 +24,4 @@ export async function postChat(
   }
 
   return res.json() as Promise<ChatResponse>;
-}
-
-export async function checkHealth(): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_URL}/health`, { cache: "no-store" });
-    if (!res.ok) return false;
-    const data = (await res.json()) as { ok?: boolean };
-    return data.ok === true;
-  } catch {
-    return false;
-  }
 }
