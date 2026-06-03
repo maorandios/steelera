@@ -56,13 +56,17 @@ async def chat(request: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=400, detail="messages must not be empty")
 
     state = request.resolved_state()
-    spatial_context = build_system_prompt(state.projectElements)
+    spatial_context = build_system_prompt(
+        state.projectElements,
+        target_element_id=request.target_element_id,
+    )
 
     try:
         content, statuses, project_state = run_chat_turn(
             request.messages,
             state,
             spatial_context=spatial_context,
+            target_element_id=request.target_element_id,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e

@@ -10,23 +10,19 @@ interface ChatStatusProps {
 }
 
 export function ChatStatus({ statuses, isLoading }: ChatStatusProps) {
-  if (!isLoading && statuses.length === 0) return null;
+  if (!isLoading) return null;
 
-  const latest = statuses[statuses.length - 1];
+  const latest = statuses[statuses.length - 1] ?? "Working...";
 
   return (
     <div className="flex flex-wrap items-center gap-2 px-1 py-2">
-      {isLoading && (
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-foreground" />
-      )}
-      {latest && (
-        <Badge
-          variant="secondary"
-          className="border border-border bg-secondary/80 font-normal text-accent-foreground"
-        >
-          {latest}
-        </Badge>
-      )}
+      <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-foreground" />
+      <Badge
+        variant="secondary"
+        className="border border-border bg-secondary/80 font-normal text-accent-foreground"
+      >
+        {latest}
+      </Badge>
     </div>
   );
 }

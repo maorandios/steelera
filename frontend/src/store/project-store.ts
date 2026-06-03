@@ -11,6 +11,9 @@ import type {
 } from "@/types/project";
 import { emptyProjectState, normalizeElement } from "@/types/project";
 
+/** Keep API payloads bounded so long chats stay responsive. */
+const API_MESSAGE_WINDOW = 24;
+
 function mergeElementsFromApi(
   incoming: ProjectElementMm[],
   existing: ProjectElementMm[],
@@ -99,22 +102,28 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
 
     try {
-      const response = await postChat(nextMessages, projectState);
+      const selectedId = get().selectedElementId;
+      const apiMessages = nextMessages.slice(-API_MESSAGE_WINDOW);
+      const response = await postChat(
+        apiMessages,
+        projectState,
+        selectedId,
+      );
       const incoming =
         response.projectElements ??
         response.projectState?.projectElements ??
         [];
       const elements = mergeElementsFromApi(incoming, get().projectElements);
       const selectedStillExists = elements.some(
-        (element) => element.id === get().selectedElementId,
+        (element) => element.id === selectedId,
       );
 
       set({
         messages: [...nextMessages, response.message],
         projectElements: elements,
-        statuses: response.statuses,
+        statuses: [],
         isLoading: false,
-        selectedElementId: selectedStillExists ? get().selectedElementId : null,
+        selectedElementId: selectedStillExists ? selectedId : null,
       });
     } catch (err) {
       const message =

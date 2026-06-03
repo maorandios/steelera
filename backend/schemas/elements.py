@@ -8,6 +8,8 @@ CatalogProfileName = Literal["IPE200", "IPE300", "HEA200"]
 ProfileNameInput = Literal["NONE", "IPE200", "IPE300", "HEA200"]
 ExtrusionAxis = Literal["x", "y", "z"]
 AnchorPointInput = Literal["NONE", "TOP", "BOTTOM", "START", "END", "CENTER"]
+MacroActionType = Literal["ARRAY", "DELETE"]
+ArrayAxis = Literal["X", "Y", "Z"]
 
 
 class DimensionInput(BaseModel):
@@ -71,6 +73,41 @@ class AddStructuralElementInput(BaseModel):
 
     def uses_anchor(self) -> bool:
         return self.anchor_element_id != "NONE"
+
+
+class ApplyMacroActionInput(BaseModel):
+    target_element_id: str
+    action_type: MacroActionType
+    count: int | None = None
+    spacing: DimensionInput | None = None
+    axis: ArrayAxis | None = None
+
+    @field_validator("target_element_id", mode="before")
+    @classmethod
+    def normalize_target_id(cls, v: str) -> str:
+        key = str(v).strip()
+        if not key:
+            raise ValueError("target_element_id is required")
+        return key
+
+    @field_validator("axis", mode="before")
+    @classmethod
+    def normalize_axis(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        key = str(v).strip().upper()
+        return key if key else None
+
+    @model_validator(mode="after")
+    def validate_action_fields(self) -> "ApplyMacroActionInput":
+        if self.action_type == "ARRAY":
+            if self.count is None or self.count < 1:
+                raise ValueError("ARRAY requires count >= 1")
+            if self.spacing is None:
+                raise ValueError("ARRAY requires spacing")
+            if self.axis is None:
+                raise ValueError("ARRAY requires axis (X, Y, or Z)")
+        return self
 
 
 class SectionDimensionsMm(BaseModel):

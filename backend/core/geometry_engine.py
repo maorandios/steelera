@@ -15,6 +15,7 @@ from core.member_nodes import compute_member_nodes
 from catalog_loader import get_profile
 from schemas.elements import (
     AddStructuralElementInput,
+    ApplyMacroActionInput,
     ProjectElementMm,
     SectionDimensionsMm,
 )
@@ -201,6 +202,102 @@ def parse_add_structural_element(
         anchor_id=anchor_id,
         anchor_pt=anchor_pt,
     )
+
+
+def _slug_from_element(element: ProjectElementMm) -> str:
+    if element.profile_name:
+        return element.profile_name.lower()
+    return element.shape_type.lower().replace("-", "")
+
+
+def _offset_vector_mm(axis: str, distance_mm: float) -> dict[str, float]:
+    key = axis.upper()
+    if key == "X":
+        return {"x": distance_mm, "y": 0.0, "z": 0.0}
+    if key == "Y":
+        return {"x": 0.0, "y": distance_mm, "z": 0.0}
+    if key == "Z":
+        return {"x": 0.0, "y": 0.0, "z": distance_mm}
+    raise ValueError(f"Invalid array axis: {axis}")
+
+
+def _clone_element_at_offset(
+    source: ProjectElementMm,
+    element_index: int,
+    offset_mm: dict[str, float],
+) -> ProjectElementMm:
+    slug = _slug_from_element(source)
+    pos = source.position_mm
+    new_pos = {
+        "x": float(pos["x"]) + offset_mm["x"],
+        "y": float(pos["y"]) + offset_mm["y"],
+        "z": float(pos["z"]) + offset_mm["z"],
+    }
+    cloned = source.model_copy(
+        update={
+            "id": f"{slug}-{element_index}",
+            "position_mm": new_pos,
+            "anchor_element_id": None,
+            "anchor_point": None,
+        }
+    )
+    return cloned.model_copy(update={"nodes": compute_member_nodes(cloned)})
+
+
+def _find_element(
+    elements: list[ProjectElementMm],
+    target_id: str,
+) -> ProjectElementMm:
+    for element in elements:
+        if element.id == target_id:
+            return element
+    raise ValueError(f"Element not found: {target_id}")
+
+
+def apply_macro_action(
+    raw: dict,
+    existing_elements: list[ProjectElementMm],
+) -> tuple[list[ProjectElementMm], dict[str, object]]:
+    payload = ApplyMacroActionInput.model_validate(raw)
+    working = list(existing_elements)
+    target = _find_element(working, payload.target_element_id)
+
+    if payload.action_type == "DELETE":
+        remaining = [element for element in working if element.id != payload.target_element_id]
+        if len(remaining) == len(working):
+            raise ValueError(f"Element not found: {payload.target_element_id}")
+        return remaining, {
+            "success": True,
+            "action": "DELETE",
+            "deleted_id": payload.target_element_id,
+            "total_elements": len(remaining),
+        }
+
+    assert payload.spacing is not None
+    assert payload.axis is not None
+    assert payload.count is not None
+
+    spacing_mm = to_millimeters(payload.spacing.value, payload.spacing.unit)
+    created_ids: list[str] = []
+    next_index = len(working)
+
+    for copy_index in range(1, payload.count + 1):
+        step = _offset_vector_mm(payload.axis, spacing_mm * copy_index)
+        clone = _clone_element_at_offset(target, next_index, step)
+        working.append(clone)
+        created_ids.append(clone.id)
+        next_index += 1
+
+    return working, {
+        "success": True,
+        "action": "ARRAY",
+        "source_id": target.id,
+        "created_ids": created_ids,
+        "count": payload.count,
+        "spacing_mm": spacing_mm,
+        "axis": payload.axis,
+        "total_elements": len(working),
+    }
 
 
 def parse_add_structural_element_batch(

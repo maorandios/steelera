@@ -15,6 +15,7 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     projectElements: list[ProjectElementMm] = Field(default_factory=list)
     projectState: ProjectState | None = None
+    target_element_id: str | None = None
 
     def resolved_state(self) -> ProjectState:
         if self.projectState is not None:

@@ -1,10 +1,11 @@
 "use client";
 
-import { Send } from "lucide-react";
+import { Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatStatus } from "@/components/chat/ChatStatus";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,6 +18,8 @@ export function ChatInterface() {
   const statuses = useProjectStore((s) => s.statuses);
   const isLoading = useProjectStore((s) => s.isLoading);
   const sendMessage = useProjectStore((s) => s.sendMessage);
+  const selectedElementId = useProjectStore((s) => s.selectedElementId);
+  const clearSelection = useProjectStore((s) => s.clearSelection);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -47,6 +50,24 @@ export function ChatInterface() {
         suppressHydrationWarning
         className="sticky bottom-0 z-10 border-t border-border bg-background/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md"
       >
+        {selectedElementId ? (
+          <div className="mb-2">
+            <Badge
+              variant="secondary"
+              className="gap-1.5 pr-1 font-normal"
+            >
+              <span>Member: {selectedElementId}</span>
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                aria-label="Clear selection"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          </div>
+        ) : null}
         <div className="flex gap-2" suppressHydrationWarning>
           <Input
             value={input}
