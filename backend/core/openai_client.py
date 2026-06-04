@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from catalog_loader import list_profiles
 from core.env_loader import load_env
 from core.geometry_engine import apply_macro_action, parse_add_structural_element
+from core.shed_assembly import apply_modify_shed_assembly
+from core.shed_params import SHED_ASSEMBLY_ID, shed_members_in
 from core.spatial_context import format_project_context
 from schemas.chat import ChatMessage
 from schemas.elements import ProjectElementMm
@@ -45,6 +47,11 @@ Spatial anchoring (relative placement):
 
 Axis: y = vertical column, x = horizontal beam along X, z = along Z.
 
+Portal frame shed assembly (shed_1):
+- When the user asks to resize or redesign the existing shed (width, length, height, pitch), call modify_shed_assembly.
+- Pass only the parameters that change (mm for dimensions; convert meters × 1000).
+- Do NOT add individual shed members with add_structural_element when updating the shed macro.
+
 Macro actions (duplicate / array / delete):
 - When the user asks to copy, duplicate, array, multiply, or delete a member, call apply_macro_action — NOT multiple add_structural_element calls.
 - ARRAY: target_element_id, count (copies to create, excluding original), spacing {{value, unit}}, axis = world offset direction (right/+X = X, up/+Y = Y, forward/+Z = Z).
@@ -60,15 +67,29 @@ For general questions without structure, respond without tools.
 """
 
 
-def _selection_context(target_element_id: str | None) -> str:
+def _selection_context(
+    target_element_id: str | None,
+    project_elements: list[ProjectElementMm] | None = None,
+) -> str:
     if not target_element_id:
         return ""
-    return (
+    extra = (
         f"\n\n---\n"
         f"The user has currently selected element '{target_element_id}'. "
         f"If they ask to copy, array, multiply, or delete 'this' or 'it', "
         f"call apply_macro_action with this target_element_id."
     )
+    if project_elements:
+        selected = next(
+            (element for element in project_elements if element.id == target_element_id),
+            None,
+        )
+        if selected and selected.assembly_id == SHED_ASSEMBLY_ID:
+            extra += (
+                f" This member belongs to assembly '{SHED_ASSEMBLY_ID}'. "
+                f"If they ask to resize or change the shed, call modify_shed_assembly."
+            )
+    return extra
 
 
 def build_system_prompt(
@@ -78,7 +99,7 @@ def build_system_prompt(
 ) -> str:
     """Base prompt + readable inventory of already-built members."""
     context = format_project_context(project_elements)
-    selection = _selection_context(target_element_id)
+    selection = _selection_context(target_element_id, project_elements)
     return f"{BASE_SYSTEM_PROMPT}\n\n---\n{context}{selection}"
 
 
@@ -136,6 +157,29 @@ def _is_macro_request(text: str) -> bool:
     )
 
 
+def _is_shed_modify_request(text: str) -> bool:
+    t = text.lower()
+    shed_words = ("shed", "portal frame", "portal-frame", "roof pitch", "eave")
+    change_words = (
+        "higher",
+        "taller",
+        "wider",
+        "longer",
+        "shorter",
+        "lower",
+        "resize",
+        "change",
+        "update",
+        "increase",
+        "decrease",
+        "make the",
+        "meter",
+        "metre",
+        "mm",
+    )
+    return any(w in t for w in shed_words) and any(w in t for w in change_words)
+
+
 def _execute_macro_action(
     arguments: str,
     elements: list[ProjectElementMm],
@@ -182,6 +226,8 @@ def run_chat_turn(
 
     last_user_text = messages[-1].content if messages else ""
     force_macro = bool(elements and _is_macro_request(last_user_text))
+    has_shed = bool(shed_members_in(elements, SHED_ASSEMBLY_ID))
+    force_shed = bool(has_shed and _is_shed_modify_request(last_user_text))
 
     # Append mode when model already has members (supports "add beam on column")
     replace_next = len(elements) == 0
@@ -190,7 +236,12 @@ def run_chat_turn(
 
     for turn in range(MAX_TURNS):
         tool_choice: Any = "auto"
-        if force_macro and turn == 0:
+        if force_shed and turn == 0:
+            tool_choice = {
+                "type": "function",
+                "function": {"name": "modify_shed_assembly"},
+            }
+        elif force_macro and turn == 0:
             tool_choice = {"type": "function", "function": {"name": "apply_macro_action"}}
 
         response = client.chat.completions.create(
@@ -265,6 +316,23 @@ def run_chat_turn(
                         )
                 except (ValueError, ValidationError) as e:
                     summary = {"success": False, "error": str(e)}
+            elif name == "modify_shed_assembly":
+                statuses.append("Regenerating portal frame shed...")
+                try:
+                    elements, summary = apply_modify_shed_assembly(
+                        elements,
+                        tc.function.arguments or "{}",
+                    )
+                    tools_used = tools_used or summary.get("success") is True
+                    applied = summary.get("applied_params") or {}
+                    statuses.append(
+                        "Shed updated: "
+                        f"{applied.get('width')}×{applied.get('length')} mm, "
+                        f"height {applied.get('height')} mm, "
+                        f"pitch {applied.get('roof_pitch_deg')}°..."
+                    )
+                except (ValueError, ValidationError) as e:
+                    summary = {"success": False, "error": str(e)}
             else:
                 summary = {"success": False, "error": f"Unknown tool: {name}"}
 
@@ -282,7 +350,12 @@ def run_chat_turn(
             "Structural update complete. Check the 3D viewport."
         )
 
-    if force_macro and not tools_used:
+    if force_shed and not tools_used:
+        assistant_content = (
+            "I couldn't update the shed assembly. "
+            "Generate a portal frame shed first, then ask to resize it."
+        )
+    elif force_macro and not tools_used:
         assistant_content = (
             "I couldn't apply that change to the selected member. "
             "Please try again with the member selected in the viewport."

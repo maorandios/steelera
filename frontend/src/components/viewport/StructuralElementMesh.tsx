@@ -7,10 +7,10 @@ import { useProjectStore } from "@/store/project-store";
 import { isExtrudedIBeam, type ProjectElementMm } from "@/types/project";
 
 const SHAPE_COLORS: Record<string, string> = {
-  "I-beam": "#94a3b8",
-  "C-channel": "#64748b",
-  Box: "#71717a",
-  Pipe: "#a1a1aa",
+  "I-beam": "#5b9bd5",
+  "C-channel": "#6b8cae",
+  Box: "#8b9cb3",
+  Pipe: "#9aa8bc",
 };
 
 const SELECTED_COLOR = "#38bdf8";

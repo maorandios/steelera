@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import {
   elementRotationRad,
   geometryExtentsM,
+  macroEulerRotationRad,
   memberAxisRotationEuler,
   meshAlignmentOffsetLocal,
   structuralAxisOriginM,
@@ -23,9 +24,11 @@ interface ElementMeshGroupProps {
  * Transform hierarchy (outer → inner):
  *   1. World position on structural axis
  *   2. Member axis orientation (local +X → world length direction)
- *   3. User rotation around member-local +X
- *   4. Inner group — alignment offset on local +Y only
- *   5. Mesh geometry at member-local origin
+ *   3. Macro Euler rotation (rotation_euler_deg) — rafter/purlin pitch in X
+ *      TODO(rafter-pitch): fine-tune euler vs. catalog flange normals later.
+ *   4. Alignment offset on local +Y (in pitched space, before section roll)
+ *   5. User rotation around member-local +X
+ *   6. Mesh geometry at member-local origin
  */
 export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
   const selectedElementId = useProjectStore((state) => state.selectedElementId);
@@ -34,6 +37,7 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
 
   const [originX, originY, originZ] = structuralAxisOriginM(element);
   const axisRotation = memberAxisRotationEuler(element);
+  const macroEuler = macroEulerRotationRad(element);
   const userRotation = elementRotationRad(element);
   const alignOffset = meshAlignmentOffsetLocal(element);
   const { length, height, width } = geometryExtentsM(element);
@@ -46,16 +50,18 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
   return (
     <group position={[originX, originY, originZ]} onClick={handleClick}>
       <group rotation={axisRotation}>
-        <group rotation={[userRotation, 0, 0]}>
+        <group rotation={macroEuler}>
           <group position={alignOffset}>
-            {children}
-            {isSelected && (
-              <mesh position={[length / 2, 0, 0]}>
-                <boxGeometry args={[length, height, width]} />
-                <meshBasicMaterial visible={false} />
-                <Edges color="#38bdf8" threshold={15} />
-              </mesh>
-            )}
+            <group rotation={[userRotation, 0, 0]}>
+              {children}
+              {isSelected && (
+                <mesh position={[length / 2, 0, 0]}>
+                  <boxGeometry args={[length, height, width]} />
+                  <meshBasicMaterial visible={false} />
+                  <Edges color="#38bdf8" threshold={15} />
+                </mesh>
+              )}
+            </group>
           </group>
         </group>
       </group>

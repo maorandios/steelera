@@ -1,0 +1,201 @@
+"use client";
+
+import { Html } from "@react-three/drei";
+import { useEffect, useMemo } from "react";
+import * as THREE from "three";
+
+import {
+  gridLineLetter,
+  gridLineNumber,
+} from "@/lib/structural-grid";
+
+const MM_TO_M = 0.001;
+const GROUND_Y = 0;
+const GRID_COLOR = "#71717a";
+
+type StructuralGridProps = {
+  xCoordsMm: number[];
+  zCoordsMm: number[];
+  extentMinX: number;
+  extentMaxX: number;
+  extentMinZ: number;
+  extentMaxZ: number;
+  onBackgroundClick: () => void;
+};
+
+function GridLineSegment({
+  x0,
+  y0,
+  z0,
+  x1,
+  y1,
+  z1,
+  variant = "solid",
+}: {
+  x0: number;
+  y0: number;
+  z0: number;
+  x1: number;
+  y1: number;
+  z1: number;
+  /** Z grid lines use a lighter tone to distinguish from X lines. */
+  variant?: "solid" | "minor";
+}) {
+  const geometry = useMemo(() => {
+    return new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x0, y0, z0),
+      new THREE.Vector3(x1, y1, z1),
+    ]);
+  }, [x0, y0, z0, x1, y1, z1]);
+
+  const material = useMemo(() => {
+    const color = variant === "minor" ? "#52525b" : GRID_COLOR;
+    return new THREE.LineBasicMaterial({
+      color,
+      transparent: variant === "minor",
+      opacity: variant === "minor" ? 0.85 : 1,
+    });
+  }, [variant]);
+
+  const line = useMemo(
+    () => new THREE.Line(geometry, material),
+    [geometry, material],
+  );
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      material.dispose();
+    };
+  }, [geometry, material]);
+
+  return <primitive object={line} />;
+}
+
+function GridLabelBubble({
+  position,
+  label,
+}: {
+  position: [number, number, number];
+  label: string;
+}) {
+  return (
+    <Html
+      position={[position[0], position[1] + 0.12, position[2]]}
+      center
+      distanceFactor={14}
+      zIndexRange={[40, 0]}
+      style={{ pointerEvents: "none", userSelect: "none" }}
+    >
+      <div
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: "50%",
+          background: "#18181b",
+          border: "1.5px solid #52525b",
+          color: "#fafafa",
+          fontSize: 11,
+          fontWeight: 700,
+          lineHeight: "22px",
+          textAlign: "center",
+          fontFamily: "system-ui, sans-serif",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
+        }}
+      >
+        {label}
+      </div>
+    </Html>
+  );
+}
+
+export function StructuralGrid({
+  xCoordsMm,
+  zCoordsMm,
+  extentMinX,
+  extentMaxX,
+  extentMinZ,
+  extentMaxZ,
+  onBackgroundClick,
+}: StructuralGridProps) {
+  const xCoordsM = useMemo(
+    () => xCoordsMm.map((value) => value * MM_TO_M),
+    [xCoordsMm],
+  );
+  const zCoordsM = useMemo(
+    () => zCoordsMm.map((value) => value * MM_TO_M),
+    [zCoordsMm],
+  );
+
+  const xMin = Math.min(extentMinX, xCoordsM[0] ?? 0);
+  const xMax = Math.max(extentMaxX, xCoordsM[xCoordsM.length - 1] ?? 0);
+  const zMin = Math.min(extentMinZ, zCoordsM[0] ?? 0);
+  const zMax = Math.max(extentMaxZ, zCoordsM[zCoordsM.length - 1] ?? 0);
+
+  const padM = 1.5;
+  const lineX0 = xMin - padM;
+  const lineX1 = xMax + padM;
+  const lineZ0 = zMin - padM;
+  const lineZ1 = zMax + padM;
+
+  const pickPlaneSize = Math.max(lineX1 - lineX0, lineZ1 - lineZ0, 10);
+
+  return (
+    <group>
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[(lineX0 + lineX1) / 2, GROUND_Y, (lineZ0 + lineZ1) / 2]}
+        onClick={(event) => {
+          event.stopPropagation();
+          onBackgroundClick();
+        }}
+      >
+        <planeGeometry args={[pickPlaneSize, pickPlaneSize]} />
+        <meshBasicMaterial visible={false} side={THREE.DoubleSide} />
+      </mesh>
+
+      {xCoordsM.map((x, index) => (
+        <group key={`grid-x-line-${index}-${x}`}>
+          <GridLineSegment
+            x0={x}
+            y0={GROUND_Y}
+            z0={lineZ0}
+            x1={x}
+            y1={GROUND_Y}
+            z1={lineZ1}
+          />
+          <GridLabelBubble
+            position={[x, GROUND_Y, lineZ0]}
+            label={gridLineLetter(index)}
+          />
+          <GridLabelBubble
+            position={[x, GROUND_Y, lineZ1]}
+            label={gridLineLetter(index)}
+          />
+        </group>
+      ))}
+
+      {zCoordsM.map((z, index) => (
+        <group key={`grid-z-line-${index}-${z}`}>
+          <GridLineSegment
+            x0={lineX0}
+            y0={GROUND_Y}
+            z0={z}
+            x1={lineX1}
+            y1={GROUND_Y}
+            z1={z}
+            variant="minor"
+          />
+          <GridLabelBubble
+            position={[lineX0, GROUND_Y, z]}
+            label={gridLineNumber(index)}
+          />
+          <GridLabelBubble
+            position={[lineX1, GROUND_Y, z]}
+            label={gridLineNumber(index)}
+          />
+        </group>
+      ))}
+    </group>
+  );
+}

@@ -9,9 +9,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 
-export function ChatInterface() {
+type ChatInterfaceProps = {
+  variant?: "desktop" | "default";
+};
+
+export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
+  const isDesktop = variant === "desktop";
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const messages = useProjectStore((s) => s.messages);
@@ -48,7 +54,12 @@ export function ChatInterface() {
       <form
         onSubmit={handleSubmit}
         suppressHydrationWarning
-        className="sticky bottom-0 z-10 border-t border-border bg-background/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md"
+        className={cn(
+          "sticky bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur-md",
+          isDesktop
+            ? "p-5 pb-5"
+            : "p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+        )}
       >
         {selectedElementId ? (
           <div className="mb-2">
@@ -74,7 +85,10 @@ export function ChatInterface() {
             onChange={(e) => setInput(e.target.value)}
             placeholder="Describe your structure..."
             disabled={isLoading}
-            className="flex-1 bg-card"
+            className={cn(
+              "flex-1 bg-card",
+              isDesktop && "h-11 text-base",
+            )}
             autoComplete="off"
             data-lpignore="true"
             data-1p-ignore

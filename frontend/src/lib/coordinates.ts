@@ -2,6 +2,7 @@ import type { ElementAlignment, ExtrusionAxis, ProjectElementMm } from "@/types/
 import { memberAxisRotation } from "@/lib/iSectionShape";
 
 const MM_TO_M = 0.001;
+const DEG_TO_RAD = Math.PI / 180;
 
 /**
  * Structural axis origin in world meters.
@@ -68,12 +69,30 @@ export function geometryExtentsM(element: ProjectElementMm): {
 
 /** User rotation around member-local +X (length axis), in radians. */
 export function elementRotationRad(element: ProjectElementMm): number {
-  return ((element.rotation ?? 0) * Math.PI) / 180;
+  return ((element.rotation ?? 0) * DEG_TO_RAD);
+}
+
+/**
+ * Macro / API Euler rotation [rx, ry, rz] in degrees → radians for R3F group.rotation.
+ * Pitched rafters from the shed macro store pitch on the Z component.
+ */
+export function macroEulerRotationRad(
+  element: ProjectElementMm,
+): [number, number, number] {
+  const raw = element.rotation_euler_deg;
+  if (raw && raw.length >= 3) {
+    const [rx, ry, rz] = raw;
+    if (rx !== 0 || ry !== 0 || rz !== 0) {
+      return [rx * DEG_TO_RAD, ry * DEG_TO_RAD, rz * DEG_TO_RAD];
+    }
+  }
+  return [0, 0, 0];
 }
 
 /**
  * Alignment offset in member-local space (+Y is cross-section height).
- * Applied to inner mesh only, inside the rotated outer group.
+ * Applied after macro Euler so "top"/"bottom" shift perpendicular to the
+ * sloped member axis (e.g. purlins seated on pitched rafters).
  */
 export function meshAlignmentOffsetLocal(
   element: ProjectElementMm,
@@ -129,15 +148,17 @@ export function memberLocalToWorld(
   const origin = structuralAxisOriginM(element);
   const align = includeAlignment ? meshAlignmentOffsetLocal(element) : [0, 0, 0];
   const userRot = elementRotationRad(element);
+  const macroEuler = macroEulerRotationRad(element);
   const axisRot = memberAxisRotationEuler(element);
 
-  const aligned: Vec3 = [
-    local[0] + align[0],
-    local[1] + align[1],
-    local[2] + align[2],
+  const userRotated = rotateX(local, userRot);
+  const withAlign: Vec3 = [
+    userRotated[0] + align[0],
+    userRotated[1] + align[1],
+    userRotated[2] + align[2],
   ];
-  const userRotated = rotateX(aligned, userRot);
-  const world = applyEuler(userRotated, axisRot);
+  const macroRotated = applyEuler(withAlign, macroEuler);
+  const world = applyEuler(macroRotated, axisRot);
   return [origin[0] + world[0], origin[1] + world[1], origin[2] + world[2]];
 }
 

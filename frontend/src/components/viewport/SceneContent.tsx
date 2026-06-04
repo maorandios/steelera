@@ -1,8 +1,9 @@
 "use client";
 
-import { Grid, OrbitControls, PerspectiveCamera } from "@react-three/drei";
+import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { useMemo } from "react";
 
+import { StructuralGrid } from "@/components/viewport/StructuralGrid";
 import { StructuralElementMesh } from "@/components/viewport/StructuralElementMesh";
 import { sceneStructuralBounds } from "@/lib/coordinates";
 import { useProjectStore } from "@/store/project-store";
@@ -14,11 +15,24 @@ interface SceneContentProps {
 
 export function SceneContent({ projectElements }: SceneContentProps) {
   const clearSelection = useProjectStore((state) => state.clearSelection);
+  const structuralGrid = useProjectStore((state) => state.structuralGrid);
 
-  const { center, size } = useMemo(
-    () => sceneStructuralBounds(projectElements),
-    [projectElements],
-  );
+  const { center, size, minX, maxX, minZ, maxZ } = useMemo(() => {
+    const bounds = sceneStructuralBounds(projectElements);
+    const safeSize = Number.isFinite(bounds.size) ? bounds.size : 20;
+    const safeCenter: [number, number, number] = bounds.center.every(Number.isFinite)
+      ? bounds.center
+      : [6, 2, 12];
+    const half = safeSize / 2;
+    return {
+      center: safeCenter,
+      size: safeSize,
+      minX: safeCenter[0] - half,
+      maxX: safeCenter[0] + half,
+      minZ: safeCenter[2] - half,
+      maxZ: safeCenter[2] + half,
+    };
+  }, [projectElements]);
 
   return (
     <>
@@ -33,15 +47,14 @@ export function SceneContent({ projectElements }: SceneContentProps) {
       />
       <ambientLight intensity={0.5} />
       <directionalLight position={[15, 20, 10]} intensity={1} />
-      <Grid
-        args={[Math.max(30, size * 2), Math.max(30, size * 2)]}
-        cellSize={1}
-        sectionSize={5}
-        fadeDistance={60}
-        position={[center[0], 0, center[2]]}
-        cellColor="#27272a"
-        sectionColor="#3f3f46"
-        onClick={() => clearSelection()}
+      <StructuralGrid
+        xCoordsMm={structuralGrid.xCoordsMm}
+        zCoordsMm={structuralGrid.zCoordsMm}
+        extentMinX={minX}
+        extentMaxX={maxX}
+        extentMinZ={minZ}
+        extentMaxZ={maxZ}
+        onBackgroundClick={() => clearSelection()}
       />
       {projectElements.map((element) => (
         <StructuralElementMesh key={element.id} element={element} />

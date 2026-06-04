@@ -2,7 +2,19 @@
 
 import { create } from "zustand";
 
-import { postChat } from "@/lib/api";
+import { postChat, postGenerateShed } from "@/lib/api";
+import {
+  inferShedParamsFromElements,
+  mergeShedParams,
+  shedParamsToApiPayload,
+  type ShedAssemblyParams,
+} from "@/lib/shed-assembly";
+import {
+  buildStructuralGridState,
+  DEFAULT_STRUCTURAL_GRID,
+  structuralGridFromShedParams,
+  type StructuralGridState,
+} from "@/lib/structural-grid";
 import type { ChatMessage } from "@/types/chat";
 import type {
   ElementAlignment,
@@ -14,7 +26,7 @@ import { emptyProjectState, normalizeElement } from "@/types/project";
 /** Keep API payloads bounded so long chats stay responsive. */
 const API_MESSAGE_WINDOW = 24;
 
-function mergeElementsFromApi(
+function applyElementsFromApi(
   incoming: ProjectElementMm[],
   existing: ProjectElementMm[],
 ): ProjectElementMm[] {
@@ -24,6 +36,8 @@ function mergeElementsFromApi(
       ...element,
       rotation: prior?.rotation ?? element.rotation,
       alignment: prior?.alignment ?? element.alignment,
+      rotation_euler_deg:
+        element.rotation_euler_deg ?? prior?.rotation_euler_deg ?? null,
     });
   });
 }
@@ -31,13 +45,18 @@ function mergeElementsFromApi(
 interface ProjectStore {
   messages: ChatMessage[];
   projectElements: ProjectElementMm[];
+  shedAssemblyParams: ShedAssemblyParams | null;
+  structuralGrid: StructuralGridState;
   selectedElementId: string | null;
   statuses: string[];
   isLoading: boolean;
+  isMacroLoading: boolean;
   error: string | null;
-  viewportExpanded: boolean;
   sendMessage: (content: string) => Promise<void>;
-  toggleViewport: () => void;
+  generateShedMacro: (params: ShedAssemblyParams) => Promise<void>;
+  modifyShedAssembly: (partial: Partial<ShedAssemblyParams>) => Promise<void>;
+  setProjectElements: (elements: ProjectElementMm[]) => void;
+  setStructuralGridFromSpans: (xSpacingInput: string, zSpacingInput: string) => void;
   clearError: () => void;
   selectElement: (id: string) => void;
   clearSelection: () => void;
@@ -54,16 +73,70 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     },
   ],
   projectElements: emptyProjectState().projectElements,
+  shedAssemblyParams: null,
+  structuralGrid: { ...DEFAULT_STRUCTURAL_GRID },
   selectedElementId: null,
   statuses: [],
   isLoading: false,
+  isMacroLoading: false,
   error: null,
-  viewportExpanded: false,
 
-  toggleViewport: () =>
-    set((state) => ({ viewportExpanded: !state.viewportExpanded })),
+  setProjectElements: (elements) =>
+    set({
+      projectElements: elements.map((element) => normalizeElement(element)),
+      selectedElementId: null,
+    }),
+
+  setStructuralGridFromSpans: (xSpacingInput, zSpacingInput) =>
+    set({
+      structuralGrid: buildStructuralGridState(xSpacingInput, zSpacingInput),
+    }),
 
   clearError: () => set({ error: null }),
+
+  generateShedMacro: async (params) => {
+    if (get().isMacroLoading || get().isLoading) return;
+
+    const selectedId = get().selectedElementId;
+
+    set({ isMacroLoading: true, error: null });
+
+    try {
+      const response = await postGenerateShed({
+        assembly_id: "shed_1",
+        replace_existing: true,
+        ...shedParamsToApiPayload(params),
+      });
+      const elements = (response.projectElements ?? []).map((element) =>
+        normalizeElement(element),
+      );
+      const selectedStillExists = elements.some(
+        (element) => element.id === selectedId,
+      );
+      set({
+        projectElements: elements,
+        shedAssemblyParams: params,
+        structuralGrid: structuralGridFromShedParams(params),
+        isMacroLoading: false,
+        selectedElementId: selectedStillExists ? selectedId : null,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to generate shed macro";
+      set({ isMacroLoading: false, error: message });
+      throw err;
+    }
+  },
+
+  modifyShedAssembly: async (partial) => {
+    const current =
+      get().shedAssemblyParams ??
+      inferShedParamsFromElements(get().projectElements);
+    if (!current) {
+      throw new Error("No shed assembly in the project. Generate a shed first.");
+    }
+    await get().generateShedMacro(mergeShedParams(current, partial));
+  },
 
   selectElement: (id) => set({ selectedElementId: id }),
 
@@ -113,14 +186,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         response.projectElements ??
         response.projectState?.projectElements ??
         [];
-      const elements = mergeElementsFromApi(incoming, get().projectElements);
+      const elements = applyElementsFromApi(incoming, get().projectElements);
       const selectedStillExists = elements.some(
         (element) => element.id === selectedId,
       );
+      const inferredShed = inferShedParamsFromElements(elements);
 
       set({
         messages: [...nextMessages, response.message],
         projectElements: elements,
+        shedAssemblyParams: inferredShed ?? get().shedAssemblyParams,
         statuses: [],
         isLoading: false,
         selectedElementId: selectedStillExists ? selectedId : null,

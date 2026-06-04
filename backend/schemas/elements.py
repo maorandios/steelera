@@ -119,10 +119,14 @@ class SectionDimensionsMm(BaseModel):
     tf: float
 
 
+ElementAlignment = Literal["center", "top", "bottom"]
+
+
 class ProjectElementMm(BaseModel):
     """Millimeter-based element for frontend (box or extruded I-section)."""
 
     id: str
+    assembly_id: str | None = None
     shape_type: ShapeType
     position_mm: dict[str, float]
     size_mm: dict[str, float]
@@ -133,6 +137,8 @@ class ProjectElementMm(BaseModel):
     profile_name: str | None = None
     section_mm: SectionDimensionsMm | None = None
     axis: ExtrusionAxis = "y"
+    alignment: ElementAlignment = "center"
+    rotation_euler_deg: list[float] | None = None
     anchor_element_id: str | None = None
     anchor_point: str | None = None
     # Connection nodes in backend coords (Y = vertical / member height).

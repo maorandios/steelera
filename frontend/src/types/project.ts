@@ -14,6 +14,7 @@ export interface SectionDimensionsMm {
 /** Millimeter-based element from backend geometry_engine */
 export interface ProjectElementMm {
   id: string;
+  assembly_id?: string | null;
   shape_type: ShapeType;
   position_mm: { x: number; y: number; z: number };
   size_mm: { x: number; y: number; z: number };
@@ -30,6 +31,8 @@ export interface ProjectElementMm {
   anchor_point?: "TOP" | "BOTTOM" | "START" | "END" | "CENTER" | null;
   /** Connection nodes in backend coords (Y = vertical). */
   nodes?: Record<string, [number, number, number]>;
+  /** Macro / future use: Euler rotation in degrees [rx, ry, rz] */
+  rotation_euler_deg?: [number, number, number] | null;
   /** Local display rotation around vertical (Y) axis in degrees */
   rotation?: ElementRotation;
   /** Cross-section vertical alignment at the placement reference */
@@ -57,6 +60,7 @@ export function normalizeElement(element: ProjectElementMm): ProjectElementMm {
     ...element,
     rotation,
     alignment,
+    rotation_euler_deg: element.rotation_euler_deg ?? null,
   };
 }
 

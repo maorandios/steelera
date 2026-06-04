@@ -77,8 +77,8 @@ export function memberAxisRotation(axis: ExtrusionAxis): [number, number, number
       // local +X → world +Y (vertical column)
       return [0, 0, Math.PI / 2];
     case "z":
-      // local +X → world +Z
-      return [0, Math.PI / 2, 0];
+      // local +X → world +Z (negative Y rotation; +PI/2 would extrude along -Z)
+      return [0, -Math.PI / 2, 0];
     default:
       return [0, 0, 0];
   }

@@ -1,23 +1,38 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useCallback, useState } from "react";
+import * as THREE from "three";
 
-import { PropertiesPanel } from "@/components/properties/PropertiesPanel";
 import { SceneContent } from "@/components/viewport/SceneContent";
 import { useProjectStore } from "@/store/project-store";
 
 const Canvas = dynamic(
   () => import("@react-three/fiber").then((mod) => mod.Canvas),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => (
+      <div className="absolute inset-0 flex items-center justify-center bg-[#0c0c0e] text-xs text-muted-foreground">
+        Loading 3D…
+      </div>
+    ),
+  },
 );
 
 export function Viewport3D() {
   const projectElements = useProjectStore((state) => state.projectElements);
   const clearSelection = useProjectStore((state) => state.clearSelection);
   const count = projectElements.length;
+  const [canvasKey, setCanvasKey] = useState(0);
+  const [webglLost, setWebglLost] = useState(false);
+
+  const remountCanvas = useCallback(() => {
+    setWebglLost(false);
+    setCanvasKey((key) => key + 1);
+  }, []);
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden rounded-xl border border-border bg-[#0c0c0e]">
+    <div className="absolute inset-0 overflow-hidden rounded-xl border border-border bg-[#0c0c0e]">
       <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-md border border-border/80 bg-background/80 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur-sm">
         {count > 0
           ? `${count} element${count > 1 ? "s" : ""}${
@@ -50,13 +65,49 @@ export function Viewport3D() {
           </text>
         </svg>
       </div>
-      <PropertiesPanel />
+      {webglLost && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 text-center">
+          <p className="text-sm text-muted-foreground">
+            The 3D graphics context was lost (often caused by GPU memory pressure).
+          </p>
+          <button
+            type="button"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+            onClick={remountCanvas}
+          >
+            Restore 3D view
+          </button>
+        </div>
+      )}
       <Canvas
-        className="h-full w-full touch-none"
-        gl={{ antialias: true }}
+        key={canvasKey}
+        className="!h-full !w-full touch-none"
+        style={{ width: "100%", height: "100%", background: "#0c0c0e" }}
+        dpr={[1, 1.5]}
+        gl={{
+          antialias: true,
+          alpha: false,
+          powerPreference: "high-performance",
+          preserveDrawingBuffer: false,
+        }}
+        onCreated={({ gl, scene }) => {
+          const bg = new THREE.Color("#0c0c0e");
+          scene.background = bg;
+          gl.setClearColor(bg, 1);
+          const canvas = gl.domElement;
+          const onLost = (event: Event) => {
+            event.preventDefault();
+            setWebglLost(true);
+          };
+          const onRestored = () => {
+            gl.resetState();
+            setWebglLost(false);
+          };
+          canvas.addEventListener("webglcontextlost", onLost);
+          canvas.addEventListener("webglcontextrestored", onRestored);
+        }}
         onPointerMissed={() => clearSelection()}
       >
-        <color attach="background" args={["#0c0c0e"]} />
         <SceneContent projectElements={projectElements} />
       </Canvas>
     </div>

@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatResponse } from "@/types/chat";
+import type { GenerateShedParams, GenerateShedResponse } from "@/types/macro";
 import type { ProjectState } from "@/types/project";
 
 /**
@@ -44,6 +45,46 @@ export async function postChat(
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error("Chat request timed out. Try a shorter message or refresh.");
+    }
+    if (err instanceof TypeError) {
+      throw new Error(
+        "Cannot reach Steelera backend. Start it with: cd backend && python -m uvicorn main:app --reload --port 8000",
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+const MACRO_TIMEOUT_MS = 60_000;
+
+export async function postGenerateShed(
+  params: GenerateShedParams,
+): Promise<GenerateShedResponse> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MACRO_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/macro/generate-shed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        replace_existing: true,
+        ...params,
+      }),
+    });
+
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Shed macro failed (${res.status})`);
+    }
+
+    return res.json() as Promise<GenerateShedResponse>;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Shed generation timed out.");
     }
     if (err instanceof TypeError) {
       throw new Error(
