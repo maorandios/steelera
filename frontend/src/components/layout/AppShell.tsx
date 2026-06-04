@@ -7,14 +7,14 @@ import { Viewport3D } from "@/components/viewport/Viewport3D";
 export function AppShell() {
   return (
     <div className="grid h-dvh w-full grid-cols-[25vw_55vw_20vw] overflow-hidden bg-background">
-      <section className="flex min-h-0 min-w-0 flex-col border-r border-border">
+      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border">
         <header className="shrink-0 border-b border-border px-5 py-3">
           <h2 className="text-sm font-semibold tracking-tight">AI Assistant</h2>
           <p className="text-xs text-muted-foreground">
             Describe macros or refine the model
           </p>
         </header>
-        <div className="min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ChatInterface variant="desktop" />
         </div>
       </section>

@@ -1,14 +1,45 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from schemas.elements import ProjectElementMm
 from schemas.project import ProjectState
+
+RoofStyleLiteral = Literal["duo_pitch", "mono_pitch", "flat"]
+UiBlockType = Literal["show_component_checklist"]
+
+
+class ShedChecklistPayload(BaseModel):
+    """Baseline shed dimensions extracted from user intent (mm)."""
+
+    width_mm: float | None = None
+    length_mm: float | None = None
+    height_mm: float | None = None
+    roof_style: RoofStyleLiteral | None = None
+    roof_pitch_deg: float | None = None
+    x_spans: str | None = None
+    z_spans: str | None = None
+
+    @field_validator("roof_style", mode="before")
+    @classmethod
+    def normalize_roof_style(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+        if key in ("duo_pitch", "mono_pitch", "flat"):
+            return key
+        return None
+
+
+class ChatUiBlock(BaseModel):
+    type: UiBlockType
+    payload: ShedChecklistPayload
 
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
+    ui_block: ChatUiBlock | None = None
 
 
 class ChatRequest(BaseModel):
@@ -26,6 +57,7 @@ class ChatRequest(BaseModel):
 class ChatResponseMessage(BaseModel):
     role: Literal["assistant"] = "assistant"
     content: str
+    ui_block: ChatUiBlock | None = None
 
 
 class ChatResponse(BaseModel):

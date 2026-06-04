@@ -50,13 +50,7 @@ export function ProjectPresetsPanel() {
   }, [shedForm.xSpans, shedForm.zSpans, setStructuralGrid]);
 
   const handleGenerateShed = async () => {
-    const parsed = parseShedFormValues(
-      shedForm.xSpans,
-      shedForm.zSpans,
-      shedForm.height,
-      shedForm.pitch,
-      shedForm.purlinSpacing,
-    );
+    const parsed = parseShedFormValues(shedForm);
     if ("error" in parsed) {
       setShedError(parsed.error);
       return;

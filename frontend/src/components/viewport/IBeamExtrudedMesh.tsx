@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 
+import { memberLengthM } from "@/lib/coordinates";
+import { isFiniteNumber } from "@/lib/elementValidation";
 import { createMemberLocalIBeamGeometry } from "@/lib/iSectionShape";
 import type { ProjectElementMm, SectionDimensionsMm } from "@/types/project";
 
@@ -18,7 +20,10 @@ export function IBeamExtrudedMesh({
   section,
   color,
 }: IBeamExtrudedMeshProps) {
-  const lengthM = element.length_mm * MM_TO_M;
+  const lengthM = memberLengthM(element);
+  if (!isFiniteNumber(lengthM) || lengthM < 1e-6) {
+    return null;
+  }
   const h = section.h * MM_TO_M;
   const b = section.b * MM_TO_M;
   const tw = section.tw * MM_TO_M;

@@ -2,7 +2,9 @@
 
 import { IBeamExtrudedMesh } from "@/components/viewport/IBeamExtrudedMesh";
 import { ElementMeshGroup } from "@/components/viewport/ElementMeshGroup";
-import { geometryExtentsM } from "@/lib/coordinates";
+import { geometryExtentsM, memberLengthM } from "@/lib/coordinates";
+import { isElementRenderable } from "@/lib/elementValidation";
+import { hasNodeDrivenFrame } from "@/lib/memberFrame";
 import { useProjectStore } from "@/store/project-store";
 import { isExtrudedIBeam, type ProjectElementMm } from "@/types/project";
 
@@ -20,6 +22,10 @@ interface StructuralElementMeshProps {
 }
 
 export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
+  if (!isElementRenderable(element)) {
+    return null;
+  }
+
   const selectedElementId = useProjectStore((state) => state.selectedElementId);
   const isSelected = selectedElementId === element.id;
   const baseColor = SHAPE_COLORS[element.shape_type] ?? "#71717a";
@@ -37,11 +43,16 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
     );
   }
 
-  const { length, height, width } = geometryExtentsM(element);
+  const { height, width } = geometryExtentsM(element);
+  const length = memberLengthM(element);
+  const centered = hasNodeDrivenFrame(element);
+  if (!Number.isFinite(length) || length < 1e-6) {
+    return null;
+  }
 
   return (
     <ElementMeshGroup element={element}>
-      <mesh position={[length / 2, 0, 0]}>
+      <mesh position={centered ? [0, 0, 0] : [length / 2, 0, 0]}>
         <boxGeometry args={[length, height, width]} />
         <meshStandardMaterial color={color} metalness={0.35} roughness={0.55} />
       </mesh>

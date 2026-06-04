@@ -1,16 +1,29 @@
-import type { ElementAlignment, ExtrusionAxis, ProjectElementMm } from "@/types/project";
+import type { ExtrusionAxis, ProjectElementMm } from "@/types/project";
 import { memberAxisRotation } from "@/lib/iSectionShape";
+import {
+  applyMemberLocalToWorldM,
+  hasNodeDrivenFrame,
+  memberLengthFromNodesM,
+  memberNodeFrame,
+  memberObbCornersWorldM,
+  meshAlignmentOffsetLocal,
+} from "@/lib/memberFrame";
 
 const MM_TO_M = 0.001;
 const DEG_TO_RAD = Math.PI / 180;
 
 /**
- * Structural axis origin in world meters.
- * Prefer explicit connection nodes when present (backend source of truth).
+ * Structural axis origin in world meters (legacy / fallback).
+ * Node-driven members use center from memberNodeFrame instead.
  */
 export function structuralAxisOriginM(
   element: ProjectElementMm,
 ): [number, number, number] {
+  const frame = memberNodeFrame(element);
+  if (frame) {
+    return frame.centerM;
+  }
+
   const axis = element.axis ?? "y";
   const nodes = element.nodes;
 
@@ -37,6 +50,10 @@ export function backendSizeM(element: ProjectElementMm): [number, number, number
 }
 
 export function memberLengthM(element: ProjectElementMm): number {
+  const fromNodes = memberLengthFromNodesM(element);
+  if (fromNodes != null) {
+    return fromNodes;
+  }
   return element.length_mm * MM_TO_M;
 }
 
@@ -73,12 +90,14 @@ export function elementRotationRad(element: ProjectElementMm): number {
 }
 
 /**
- * Macro / API Euler rotation [rx, ry, rz] in degrees → radians for R3F group.rotation.
- * Pitched rafters from the shed macro store pitch on the Z component.
+ * Legacy macro Euler — only used when node-driven frame is unavailable.
  */
 export function macroEulerRotationRad(
   element: ProjectElementMm,
 ): [number, number, number] {
+  if (hasNodeDrivenFrame(element)) {
+    return [0, 0, 0];
+  }
   const raw = element.rotation_euler_deg;
   if (raw && raw.length >= 3) {
     const [rx, ry, rz] = raw;
@@ -89,28 +108,12 @@ export function macroEulerRotationRad(
   return [0, 0, 0];
 }
 
-/**
- * Alignment offset in member-local space (+Y is cross-section height).
- * Applied after macro Euler so "top"/"bottom" shift perpendicular to the
- * sloped member axis (e.g. purlins seated on pitched rafters).
- */
-export function meshAlignmentOffsetLocal(
-  element: ProjectElementMm,
-): [number, number, number] {
-  const { height } = crossSectionDimensionsM(element);
-  const alignment: ElementAlignment = element.alignment ?? "center";
-
-  switch (alignment) {
-    case "bottom":
-      return [0, height * 0.5, 0];
-    case "top":
-      return [0, -height * 0.5, 0];
-    default:
-      return [0, 0, 0];
-  }
-}
+export { meshAlignmentOffsetLocal } from "@/lib/memberFrame";
 
 export function memberAxisRotationEuler(element: ProjectElementMm): [number, number, number] {
+  if (hasNodeDrivenFrame(element)) {
+    return [0, 0, 0];
+  }
   return memberAxisRotation((element.axis ?? "y") as ExtrusionAxis);
 }
 
@@ -139,12 +142,17 @@ function applyEuler([x, y, z]: Vec3, [ex, ey, ez]: Vec3): Vec3 {
   return v;
 }
 
-/** Transform member-local point to world (includes alignment when provided). */
+/** Transform member-local point to world (legacy path). */
 export function memberLocalToWorld(
   element: ProjectElementMm,
   local: Vec3,
   includeAlignment: boolean,
 ): Vec3 {
+  const nodeWorld = applyMemberLocalToWorldM(element, local, includeAlignment);
+  if (nodeWorld) {
+    return nodeWorld;
+  }
+
   const origin = structuralAxisOriginM(element);
   const align = includeAlignment ? meshAlignmentOffsetLocal(element) : [0, 0, 0];
   const userRot = elementRotationRad(element);
@@ -181,8 +189,21 @@ function boundsFromElements(
   let maxZ = -Infinity;
 
   for (const el of projectElements) {
-    const { length, height, width } = geometryExtentsM(el);
+    const frame = memberNodeFrame(el);
+    if (frame) {
+      const corners = memberObbCornersWorldM(el, frame);
+      for (const corner of corners) {
+        minX = Math.min(minX, corner.x);
+        maxX = Math.max(maxX, corner.x);
+        minY = Math.min(minY, corner.y);
+        maxY = Math.max(maxY, corner.y);
+        minZ = Math.min(minZ, corner.z);
+        maxZ = Math.max(maxZ, corner.z);
+      }
+      continue;
+    }
 
+    const { length, height, width } = geometryExtentsM(el);
     const localCorners: Vec3[] = [
       [0, -height * 0.5, -width * 0.5],
       [length, -height * 0.5, -width * 0.5],
@@ -216,15 +237,10 @@ function boundsFromElements(
   };
 }
 
-/**
- * Camera / grid framing — based on structural axis geometry only.
- * Alignment shifts the mesh, NOT the viewport or ground grid.
- */
 export function sceneStructuralBounds(projectElements: ProjectElementMm[]) {
   return boundsFromElements(projectElements, false);
 }
 
-/** Full mesh bounds including alignment offsets. */
 export function sceneBounds(projectElements: ProjectElementMm[]) {
   return boundsFromElements(projectElements, true);
 }

@@ -385,235 +385,7 @@ def cumulative_positions_from_spans(spans: list[float]) -> list[float]:
     return coords
 
 
-def _roof_elevation_at_x(
-    x: float,
-    total_width: float,
-    ridge_x: float,
-    eave_height: float,
-    pitch_rad: float,
-) -> float:
-    """Gable roof surface Y at plan coordinate x (ridge at ridge_x)."""
-    if x <= ridge_x + 1e-6:
-        return eave_height + x * math.tan(pitch_rad)
-    return eave_height + (total_width - x) * math.tan(pitch_rad)
-
-
-def _column_height_at_x(
-    x: float,
-    total_width: float,
-    ridge_x: float,
-    eave_height: float,
-    pitch_rad: float,
-) -> float:
-    """Column length: eave height at walls; interior columns meet the sloping rafters."""
-    if x <= 1e-6 or x >= total_width - 1e-6:
-        return eave_height
-    return _roof_elevation_at_x(x, total_width, ridge_x, eave_height, pitch_rad)
-
-
-def _macro_member_dict(
-    *,
-    element_id: str,
-    assembly_id: str,
-    profile: str,
-    position: list[float],
-    rotation: list[float],
-    alignment: str,
-    length: float,
-    axis: str,
-    shape_type: str | None = None,
-    nodes: dict[str, list[float]] | None = None,
-) -> dict[str, Any]:
-    return {
-        "id": element_id,
-        "assembly_id": assembly_id,
-        "profile": profile,
-        "position": [float(position[0]), float(position[1]), float(position[2])],
-        "rotation": [float(rotation[0]), float(rotation[1]), float(rotation[2])],
-        "alignment": alignment,
-        "length": float(length),
-        "axis": axis,
-        "shape_type": shape_type,
-        "nodes": nodes,
-    }
-
-
-def generate_shed_macro(
-    assembly_id: str,
-    height: float,
-    roof_pitch_deg: float = 10.0,
-    purlin_spacing: float = 1200.0,
-    *,
-    x_spans: list[float] | str,
-    z_spans: list[float] | str,
-    width: float | None = None,
-    length: float | None = None,
-    frame_spacing: float | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Parametric portal-frame shed (all dimensions in mm).
-
-    - x_spans: structural bays across width → columns at cumulative X (0, 3k, 10k, …).
-    - z_spans: portal frame bays along depth → frames at cumulative Z (0, 5k, 10k, …).
-    - total_width = sum(x_spans), total_length = sum(z_spans).
-    - Interior column heights follow the gable roof; ridge at total_width / 2.
-    """
-    x_span_list = resolve_x_spans_mm(x_spans=x_spans, width=width)
-    z_span_list = resolve_z_spans_mm(
-        z_spans=z_spans, length=length, frame_spacing=frame_spacing
-    )
-    x_positions = cumulative_positions_from_spans(x_span_list)
-    frame_zs = cumulative_positions_from_spans(z_span_list)
-    total_width = x_positions[-1]
-    total_length = frame_zs[-1]
-
-    if total_width <= 0 or total_length <= 0 or height <= 0:
-        raise ValueError("total width, total length, and height must be positive")
-    if purlin_spacing <= 0:
-        raise ValueError("purlin_spacing must be positive")
-
-    pitch_rad = math.radians(roof_pitch_deg)
-    ridge_x = total_width / 2.0
-    left_span = ridge_x
-    right_span = total_width - ridge_x
-    left_rise = left_span * math.tan(pitch_rad)
-    right_rise = right_span * math.tan(pitch_rad)
-    ridge_y = height + left_rise
-    left_rafter_len = math.hypot(left_span, left_rise)
-    right_rafter_len = math.hypot(right_span, right_rise)
-    left_pitch_deg = math.degrees(math.atan2(left_rise, left_span)) if left_span > 0 else 0.0
-    right_pitch_deg = (
-        math.degrees(math.atan2(right_rise, right_span)) if right_span > 0 else 0.0
-    )
-
-    members: list[dict[str, Any]] = []
-    first_frame_z = frame_zs[0]
-    last_frame_z = frame_zs[-1]
-    purlin_run_length = last_frame_z - first_frame_z
-
-    for frame_index, z in enumerate(frame_zs):
-        for x_index, x in enumerate(x_positions):
-            col_height = _column_height_at_x(
-                x, total_width, ridge_x, height, pitch_rad
-            )
-            col_top_y = col_height
-
-            members.append(
-                _macro_member_dict(
-                    element_id=f"shed-col-{frame_index}-{x_index}",
-                    assembly_id=assembly_id,
-                    profile="HEA200",
-                    position=[x, 0.0, z],
-                    rotation=[0.0, 0.0, 0.0],
-                    alignment="center",
-                    length=col_height,
-                    axis="y",
-                    shape_type="I-beam",
-                    nodes={
-                        "bottom": [x, 0.0, z],
-                        "top": [x, col_top_y, z],
-                        "center": [x, col_top_y * 0.5, z],
-                    },
-                )
-            )
-
-        eave_y = height
-
-        members.append(
-            _macro_member_dict(
-                element_id=f"shed-raf-L-{frame_index}",
-                assembly_id=assembly_id,
-                profile="IPE200",
-                position=[0.0, eave_y, z],
-                rotation=[0.0, 0.0, left_pitch_deg],
-                alignment="center",
-                length=left_rafter_len,
-                axis="x",
-                shape_type="I-beam",
-                nodes={
-                    "start": [0.0, eave_y, z],
-                    "end": [ridge_x, ridge_y, z],
-                    "center": [ridge_x * 0.5, (eave_y + ridge_y) * 0.5, z],
-                },
-            )
-        )
-
-        members.append(
-            _macro_member_dict(
-                element_id=f"shed-raf-R-{frame_index}",
-                assembly_id=assembly_id,
-                profile="IPE200",
-                position=[total_width, eave_y, z],
-                rotation=[0.0, 0.0, 180.0 - right_pitch_deg],
-                alignment="center",
-                length=right_rafter_len,
-                axis="x",
-                shape_type="I-beam",
-                nodes={
-                    "start": [total_width, eave_y, z],
-                    "end": [ridge_x, ridge_y, z],
-                    "center": [
-                        (total_width + ridge_x) * 0.5,
-                        (eave_y + ridge_y) * 0.5,
-                        z,
-                    ],
-                },
-            )
-        )
-
-    def _place_purlins_on_slope(
-        suffix: str,
-        rafter_len: float,
-        pitch_deg: float,
-        pitch_sign: float,
-        x_at_eave: float,
-        x_toward_ridge: float,
-    ) -> None:
-        nonlocal purlin_index
-        slope_rad = math.radians(pitch_deg)
-        slope_pos = 0.0
-        while slope_pos <= rafter_len + 1e-6:
-            t = slope_pos / rafter_len if rafter_len > 1e-6 else 0.0
-            x_pos = x_at_eave + (x_toward_ridge - x_at_eave) * t
-            elev_y = height + slope_pos * math.sin(slope_rad)
-            normal_x = -math.sin(slope_rad) * pitch_sign
-            normal_y = math.cos(slope_rad)
-            seat_x = x_pos + RAFTER_HALF_DEPTH_MM * normal_x
-            seat_y = elev_y + RAFTER_HALF_DEPTH_MM * normal_y
-            members.append(
-                _macro_member_dict(
-                    element_id=f"shed-purl-{suffix}-{purlin_index}",
-                    assembly_id=assembly_id,
-                    profile=PURLIN_PROFILE,
-                    position=[seat_x, seat_y, first_frame_z],
-                    rotation=[pitch_sign * pitch_deg, 0.0, 0.0],
-                    alignment="bottom",
-                    length=purlin_run_length,
-                    axis="z",
-                    shape_type=PURLIN_SHAPE,
-                    nodes={
-                        "start": [seat_x, seat_y, first_frame_z],
-                        "end": [seat_x, seat_y, last_frame_z],
-                        "center": [
-                            seat_x,
-                            seat_y,
-                            first_frame_z + purlin_run_length * 0.5,
-                        ],
-                    },
-                )
-            )
-            if slope_pos >= rafter_len - 1e-6:
-                break
-            slope_pos += purlin_spacing
-            purlin_index += 1
-
-    purlin_index = 0
-    _place_purlins_on_slope("L", left_rafter_len, left_pitch_deg, 1.0, 0.0, ridge_x)
-    _place_purlins_on_slope(
-        "R", right_rafter_len, right_pitch_deg, -1.0, total_width, ridge_x
-    )
-
-    return members
+# Shed macro geometry lives in shed_geometry.py (re-exported below).
 
 
 def macro_member_to_project_element(macro: dict[str, Any]) -> ProjectElementMm:
@@ -667,20 +439,24 @@ def macro_member_to_project_element(macro: dict[str, Any]) -> ProjectElementMm:
     else:
         element = element.model_copy(update={"nodes": compute_member_nodes(element)})
 
-    return element.model_copy(
-        update={
-            "id": macro["id"],
-            "assembly_id": macro["assembly_id"],
-            "alignment": alignment,
-            "rotation_euler_deg": rotation,
-        }
-    )
+    update: dict[str, Any] = {
+        "id": macro["id"],
+        "assembly_id": macro["assembly_id"],
+        "alignment": alignment,
+        "rotation_euler_deg": rotation,
+    }
+    if macro.get("element_type"):
+        update["element_type"] = macro["element_type"]
+    return element.model_copy(update=update)
 
 
 def macro_members_to_project_elements(
     macro_members: list[dict[str, Any]],
 ) -> list[ProjectElementMm]:
     return [macro_member_to_project_element(member) for member in macro_members]
+
+
+from core.shed_geometry import generate_shed_macro  # noqa: E402
 
 
 def parse_add_structural_element_batch(

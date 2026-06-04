@@ -62,7 +62,8 @@ export function createMemberLocalIBeamGeometry(
   const box = geometry.boundingBox!;
   const centerY = (box.min.y + box.max.y) * 0.5;
   const centerZ = (box.min.z + box.max.z) * 0.5;
-  geometry.translate(-box.min.x, -centerY, -centerZ);
+  // Center extrusion on member-local origin (length along ±X/2).
+  geometry.translate(-box.min.x - length * 0.5, -centerY, -centerZ);
 
   return geometry;
 }

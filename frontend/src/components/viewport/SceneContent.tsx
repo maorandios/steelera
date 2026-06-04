@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { StructuralGrid } from "@/components/viewport/StructuralGrid";
 import { StructuralElementMesh } from "@/components/viewport/StructuralElementMesh";
 import { sceneStructuralBounds } from "@/lib/coordinates";
+import { filterRenderableElements } from "@/lib/elementValidation";
 import { useProjectStore } from "@/store/project-store";
 import type { ProjectElementMm } from "@/types/project";
 
@@ -17,8 +18,13 @@ export function SceneContent({ projectElements }: SceneContentProps) {
   const clearSelection = useProjectStore((state) => state.clearSelection);
   const structuralGrid = useProjectStore((state) => state.structuralGrid);
 
+  const renderableElements = useMemo(
+    () => filterRenderableElements(projectElements),
+    [projectElements],
+  );
+
   const { center, size, minX, maxX, minZ, maxZ } = useMemo(() => {
-    const bounds = sceneStructuralBounds(projectElements);
+    const bounds = sceneStructuralBounds(renderableElements);
     const safeSize = Number.isFinite(bounds.size) ? bounds.size : 20;
     const safeCenter: [number, number, number] = bounds.center.every(Number.isFinite)
       ? bounds.center
@@ -32,7 +38,7 @@ export function SceneContent({ projectElements }: SceneContentProps) {
       minZ: safeCenter[2] - half,
       maxZ: safeCenter[2] + half,
     };
-  }, [projectElements]);
+  }, [renderableElements]);
 
   return (
     <>
@@ -56,10 +62,10 @@ export function SceneContent({ projectElements }: SceneContentProps) {
         extentMaxZ={maxZ}
         onBackgroundClick={() => clearSelection()}
       />
-      {projectElements.map((element) => (
+      {renderableElements.map((element) => (
         <StructuralElementMesh key={element.id} element={element} />
       ))}
-      {projectElements.length === 0 && (
+      {renderableElements.length === 0 && (
         <mesh position={[0, 0, 0]}>
           <boxGeometry args={[1, 0.05, 1]} />
           <meshStandardMaterial color="#27272a" transparent opacity={0.4} />

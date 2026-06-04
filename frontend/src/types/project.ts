@@ -31,6 +31,8 @@ export interface ProjectElementMm {
   anchor_point?: "TOP" | "BOTTOM" | "START" | "END" | "CENTER" | null;
   /** Connection nodes in backend coords (Y = vertical). */
   nodes?: Record<string, [number, number, number]>;
+  /** Macro role: column, rafter, wall_girt, bracing, truss_chord, … */
+  element_type?: string | null;
   /** Macro / future use: Euler rotation in degrees [rx, ry, rz] */
   rotation_euler_deg?: [number, number, number] | null;
   /** Local display rotation around vertical (Y) axis in degrees */

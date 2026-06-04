@@ -29,13 +29,7 @@ export function AssemblyShedInspector() {
   }, [shedAssemblyParams]);
 
   const handleUpdate = async () => {
-    const parsed = parseShedFormValues(
-      form.xSpans,
-      form.zSpans,
-      form.height,
-      form.pitch,
-      form.purlinSpacing,
-    );
+    const parsed = parseShedFormValues(form);
     if ("error" in parsed) {
       setError(parsed.error);
       return;

@@ -12,17 +12,22 @@ async def chat(request: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=400, detail="messages must not be empty")
 
     try:
-        content, statuses, project_state = run_chat_turn(
+        content, statuses, project_state, ui_block = run_chat_turn(
             request.messages,
-            request.projectState,
+            request.resolved_state(),
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
+    from core.project_session import set_elements
+
+    set_elements(list(project_state.projectElements))
+
     return ChatResponse(
-        message=ChatResponseMessage(content=content),
+        message=ChatResponseMessage(content=content, ui_block=ui_block),
         statuses=statuses,
+        projectElements=[e.model_dump() for e in project_state.projectElements],
         projectState=project_state,
     )

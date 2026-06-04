@@ -1,5 +1,6 @@
 "use client";
 
+import { ShedComponentChecklist } from "@/components/chat/ShedComponentChecklist";
 import { cn } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType } from "@/types/chat";
 
@@ -9,6 +10,10 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === "user";
+  const checklist =
+    !isUser && message.ui_block?.type === "show_component_checklist"
+      ? message.ui_block.payload
+      : null;
 
   return (
     <div
@@ -23,6 +28,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           isUser
             ? "bg-primary text-primary-foreground"
             : "border border-border bg-card text-card-foreground",
+          checklist && "max-w-full w-full",
         )}
       >
         {!isUser && (
@@ -31,6 +37,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </p>
         )}
         <p className="whitespace-pre-wrap">{message.content}</p>
+        {checklist ? <ShedComponentChecklist payload={checklist} /> : null}
       </div>
     </div>
   );

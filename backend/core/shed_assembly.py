@@ -49,13 +49,22 @@ def apply_modify_shed_assembly(
     if params["roof_pitch_deg"] < 0 or params["roof_pitch_deg"] >= 90:
         raise ValueError("roof_pitch_deg must be between 0 and 90")
 
+    roof_style = str(params.get("roof_style", "duo_pitch"))
+    pitch_deg = 0.0 if roof_style == "flat" else float(params["roof_pitch_deg"])
     macro_members = generate_shed_macro(
         assembly_id=assembly_id,
         x_spans=params["x_spans"],
         z_spans=params["z_spans"],
-        height=params["height"],
-        roof_pitch_deg=params["roof_pitch_deg"],
-        purlin_spacing=params["purlin_spacing"],
+        height=float(params["height"]),
+        roof_pitch_deg=pitch_deg,
+        roof_style=roof_style,
+        purlin_spacing=float(params["purlin_spacing"]),
+        girt_spacing_mm=float(params.get("girt_spacing_mm", 1500.0)),
+        use_truss=bool(params.get("use_truss", False)),
+        use_bracing=bool(params.get("use_bracing", False)),
+        use_sag_rods=bool(params.get("use_sag_rods", False)),
+        generate_wall_girts=bool(params.get("generate_wall_girts", True)),
+        generate_tie_beams=bool(params.get("generate_tie_beams", True)),
     )
     new_shed = macro_members_to_project_elements(macro_members)
     other = [element for element in elements if element.assembly_id != assembly_id]

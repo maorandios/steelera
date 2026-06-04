@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useState } from "react";
 import * as THREE from "three";
 
+import { CanvasErrorBoundary } from "@/components/viewport/CanvasErrorBoundary";
 import { SceneContent } from "@/components/viewport/SceneContent";
 import { useProjectStore } from "@/store/project-store";
 
@@ -79,37 +80,39 @@ export function Viewport3D() {
           </button>
         </div>
       )}
-      <Canvas
-        key={canvasKey}
-        className="!h-full !w-full touch-none"
-        style={{ width: "100%", height: "100%", background: "#0c0c0e" }}
-        dpr={[1, 1.5]}
-        gl={{
-          antialias: true,
-          alpha: false,
-          powerPreference: "high-performance",
-          preserveDrawingBuffer: false,
-        }}
-        onCreated={({ gl, scene }) => {
-          const bg = new THREE.Color("#0c0c0e");
-          scene.background = bg;
-          gl.setClearColor(bg, 1);
-          const canvas = gl.domElement;
-          const onLost = (event: Event) => {
-            event.preventDefault();
-            setWebglLost(true);
-          };
-          const onRestored = () => {
-            gl.resetState();
-            setWebglLost(false);
-          };
-          canvas.addEventListener("webglcontextlost", onLost);
-          canvas.addEventListener("webglcontextrestored", onRestored);
-        }}
-        onPointerMissed={() => clearSelection()}
-      >
-        <SceneContent projectElements={projectElements} />
-      </Canvas>
+      <CanvasErrorBoundary key={`boundary-${canvasKey}`} onReset={remountCanvas}>
+        <Canvas
+          key={canvasKey}
+          className="!h-full !w-full touch-none"
+          style={{ width: "100%", height: "100%", background: "#0c0c0e" }}
+          dpr={[1, 1.5]}
+          gl={{
+            antialias: true,
+            alpha: false,
+            powerPreference: "high-performance",
+            preserveDrawingBuffer: false,
+          }}
+          onCreated={({ gl, scene }) => {
+            const bg = new THREE.Color("#0c0c0e");
+            scene.background = bg;
+            gl.setClearColor(bg, 1);
+            const canvas = gl.domElement;
+            const onLost = (event: Event) => {
+              event.preventDefault();
+              setWebglLost(true);
+            };
+            const onRestored = () => {
+              gl.resetState();
+              setWebglLost(false);
+            };
+            canvas.addEventListener("webglcontextlost", onLost);
+            canvas.addEventListener("webglcontextrestored", onRestored);
+          }}
+          onPointerMissed={() => clearSelection()}
+        >
+          <SceneContent projectElements={projectElements} />
+        </Canvas>
+      </CanvasErrorBoundary>
     </div>
   );
 }

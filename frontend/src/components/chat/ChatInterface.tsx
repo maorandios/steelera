@@ -1,14 +1,13 @@
 "use client";
 
 import { Send, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatStatus } from "@/components/chat/ChatStatus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 
@@ -19,7 +18,7 @@ type ChatInterfaceProps = {
 export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
   const isDesktop = variant === "desktop";
   const [input, setInput] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const messages = useProjectStore((s) => s.messages);
   const statuses = useProjectStore((s) => s.statuses);
   const isLoading = useProjectStore((s) => s.isLoading);
@@ -27,9 +26,15 @@ export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
   const selectedElementId = useProjectStore((s) => s.selectedElementId);
   const clearSelection = useProjectStore((s) => s.clearSelection);
 
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, statuses, isLoading]);
+    scrollToBottom();
+  }, [messages, statuses, isLoading, scrollToBottom]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,22 +45,28 @@ export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <ScrollArea className="min-h-0 flex-1 px-3">
-        <div className="flex flex-col gap-3 py-3">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div
+        ref={scrollRef}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain px-3"
+        aria-label="Chat messages"
+      >
+        <div className="mt-auto flex shrink-0 flex-col gap-3 py-3">
           {messages.map((msg, i) => (
-            <ChatMessage key={`${msg.role}-${i}-${msg.content.slice(0, 12)}`} message={msg} />
+            <ChatMessage
+              key={`${msg.role}-${i}-${msg.content.slice(0, 12)}`}
+              message={msg}
+            />
           ))}
           <ChatStatus statuses={statuses} isLoading={isLoading} />
-          <div ref={bottomRef} />
         </div>
-      </ScrollArea>
+      </div>
 
       <form
         onSubmit={handleSubmit}
         suppressHydrationWarning
         className={cn(
-          "sticky bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur-md",
+          "shrink-0 border-t border-border bg-background",
           isDesktop
             ? "p-5 pb-5"
             : "p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",

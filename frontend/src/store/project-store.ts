@@ -6,6 +6,7 @@ import { postChat, postGenerateShed } from "@/lib/api";
 import {
   inferShedParamsFromElements,
   mergeShedParams,
+  SHED_ASSEMBLY_ID,
   shedParamsToApiPayload,
   type ShedAssemblyParams,
 } from "@/lib/shed-assembly";
@@ -15,7 +16,12 @@ import {
   structuralGridFromShedParams,
   type StructuralGridState,
 } from "@/lib/structural-grid";
-import type { ChatMessage } from "@/types/chat";
+import { checklistPayloadToShedParams } from "@/lib/shed-checklist";
+import type {
+  ChatMessage,
+  ShedChecklistPayload,
+  ShedChecklistSelections,
+} from "@/types/chat";
 import type {
   ElementAlignment,
   ElementRotation,
@@ -25,6 +31,15 @@ import { emptyProjectState, normalizeElement } from "@/types/project";
 
 /** Keep API payloads bounded so long chats stay responsive. */
 const API_MESSAGE_WINDOW = 24;
+
+function projectElementsFingerprint(elements: ProjectElementMm[]): string {
+  return elements
+    .map(
+      (element) =>
+        `${element.id}:${element.position_mm.x},${element.position_mm.y},${element.position_mm.z}:${element.length_mm}`,
+    )
+    .join("|");
+}
 
 function applyElementsFromApi(
   incoming: ProjectElementMm[],
@@ -53,6 +68,10 @@ interface ProjectStore {
   isMacroLoading: boolean;
   error: string | null;
   sendMessage: (content: string) => Promise<void>;
+  confirmShedChecklist: (
+    payload: ShedChecklistPayload,
+    selections: ShedChecklistSelections,
+  ) => Promise<void>;
   generateShedMacro: (params: ShedAssemblyParams) => Promise<void>;
   modifyShedAssembly: (partial: Partial<ShedAssemblyParams>) => Promise<void>;
   setProjectElements: (elements: ProjectElementMm[]) => void;
@@ -69,7 +88,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     {
       role: "assistant",
       content:
-        "Welcome to Steelera (Milestone 1). Describe members to add, e.g. “Add a 6 m box beam at the origin”.",
+        "Welcome to Steelera. Ask me to build a portal-frame shed (e.g. “Build a 10×40 m duo-pitch shed”) and I'll walk you through an interactive structural checklist before generating your 3D model.",
     },
   ],
   projectElements: emptyProjectState().projectElements,
@@ -93,6 +112,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }),
 
   clearError: () => set({ error: null }),
+
+  confirmShedChecklist: async (payload, selections) => {
+    const params = checklistPayloadToShedParams(payload, selections);
+    await get().generateShedMacro(params);
+    set((state) => ({
+      messages: [
+        ...state.messages,
+        {
+          role: "assistant",
+          content:
+            "Awesome! I've calculated the structural system and generated the blueprint with your selected configurations on the 3D canvas.",
+        },
+      ],
+    }));
+  },
 
   generateShedMacro: async (params) => {
     if (get().isMacroLoading || get().isLoading) return;
@@ -182,20 +216,48 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         projectState,
         selectedId,
       );
+      const priorElements = get().projectElements;
       const incoming =
         response.projectElements ??
         response.projectState?.projectElements ??
         [];
-      const elements = applyElementsFromApi(incoming, get().projectElements);
+      const isChecklist = Boolean(response.message.ui_block);
+      const elements =
+        !isChecklist && incoming.length > 0
+          ? applyElementsFromApi(incoming, priorElements)
+          : priorElements;
+      const geometryUpdated =
+        !isChecklist &&
+        incoming.length > 0 &&
+        projectElementsFingerprint(elements) !==
+          projectElementsFingerprint(priorElements);
       const selectedStillExists = elements.some(
         (element) => element.id === selectedId,
       );
-      const inferredShed = inferShedParamsFromElements(elements);
+      const inferredShed = elements.some(
+        (element) => element.assembly_id === SHED_ASSEMBLY_ID,
+      )
+        ? inferShedParamsFromElements(elements)
+        : null;
+      const nextShedParams = isChecklist
+        ? get().shedAssemblyParams
+        : geometryUpdated
+          ? (inferredShed ?? get().shedAssemblyParams)
+          : (inferredShed ?? get().shedAssemblyParams);
+
+      const assistantMessage: ChatMessage = {
+        role: "assistant",
+        content: response.message.content,
+        ui_block: response.message.ui_block ?? null,
+      };
 
       set({
-        messages: [...nextMessages, response.message],
+        messages: [...nextMessages, assistantMessage],
         projectElements: elements,
-        shedAssemblyParams: inferredShed ?? get().shedAssemblyParams,
+        shedAssemblyParams: nextShedParams,
+        structuralGrid: nextShedParams
+          ? structuralGridFromShedParams(nextShedParams)
+          : get().structuralGrid,
         statuses: [],
         isLoading: false,
         selectedElementId: selectedStillExists ? selectedId : null,

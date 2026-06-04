@@ -144,3 +144,5 @@ class ProjectElementMm(BaseModel):
     # Connection nodes in backend coords (Y = vertical / member height).
     # Vertical (axis y): bottom + top. Horizontal (axis x/z): start + end.
     nodes: dict[str, list[float]] = Field(default_factory=dict)
+    # Macro / assembly role (column, rafter, wall_girt, bracing, truss_chord, …).
+    element_type: str | None = None
