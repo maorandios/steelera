@@ -101,7 +101,15 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                         },
                         "x_bracing": {
                             "type": "boolean",
-                            "description": "Add cross (X) wall bracing per bay.",
+                            "description": "Cross (X) bracing on the LONG side walls (per bay).",
+                        },
+                        "gable_bracing": {
+                            "type": "boolean",
+                            "description": "Cross (X) bracing on the two GABLE END walls.",
+                        },
+                        "roof_bracing": {
+                            "type": "boolean",
+                            "description": "Cross (X) bracing in the ROOF planes (end bays).",
                         },
                         "sag_rods": {
                             "type": "boolean",
@@ -128,6 +136,8 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                         "use_truss",
                         "truss_type",
                         "x_bracing",
+                        "gable_bracing",
+                        "roof_bracing",
                         "sag_rods",
                         "generate_wall_girts",
                         "generate_tie_beams",

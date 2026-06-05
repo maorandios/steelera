@@ -59,6 +59,8 @@ export function checklistPayloadToShedParams(
     girt_spacing_mm: DEFAULT_SHED_PARAMS.girt_spacing_mm,
     use_truss: selections.use_truss,
     use_bracing: selections.use_bracing,
+    use_gable_bracing: selections.use_gable_bracing,
+    use_roof_bracing: selections.use_roof_bracing,
     use_sag_rods: selections.use_sag_rods,
     generate_wall_girts: selections.generate_wall_girts,
     generate_tie_beams: selections.generate_tie_beams,

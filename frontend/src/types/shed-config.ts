@@ -32,4 +32,6 @@ export interface ShedAssemblyConfig {
   purlin_spacing_mm: number;
   girt_spacing_mm: number;
   generate_tie_beams: boolean;
+  gable_bracing?: boolean;
+  roof_bracing?: boolean;
 }

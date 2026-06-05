@@ -21,6 +21,8 @@ export function shedConfigToAssemblyParams(
   const anyGirts = config.bays_configuration.some((b) => b.wall_girts);
 
   return {
+    use_gable_bracing: Boolean(config.gable_bracing),
+    use_roof_bracing: Boolean(config.roof_bracing),
     x_spans: x,
     z_spans: z,
     x_spans_input: formatSpansInput(x),
@@ -70,6 +72,8 @@ export function assemblyParamsToShedConfig(
     purlin_spacing_mm: params.purlin_spacing,
     girt_spacing_mm: params.girt_spacing_mm,
     generate_tie_beams: params.generate_tie_beams,
+    gable_bracing: params.use_gable_bracing,
+    roof_bracing: params.use_roof_bracing,
   };
 }
 

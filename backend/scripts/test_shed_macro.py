@@ -133,17 +133,21 @@ sags = _by_type(full, "sag_rod")
 assert len(braces) > 0
 assert len(sags) > 0
 
-# Sag rods at Z bay mid-span (5000), not on portal frame line 0.
+# Roof sag rods are at Z bay mid-span (5000), not on portal frame line 0.
 z_frames = cumulative_positions_from_spans(Z_SPANS)
 z_mid_first_bay = (z_frames[0] + z_frames[1]) / 2
-for s in sags:
+roof_sags = [s for s in sags if "-sag-roof-" in s["id"]]
+wall_sags = [s for s in sags if "-sag-wall-" in s["id"] or "-sag-gable-" in s["id"]]
+assert len(roof_sags) > 0
+assert len(wall_sags) > 0
+for s in roof_sags:
     z0, z1 = s["nodes"]["start"][2], s["nodes"]["end"][2]
     assert z0 == z1
     assert any(
         abs((z_frames[i] + z_frames[i + 1]) / 2 - z0) < 1.0
         for i in range(len(z_frames) - 1)
     )
-# Sag rods now wire between every adjacent purlin (1-2 rows/bay), so they are denser.
+# Roof + wall sag rods are denser, but bounded.
 assert len(sags) < 260, f"unexpected sag rod count ({len(sags)})"
 
 wide_bay = generate_shed_macro(

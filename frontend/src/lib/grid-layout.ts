@@ -23,6 +23,12 @@ export function gridLayoutToShedParams(
     girt_spacing_mm: 1500,
     use_truss: layout.structural_members.some((m) => m.element_type === "truss_web"),
     use_bracing: layout.structural_members.some((m) => m.element_type === "bracing"),
+    use_gable_bracing: layout.structural_members.some((m) =>
+      m.id.includes("-brace-end-"),
+    ),
+    use_roof_bracing: layout.structural_members.some((m) =>
+      m.id.includes("-brace-roof-"),
+    ),
     use_sag_rods: layout.structural_members.some((m) => m.element_type === "sag_rod"),
     generate_wall_girts: layout.structural_members.some(
       (m) => m.element_type === "wall_girt",

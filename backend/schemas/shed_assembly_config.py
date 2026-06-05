@@ -79,6 +79,8 @@ class ShedAssemblyConfig(BaseModel):
     purlin_spacing_mm: float = Field(1200.0, gt=0)
     girt_spacing_mm: float = Field(1500.0, gt=0)
     generate_tie_beams: bool = True
+    gable_bracing: bool = False
+    roof_bracing: bool = False
 
     @model_validator(mode="after")
     def validate_bay_indices(self) -> "ShedAssemblyConfig":

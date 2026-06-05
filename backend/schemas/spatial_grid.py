@@ -78,6 +78,8 @@ class GridDefinition(BaseModel):
     use_truss: bool = False
     truss_type: TrussTypeLiteral = "none"
     x_bracing: bool = False
+    gable_bracing: bool = False
+    roof_bracing: bool = False
     sag_rods: bool = False
     generate_wall_girts: bool = True
     generate_tie_beams: bool = True

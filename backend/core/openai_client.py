@@ -51,7 +51,9 @@ grid_definition fields:
 - roof_style = "duo_pitch" | "mono_pitch" | "flat".
 - mono_high_side = "A" or "B" (mono only): which side is the tall side. Default "B".
 - use_truss (bool) + truss_type ("pratt"|"warren"|"none"): trusses instead of solid rafters.
-- x_bracing (bool): cross bracing on the walls.
+- x_bracing (bool): cross (X) bracing on the LONG side walls.
+- gable_bracing (bool): cross (X) bracing on the two GABLE END walls.
+- roof_bracing (bool): cross (X) bracing in the ROOF planes (end bays).
 - sag_rods (bool): anti-sag rods between purlins.
 - generate_wall_girts (bool, default true), generate_tie_beams (bool, default true).
 - purlin_spacing_mm (default 1200), girt_spacing_mm (default 1500).
@@ -77,7 +79,7 @@ submit_structural_grid_layout({{
     "x_spans": [12000], "z_spans": [5000,5000,5000,5000,5000],
     "height_mm": 4500, "roof_pitch_deg": 12, "roof_style": "duo_pitch",
     "mono_high_side": "B", "use_truss": false, "truss_type": "none",
-    "x_bracing": false, "sag_rods": false,
+    "x_bracing": false, "gable_bracing": false, "roof_bracing": false, "sag_rods": false,
     "generate_wall_girts": true, "generate_tie_beams": true,
     "purlin_spacing_mm": 1200, "girt_spacing_mm": 1500
   }},

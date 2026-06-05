@@ -13,6 +13,8 @@ export interface GenerateShedParams {
   girt_spacing_mm: number;
   use_truss: boolean;
   use_bracing: boolean;
+  use_gable_bracing: boolean;
+  use_roof_bracing: boolean;
   use_sag_rods: boolean;
   generate_wall_girts: boolean;
   generate_tie_beams: boolean;

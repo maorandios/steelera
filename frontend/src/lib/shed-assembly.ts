@@ -20,6 +20,8 @@ export interface ShedAssemblyParams {
   girt_spacing_mm: number;
   use_truss: boolean;
   use_bracing: boolean;
+  use_gable_bracing: boolean;
+  use_roof_bracing: boolean;
   use_sag_rods: boolean;
   generate_wall_girts: boolean;
   generate_tie_beams: boolean;
@@ -39,6 +41,8 @@ export const DEFAULT_SHED_PARAMS: ShedAssemblyParams = {
   girt_spacing_mm: 1500,
   use_truss: false,
   use_bracing: false,
+  use_gable_bracing: false,
+  use_roof_bracing: false,
   use_sag_rods: false,
   generate_wall_girts: true,
   generate_tie_beams: true,
@@ -174,6 +178,8 @@ export function inferShedParamsFromElements(
     use_bracing:
       memberHasType(members, "bracing") ||
       members.some((m) => m.id.startsWith("shed-brace")),
+    use_gable_bracing: members.some((m) => m.id.includes("-brace-end-")),
+    use_roof_bracing: members.some((m) => m.id.includes("-brace-roof-")),
     use_sag_rods:
       memberHasType(members, "sag_rod") ||
       members.some((m) => m.id.startsWith("shed-sag")),
@@ -206,6 +212,8 @@ export function mergeShedParams(
     girt_spacing_mm: partial.girt_spacing_mm ?? current.girt_spacing_mm,
     use_truss: partial.use_truss ?? current.use_truss,
     use_bracing: partial.use_bracing ?? current.use_bracing,
+    use_gable_bracing: partial.use_gable_bracing ?? current.use_gable_bracing,
+    use_roof_bracing: partial.use_roof_bracing ?? current.use_roof_bracing,
     use_sag_rods: partial.use_sag_rods ?? current.use_sag_rods,
     generate_wall_girts:
       partial.generate_wall_girts ?? current.generate_wall_girts,
@@ -301,6 +309,8 @@ export function parseShedFormValues(
       girt_spacing_mm: girt,
       use_truss: form.useTruss,
       use_bracing: form.useBracing,
+      use_gable_bracing: DEFAULT_SHED_PARAMS.use_gable_bracing,
+      use_roof_bracing: DEFAULT_SHED_PARAMS.use_roof_bracing,
       use_sag_rods: form.useSagRods,
       generate_wall_girts: form.generateWallGirts,
       generate_tie_beams: DEFAULT_SHED_PARAMS.generate_tie_beams,
@@ -323,6 +333,8 @@ export function shedParamsToApiPayload(
     girt_spacing_mm: params.girt_spacing_mm,
     use_truss: params.use_truss,
     use_bracing: params.use_bracing,
+    use_gable_bracing: params.use_gable_bracing,
+    use_roof_bracing: params.use_roof_bracing,
     use_sag_rods: params.use_sag_rods,
     generate_wall_girts: params.generate_wall_girts,
     generate_tie_beams: params.generate_tie_beams,

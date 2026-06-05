@@ -47,6 +47,8 @@ def legacy_request_to_config(request: GenerateShedRequest) -> ShedAssemblyConfig
         purlin_spacing_mm=request.purlin_spacing,
         girt_spacing_mm=request.girt_spacing_mm,
         generate_tie_beams=request.generate_tie_beams,
+        gable_bracing=request.use_gable_bracing,
+        roof_bracing=request.use_roof_bracing,
     )
 
 

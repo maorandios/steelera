@@ -408,29 +408,136 @@ def _gable_girts(
     return out
 
 
-def _x_bracing(
-    grid: StructuralGridEngine, aid: str, wall: str, bay_i: int, z0: str, z1: str
+def _cross(
+    aid: str,
+    tag: str,
+    a_start: GridNodeReference,
+    a_end: GridNodeReference,
+    b_start: GridNodeReference,
+    b_end: GridNodeReference,
+    *,
+    profile: str = "L50x50",
 ) -> list[StructuralMember]:
-    top = _column_top_elev(grid, wall)
+    """A diagonal cross (two members) forming an X in any plane."""
     return [
         StructuralMember(
-            id=f"{aid}-brace-{wall}-b{bay_i}-a",
+            id=f"{aid}-brace-{tag}-a",
             element_type="bracing",
-            profile="L50x50",
-            start_node=_ref(wall, z0, "ground"),
-            end_node=_ref(wall, z1, top),
+            profile=profile,
+            start_node=a_start,
+            end_node=a_end,
         ),
         StructuralMember(
-            id=f"{aid}-brace-{wall}-b{bay_i}-b",
+            id=f"{aid}-brace-{tag}-b",
             element_type="bracing",
-            profile="L50x50",
-            start_node=_ref(wall, z0, top),
-            end_node=_ref(wall, z1, "ground"),
+            profile=profile,
+            start_node=b_start,
+            end_node=b_end,
         ),
     ]
 
 
-def _sag_rods(
+def _x_bracing(
+    grid: StructuralGridEngine, aid: str, wall: str, bay_i: int, z0: str, z1: str
+) -> list[StructuralMember]:
+    """Vertical cross in a LONG side wall plane (fixed X), across one Z-bay."""
+    top = _column_top_elev(grid, wall)
+    return _cross(
+        aid,
+        f"{wall}-b{bay_i}",
+        _ref(wall, z0, "ground"),
+        _ref(wall, z1, top),
+        _ref(wall, z0, top),
+        _ref(wall, z1, "ground"),
+    )
+
+
+def _end_wall_bracing(
+    grid: StructuralGridEngine, aid: str, post_spacing_mm: float
+) -> list[StructuralMember]:
+    """Vertical cross in EACH gable END wall plane (fixed Z), in ONE corner bay.
+
+    The X sits between two ADJACENT end-wall columns (corner column → first gable post),
+    not stretched across the whole width, and runs ground→eave as a clean rectangular
+    panel so it never collides with the sloped roof framing above the eave line.
+    """
+    xs = _roof_x_positions(grid, post_spacing_mm if post_spacing_mm > 0 else 3000.0)
+    if len(xs) < 2:
+        return []
+    xa, xb = xs[0], xs[1]
+    out: list[StructuralMember] = []
+    for z_label in (grid.z_labels[0], grid.z_labels[-1]):
+        out.extend(
+            _cross(
+                aid,
+                f"end-{z_label}",
+                _ref(xa, z_label, "ground"),
+                _ref(xb, z_label, "eave"),
+                _ref(xa, z_label, "eave"),
+                _ref(xb, z_label, "ground"),
+            )
+        )
+    return out
+
+
+def _roof_slope_segments(
+    grid: StructuralGridEngine, ridge_label: str | None
+) -> list[tuple[str, str, str, str]]:
+    """Roof planes as (x_start, elev_start, x_end, elev_end), mirroring the rafters."""
+    left, right = grid.x_labels[0], grid.x_labels[-1]
+    if (
+        grid.roof.is_mono
+        or len(grid.x_labels) == 1
+        or ridge_label in (None, left, right)
+    ):
+        start_elev = "eave" if _is_eave_line(grid, left) else "roof"
+        end_elev = "eave" if _is_eave_line(grid, right) else "roof"
+        return [(left, start_elev, right, end_elev)]
+    return [
+        (left, "eave", ridge_label, "apex"),
+        (ridge_label, "apex", right, "eave"),
+    ]
+
+
+def _roof_bracing(
+    grid: StructuralGridEngine,
+    aid: str,
+    bay_i: int,
+    z0: str,
+    z1: str,
+    ridge_label: str | None,
+) -> list[StructuralMember]:
+    """Cross bracing in the ROOF planes, tying adjacent rafters across one Z-bay.
+
+    One X per roof slope (each slope gets its own diagonal pair), in the plane of the
+    rafters so the diagonals follow the pitch exactly.
+    """
+    out: list[StructuralMember] = []
+    for s_i, (xa, ea, xb, eb) in enumerate(_roof_slope_segments(grid, ridge_label)):
+        out.extend(
+            _cross(
+                aid,
+                f"roof-s{s_i}-b{bay_i}",
+                _ref(xa, z0, ea),
+                _ref(xb, z1, eb),
+                _ref(xa, z1, ea),
+                _ref(xb, z0, eb),
+            )
+        )
+    return out
+
+
+def _bay_sag_rows(grid: StructuralGridEngine, z0: str, z1: str) -> list[str]:
+    """Mid-bay Z reference rows for sag rods (1 row, or 2 in wide bays)."""
+    from core.engineering_rules import sag_rod_bay_fractions
+
+    bay_len = grid.z_coords_mm[z1] - grid.z_coords_mm[z0]
+    fracs = sag_rod_bay_fractions(bay_len)
+    den = len(fracs) + 1  # 2 → "+1/2"; 3 → "+1/3","+2/3"
+    return [f"{z0}+{i}/{den}" for i in range(1, den)]
+
+
+def _roof_sag_rods(
     grid: StructuralGridEngine,
     aid: str,
     bay_i: int,
@@ -443,27 +550,101 @@ def _sag_rods(
     Uses the same X lines as the purlins so the rods actually wire purlin-to-purlin.
     Wide bays (> 5.5 m) get two rows at 1/3 and 2/3; otherwise a single mid-span row.
     """
-    from core.engineering_rules import sag_rod_bay_fractions
-
     xs = _roof_x_positions(grid, purlin_spacing_mm if purlin_spacing_mm > 0 else 1200.0)
     if len(xs) < 2:
         return []
-    bay_len = grid.z_coords_mm[z1] - grid.z_coords_mm[z0]
-    fracs = sag_rod_bay_fractions(bay_len)
-    den = len(fracs) + 1  # 2 → "+1/2"; 3 → "+1/3","+2/3"
-    rows = [f"{z0}+{i}/{den}" for i in range(1, den)]
     out: list[StructuralMember] = []
-    for r, zr in enumerate(rows):
+    for r, zr in enumerate(_bay_sag_rows(grid, z0, z1)):
         for k, (left, right) in enumerate(zip(xs, xs[1:])):
             out.append(
                 StructuralMember(
-                    id=f"{aid}-sag-b{bay_i}-r{r}-{k}",
+                    id=f"{aid}-sag-roof-b{bay_i}-r{r}-{k}",
                     element_type="sag_rod",
                     profile="ROD12",
                     start_node=_ref(left, zr, "roof"),
                     end_node=_ref(right, zr, "roof"),
                 )
             )
+    return out
+
+
+def _long_wall_sag_rods(
+    grid: StructuralGridEngine,
+    aid: str,
+    bay_i: int,
+    z0: str,
+    z1: str,
+    girt_levels: list[float],
+) -> list[StructuralMember]:
+    """Anti-sag rods on the LONG side walls, wiring adjacent girts vertically.
+
+    One vertical rod between each pair of adjacent girt levels at 1-2 mid-bay Z rows.
+    """
+    if len(girt_levels) < 2:
+        return []
+    eave_y = grid.roof.eave_y
+    walls = (grid.x_labels[0], grid.x_labels[-1])
+    rows = _bay_sag_rows(grid, z0, z1)
+    out: list[StructuralMember] = []
+    for wall in walls:
+        top_y = _roof_elev_at(grid, grid.x_coords_mm[wall])
+        levels = [y for y in girt_levels if y <= top_y + 1.0]
+        for r, zr in enumerate(rows):
+            for li, (y_lo, y_hi) in enumerate(zip(levels, levels[1:])):
+                e_lo, off_lo = _girt_nodes_at_y(y_lo, eave_y)
+                e_hi, off_hi = _girt_nodes_at_y(y_hi, eave_y)
+                out.append(
+                    StructuralMember(
+                        id=f"{aid}-sag-wall-{wall}-b{bay_i}-r{r}-{li}",
+                        element_type="sag_rod",
+                        profile="ROD12",
+                        start_node=_ref(wall, zr, e_lo, off_lo),
+                        end_node=_ref(wall, zr, e_hi, off_hi),
+                    )
+                )
+    return out
+
+
+def _gable_wall_sag_rods(
+    grid: StructuralGridEngine,
+    aid: str,
+    girt_levels: list[float],
+    post_spacing_mm: float,
+) -> list[StructuralMember]:
+    """Anti-sag rods on the GABLE end walls, wiring adjacent girts vertically.
+
+    One vertical rod per X-bay (between adjacent end-wall columns/posts) at mid-span,
+    connecting each pair of adjacent girt levels that fit under the roof at that bay.
+    """
+    if len(girt_levels) < 2:
+        return []
+    xs = _roof_x_positions(grid, post_spacing_mm if post_spacing_mm > 0 else 3000.0)
+    if len(xs) < 2:
+        return []
+    eave_y = grid.roof.eave_y
+    roof_at = {x: _roof_elev_at(grid, grid.resolve_x_mm(x)) for x in xs}
+    out: list[StructuralMember] = []
+    for z_label in (grid.z_labels[0], grid.z_labels[-1]):
+        for xi, (left, right) in enumerate(zip(xs, xs[1:])):
+            x_mid_off = (grid.resolve_x_mm(right) - grid.resolve_x_mm(left)) / 2.0
+            bay_top = min(roof_at[left], roof_at[right])
+            levels = [y for y in girt_levels if y <= bay_top + 1.0]
+            for li, (y_lo, y_hi) in enumerate(zip(levels, levels[1:])):
+                e_lo, off_lo = _girt_nodes_at_y(y_lo, eave_y)
+                e_hi, off_hi = _girt_nodes_at_y(y_hi, eave_y)
+                s_off = dict(off_lo or {})
+                e_off = dict(off_hi or {})
+                s_off["x"] = x_mid_off
+                e_off["x"] = x_mid_off
+                out.append(
+                    StructuralMember(
+                        id=f"{aid}-sag-gable-{z_label}-x{xi}-{li}",
+                        element_type="sag_rod",
+                        profile="ROD12",
+                        start_node=_ref(left, z_label, e_lo, s_off),
+                        end_node=_ref(left, z_label, e_hi, e_off),
+                    )
+                )
     return out
 
 
@@ -516,6 +697,8 @@ def members_from_grid_definition(
         purlin_spacing_mm=float(getattr(grid_def, "purlin_spacing_mm", 1200.0)),
         girt_spacing_mm=float(getattr(grid_def, "girt_spacing_mm", 1500.0)),
         generate_tie_beams=bool(getattr(grid_def, "generate_tie_beams", True)),
+        gable_bracing=bool(getattr(grid_def, "gable_bracing", False)),
+        roof_bracing=bool(getattr(grid_def, "roof_bracing", False)),
     )
     return members_from_shed_config(
         config, generate_gable=bool(getattr(grid_def, "generate_gable_framing", True))
@@ -571,29 +754,54 @@ def members_from_shed_config(
     gable_post_spacing = min(cfg.girt_spacing_mm * 2, max(grid.total_width_mm / 4, 1.0))
 
     # Wall infill: one shared girt level schedule wraps all walls at the same EL.
-    if any(cfg.bay_at(i).wall_girts for i in range(len(grid.z_labels) - 1)):
-        girt_levels = _global_girt_levels(
-            grid.roof.eave_y,
-            grid.roof.ridge_y,
-            cfg.girt_spacing_mm,
-        )
+    has_wall_girts = any(
+        cfg.bay_at(i).wall_girts for i in range(len(grid.z_labels) - 1)
+    )
+    girt_levels = _global_girt_levels(
+        grid.roof.eave_y,
+        grid.roof.ridge_y,
+        cfg.girt_spacing_mm,
+    )
+    if has_wall_girts:
         members.extend(_side_wall_girts(grid, aid, girt_levels))
         if generate_gable:
             members.extend(_gable_girts(grid, aid, girt_levels, gable_post_spacing))
     if generate_gable:
         members.extend(_gable_posts(grid, aid, gable_post_spacing, trussed_frames))
 
-    # Per-bay bracing and sag rods.
-    for bay_i in range(len(grid.z_labels) - 1):
+    # Per-bay side-wall bracing and sag rods.
+    n_bays = len(grid.z_labels) - 1
+    roof_bracing = bool(getattr(cfg, "roof_bracing", False))
+    # Standard practice braces only the END bays for the roof diaphragm.
+    roof_brace_bays = {0, n_bays - 1} if n_bays > 0 else set()
+    for bay_i in range(n_bays):
         bay = cfg.bay_at(bay_i)
         z0, z1 = grid.z_labels[bay_i], grid.z_labels[bay_i + 1]
         if bay.x_bracing_left_wall:
             members.extend(_x_bracing(grid, aid, grid.x_labels[0], bay_i, z0, z1))
         if bay.x_bracing_right_wall:
             members.extend(_x_bracing(grid, aid, grid.x_labels[-1], bay_i, z0, z1))
+        if roof_bracing and bay_i in roof_brace_bays:
+            members.extend(_roof_bracing(grid, aid, bay_i, z0, z1, ridge))
         if bay.sag_rods:
+            # Roof rods between purlins; long-wall rods between girts per Z-bay.
             members.extend(
-                _sag_rods(grid, aid, bay_i, z0, z1, purlin_spacing_mm=cfg.purlin_spacing_mm)
+                _roof_sag_rods(
+                    grid, aid, bay_i, z0, z1, purlin_spacing_mm=cfg.purlin_spacing_mm
+                )
             )
+            if has_wall_girts and bay.wall_girts:
+                members.extend(
+                    _long_wall_sag_rods(grid, aid, bay_i, z0, z1, girt_levels)
+                )
+
+    any_sag_rods = any(cfg.bay_at(i).sag_rods for i in range(n_bays))
+    if generate_gable and has_wall_girts and any_sag_rods:
+        members.extend(_gable_wall_sag_rods(grid, aid, girt_levels, gable_post_spacing))
+
+    # End-wall (gable) bracing — one corner-bay panel per end wall, between two
+    # adjacent end-wall columns (aligned to the gable post lines).
+    if bool(getattr(cfg, "gable_bracing", False)):
+        members.extend(_end_wall_bracing(grid, aid, gable_post_spacing))
 
     return members

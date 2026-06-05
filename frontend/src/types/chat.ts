@@ -16,6 +16,8 @@ export type ShedChecklistPayload = {
 
 export type ShedChecklistSelections = {
   use_bracing: boolean;
+  use_gable_bracing: boolean;
+  use_roof_bracing: boolean;
   generate_wall_girts: boolean;
   generate_tie_beams: boolean;
   use_sag_rods: boolean;

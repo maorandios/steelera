@@ -75,6 +75,38 @@ def _place_secondary_steel(
     et = member.element_type
     profile = member.profile
 
+    # Vertical sag rods belong to a WALL (they tie girts); seat them on the girt plane.
+    if et == "sag_rod":
+        dx = abs(end[0] - start[0])
+        dy = abs(end[1] - start[1])
+        dz = abs(end[2] - start[2])
+        if dy >= dx and dy >= dz:
+            if start[0] <= 1e-6 or start[0] >= grid.total_width_mm - 1e-6:
+                x_out = wall_girt_center_outside_x(
+                    start[0],
+                    grid.total_width_mm,
+                    column_profile=_COLUMN_PROFILE,
+                    girt_profile="C150",
+                )
+                return (
+                    (x_out, start[1], start[2]),
+                    (x_out, end[1], end[2]),
+                    [0.0, 0.0, 0.0],
+                    member.alignment,
+                )
+            z_out = gable_girt_center_outside_z(
+                start[2],
+                grid.total_length_mm,
+                column_profile=_COLUMN_PROFILE,
+                girt_profile="C150",
+            )
+            return (
+                (start[0], start[1], z_out),
+                (end[0], end[1], z_out),
+                [0.0, 0.0, 0.0],
+                member.alignment,
+            )
+
     if et in ("purlin", "sag_rod"):
         pitch_rad, pitch_sign = rafter_pitch_at_x(
             start[0],

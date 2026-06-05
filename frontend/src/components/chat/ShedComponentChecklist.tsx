@@ -11,6 +11,8 @@ import type { ShedChecklistPayload, ShedChecklistSelections } from "@/types/chat
 
 const DEFAULT_SELECTIONS: ShedChecklistSelections = {
   use_bracing: false,
+  use_gable_bracing: false,
+  use_roof_bracing: false,
   use_truss: false,
   use_sag_rods: false,
   generate_wall_girts: true,
@@ -26,8 +28,18 @@ type ChecklistOption = {
 const OPTIONS: ChecklistOption[] = [
   {
     id: "use_bracing",
-    label: "Structural Wind Bracing (X-Bracing)",
-    description: "Diagonal bracing on end wall bays for lateral stability.",
+    label: "Side Wall X-Bracing",
+    description: "Diagonal cross bracing on the two long side walls.",
+  },
+  {
+    id: "use_gable_bracing",
+    label: "End Wall X-Bracing",
+    description: "Diagonal cross bracing on the two gable end walls.",
+  },
+  {
+    id: "use_roof_bracing",
+    label: "Roof Plane X-Bracing",
+    description: "Diagonal bracing across the roof slopes (end bays).",
   },
   {
     id: "generate_wall_girts",
