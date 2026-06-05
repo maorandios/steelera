@@ -5,7 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.geometry_engine import generate_shed_macro, macro_members_to_project_elements
+from core.geometry_engine import macro_members_to_project_elements
+from core.shed_geometry import generate_shed_macro
 from core.shed_assembly import apply_modify_shed_assembly
 import json
 

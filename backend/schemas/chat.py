@@ -65,3 +65,11 @@ class ChatResponse(BaseModel):
     statuses: list[str] = Field(default_factory=list)
     projectElements: list[ProjectElementMm] = Field(default_factory=list)
     projectState: ProjectState | None = None
+    structural_grid_layout: dict | None = Field(
+        None,
+        description="Grid + structural_members from submit_structural_grid_layout; frontend runs macro.",
+    )
+    shed_assembly_config: dict | None = Field(
+        None,
+        description="Deprecated alias; use structural_grid_layout.",
+    )

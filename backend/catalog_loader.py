@@ -41,6 +41,13 @@ EUROPEAN_PROFILES: dict[str, CatalogProfile] = {
         "tw": 6.5,
         "tf": 10.0,
     },
+    "C150": {
+        "family": "C",
+        "h": 150.0,
+        "b": 75.0,
+        "tw": 4.0,
+        "tf": 12.0,
+    },
 }
 
 CATALOG_PROFILE_NAMES: tuple[str, ...] = tuple(EUROPEAN_PROFILES.keys())

@@ -304,7 +304,8 @@ def apply_macro_action(
     }
 
 
-CATALOG_MACRO_PROFILES = frozenset(CATALOG_PROFILE_NAMES)
+# Only primary I/H sections are extruded as I-beams; C150 etc. use C-channel path.
+CATALOG_MACRO_PROFILES = frozenset({"IPE200", "IPE300", "HEA200"})
 PURLIN_PROFILE = "C150"
 PURLIN_SHAPE = "C-channel"
 PURLIN_SECTION_MM = {"h": 150.0, "b": 75.0, "tw": 4.0, "tf": 12.0}
@@ -454,9 +455,6 @@ def macro_members_to_project_elements(
     macro_members: list[dict[str, Any]],
 ) -> list[ProjectElementMm]:
     return [macro_member_to_project_element(member) for member in macro_members]
-
-
-from core.shed_geometry import generate_shed_macro  # noqa: E402
 
 
 def parse_add_structural_element_batch(

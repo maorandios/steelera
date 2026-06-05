@@ -5,10 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from core.geometry_engine import (
-    generate_shed_macro,
-    macro_members_to_project_elements,
-)
+from core.geometry_engine import macro_members_to_project_elements
+from core.shed_geometry import generate_shed_macro
 from core.project_session import get_shed_params, set_shed_params
 from core.shed_params import (
     SHED_ASSEMBLY_ID,

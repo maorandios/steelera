@@ -64,7 +64,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     )
 
     try:
-        content, statuses, project_state, ui_block = run_chat_turn(
+        content, statuses, project_state, ui_block, shed_config = run_chat_turn(
             request.messages,
             state,
             spatial_context=spatial_context,
@@ -87,4 +87,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
         statuses=statuses,
         projectElements=elements,
         projectState=project_state,
+        structural_grid_layout=shed_config,
+        shed_assembly_config=shed_config,
     )

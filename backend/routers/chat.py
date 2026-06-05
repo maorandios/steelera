@@ -12,9 +12,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=400, detail="messages must not be empty")
 
     try:
-        content, statuses, project_state, ui_block = run_chat_turn(
+        content, statuses, project_state, ui_block, shed_config = run_chat_turn(
             request.messages,
             request.resolved_state(),
+            target_element_id=request.target_element_id,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -30,4 +31,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
         statuses=statuses,
         projectElements=[e.model_dump() for e in project_state.projectElements],
         projectState=project_state,
+        structural_grid_layout=shed_config,
+        shed_assembly_config=shed_config,
     )

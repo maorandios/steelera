@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Any
 
 from openai import OpenAI
@@ -7,109 +8,96 @@ from pydantic import ValidationError
 
 from catalog_loader import list_profiles
 from core.env_loader import load_env
-from core.geometry_engine import apply_macro_action, parse_add_structural_element
-from core.shed_assembly import apply_modify_shed_assembly
-from core.shed_params import (
-    SHED_ASSEMBLY_ID,
-    format_shed_assembly_context,
-    shed_members_in,
-)
+from core.geometry_engine import apply_macro_action
 from core.spatial_context import format_project_context
-from schemas.chat import ChatMessage, ChatUiBlock, ShedChecklistPayload
+from core.grid_layout_utils import ensure_layout_members
+from core.member_resolver import layout_to_macro_members
+from core.operation_expander import expand_design
+from core.structural_renderer import layout_to_api_dict
+from core.structural_validator import validate_macro_members
+from schemas.chat import ChatMessage, ChatUiBlock
 from schemas.elements import ProjectElementMm
 from schemas.project import ProjectState
-from tools.element_tool import ELEMENT_TOOLS
+from schemas.spatial_grid import StructuralGridLayout
+from schemas.structural_ops import StructuralDesign
+from tools.element_tool import CHAT_TOOLS
 
 load_env()
 
 MODEL = "gpt-4o-mini"
-MAX_TURNS = 5
+MAX_TURNS = 6
 
 _CATALOG_SUMMARY = ", ".join(
     f"{p['profile_name']} (h={p['h_mm']} b={p['b_mm']} tw={p['tw_mm']} tf={p['tf_mm']} mm)"
     for p in list_profiles()
 )
 
-BASE_SYSTEM_PROMPT = f"""You are Steelera AI for parametric structural steel design.
+BASE_SYSTEM_PROMPT = f"""You are a Structural Engineering Consultant for Steelera. You do the ENGINEERING
+judgement; the Python engine does ALL geometry. You NEVER author individual members, never compute
+coordinates, lengths, or angles, and never do trigonometry.
 
-When the user asks to add or build members, call add_structural_element once per member.
+HOW TO BUILD A SHED (mandatory):
+Call `submit_structural_grid_layout` with a `grid_definition` (parameters + capability toggles) and
+`structural_members: []` (ALWAYS EMPTY). Python then generates the COMPLETE, geometrically perfect
+shed for you: columns, rafters or trusses, eave/ridge tie beams, roof purlins (seated on rafters),
+wall girts on both side walls, gable posts + gable girts on the end walls, plus bracing and sag rods
+when toggled on. You only choose the parameters — do not list members yourself.
 
-Required on every call:
-- shape_type, length, width, position, profile_name, axis, anchor_element_id, anchor_point
+grid_definition fields:
+- x_spans[]  = bay widths across the WIDTH (X), in mm. Sum = total width.
+- z_spans[]  = portal-frame bay spacings along the LENGTH (Z), in mm. Sum = total length.
+- height_mm  = eave height (mm).
+- roof_pitch_deg = roof pitch in degrees (0 for flat).
+- roof_style = "duo_pitch" | "mono_pitch" | "flat".
+- mono_high_side = "A" or "B" (mono only): which side is the tall side. Default "B".
+- use_truss (bool) + truss_type ("pratt"|"warren"|"none"): trusses instead of solid rafters.
+- x_bracing (bool): cross bracing on the walls.
+- sag_rods (bool): anti-sag rods between purlins.
+- generate_wall_girts (bool, default true), generate_tie_beams (bool, default true).
+- purlin_spacing_mm (default 1200), girt_spacing_mm (default 1500).
 
-Section definition:
-1) **Catalog** — profile_name = IPE200 | IPE300 | HEA200 (shape_type I-beam). Set width to {{value:0, unit:"mm"}}.
-   Available: {_CATALOG_SUMMARY}
-2) **Parametric** — profile_name = NONE and set width.
+Choosing spans:
+- A single clear-span width → one x_span. e.g. 12 m wide → x_spans:[12000].
+- "N bays" along the length → N z_spans. e.g. 25 m long in 5 bays → z_spans:[5000,5000,5000,5000,5000].
+- If the user gives only total length + bay count, divide evenly.
 
-Spatial anchoring (relative placement):
-- When placing relative to existing steel, set anchor_element_id to the target id from CURRENT MODEL
-  and anchor_point to TOP | BOTTOM | START | END | CENTER. Set position to {{0,0,0}} (ignored).
-- CENTER = midpoint of target member (column on center of beam). END = far tip only.
-- TOP = top face (e.g. beam on column top). BOTTOM = base. START/END = along member length axis.
-- When anchor_element_id is NONE, use absolute position coordinates.
+Defaults when the user is silent: duo_pitch, 10° pitch, generate_wall_girts true, generate_tie_beams
+true, truss off, bracing off, sag rods off. Always set EVERY field in the schema (it is strict).
 
-Axis: y = vertical column, x = horizontal beam along X, z = along Z.
+MODIFICATIONS: to resize or toggle a feature (add bracing, more bays, change pitch, etc.), call
+`submit_structural_grid_layout` again with the FULL updated grid_definition and structural_members:[].
+Each submission rebuilds the shed.
 
-Portal frame shed assembly (shed_1) — NEW shed workflow:
-- When the user wants to CREATE, BUILD, or START a new portal-frame shed, you MUST call
-  show_component_checklist (not modify_shed_assembly, not add_structural_element).
-- Extract width_mm, length_mm, height, roof_style, roof_pitch_deg from their message (mm).
-- After calling show_component_checklist, reply briefly that they can pick options in the checklist below.
+For a single-member duplicate/delete on an existing model, use apply_macro_action with the id.
 
-Portal frame shed — MODIFY existing shed (CRITICAL):
-- You are FORBIDDEN from answering text-only when the user requests a structural geometric change,
-  layout change, or shed parameter change. You MUST call modify_shed_assembly in the same turn
-  (it regenerates the full macro — equivalent to generate_shed_macro on the server).
-- Read ACTIVE SHED ASSEMBLY for current x_spans / z_spans. When bays change, pass the FULL new
-  comma-separated span string (not a delta). Example: z_spans were "5000, 5000, 5000" and user
-  adds one 5000 mm bay along +Z → z_spans: "5000, 5000, 5000, 5000".
-- Pass null for every field that does not change (strict tool schema).
-- Examples: roof pitch 15° → roof_pitch_deg: 15; mono roof → roof_style: "mono_pitch";
-  add X-bracing → use_bracing: true.
-- Do NOT add individual shed members with add_structural_element when updating the shed macro.
-- NEVER say the shed was updated, resized, or that a bay was added unless modify_shed_assembly
-  returned success:true in the tool result.
+EXAMPLE — "12 m wide, 25 m long, 5 bays, 4.5 m eave, 12° duo-pitch, with purlins and girts":
+submit_structural_grid_layout({{
+  "assembly_id": "shed_1", "replace_existing": true,
+  "grid_definition": {{
+    "x_spans": [12000], "z_spans": [5000,5000,5000,5000,5000],
+    "height_mm": 4500, "roof_pitch_deg": 12, "roof_style": "duo_pitch",
+    "mono_high_side": "B", "use_truss": false, "truss_type": "none",
+    "x_bracing": false, "sag_rods": false,
+    "generate_wall_girts": true, "generate_tie_beams": true,
+    "purlin_spacing_mm": 1200, "girt_spacing_mm": 1500
+  }},
+  "structural_members": []
+}})
 
-Macro actions (duplicate / array / delete):
-- When the user asks to copy, duplicate, array, multiply, or delete a member, call apply_macro_action — NOT multiple add_structural_element calls.
-- ARRAY: target_element_id, count (copies to create, excluding original), spacing {{value, unit}}, axis = world offset direction (right/+X = X, up/+Y = Y, forward/+Z = Z).
-- DELETE: target_element_id, action_type DELETE (set count/spacing/axis to null).
-- If the user selected an element, use that id as target_element_id when they say "this" or "it".
+After the tool succeeds, briefly summarise what was built (dimensions, roof, bays, and which systems
+are included). Never claim a model was built without a successful submit_structural_grid_layout call.
 
-Units: m, mm, ft, in, or auto (value<20 => meters, value>=20 => mm).
-
-When adding to an existing model, APPEND new members — do not replace unless the user asks to rebuild.
-Do not invent geometry in prose only—use the tool for every structural change.
-NEVER claim members were added, duplicated, deleted, or that the shed changed unless a tool call
-returned success:true.
-For general questions without structure, respond without tools.
+Profiles: {_CATALOG_SUMMARY}. Units: mm.
 """
 
 
-def _selection_context(
-    target_element_id: str | None,
-    project_elements: list[ProjectElementMm] | None = None,
-) -> str:
+def _selection_context(target_element_id: str | None) -> str:
     if not target_element_id:
         return ""
-    extra = (
-        f"\n\n---\n"
-        f"The user has currently selected element '{target_element_id}'. "
-        f"If they ask to copy, array, multiply, or delete 'this' or 'it', "
-        f"call apply_macro_action with this target_element_id."
+    return (
+        f"\n\n---\nSelected element: '{target_element_id}'. "
+        f"For copy/array/delete, call apply_macro_action with this id."
     )
-    if project_elements:
-        selected = next(
-            (element for element in project_elements if element.id == target_element_id),
-            None,
-        )
-        if selected and selected.assembly_id == SHED_ASSEMBLY_ID:
-            extra += (
-                f" This member belongs to assembly '{SHED_ASSEMBLY_ID}'. "
-                f"If they ask to resize or change the shed, call modify_shed_assembly."
-            )
-    return extra
 
 
 def build_system_prompt(
@@ -117,11 +105,9 @@ def build_system_prompt(
     *,
     target_element_id: str | None = None,
 ) -> str:
-    """Base prompt + readable inventory of already-built members."""
     context = format_project_context(project_elements)
-    shed_ctx = format_shed_assembly_context(project_elements)
-    selection = _selection_context(target_element_id, project_elements)
-    return f"{BASE_SYSTEM_PROMPT}\n\n---\n{context}{shed_ctx}{selection}"
+    selection = _selection_context(target_element_id)
+    return f"{BASE_SYSTEM_PROMPT}\n\n---\n{context}{selection}"
 
 
 def _client() -> OpenAI:
@@ -135,41 +121,6 @@ def _messages_to_openai(messages: list[ChatMessage]) -> list[dict[str, Any]]:
     return [{"role": m.role, "content": m.content} for m in messages]
 
 
-def _execute_add_element(
-    arguments: str,
-    elements: list[ProjectElementMm],
-    replace_next: bool,
-) -> tuple[list[ProjectElementMm], dict[str, Any], bool]:
-    try:
-        args = json.loads(arguments)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid tool arguments JSON: {e}") from e
-
-    working = [] if replace_next else list(elements)
-    index = len(working)
-    element = parse_add_structural_element(args, index, existing_elements=working)
-    working.append(element)
-
-    summary: dict[str, Any] = {
-        "success": True,
-        "element_id": element.id,
-        "total_elements": len(working),
-        "length_mm": element.length_mm,
-        "position_mm": element.position_mm,
-        "section_source": element.section_source,
-    }
-    if element.anchor_element_id:
-        summary["anchored_to"] = element.anchor_element_id
-        summary["anchor_point"] = element.anchor_point
-    if element.profile_name and element.section_mm:
-        summary["profile_name"] = element.profile_name
-        summary["section_mm"] = element.section_mm.model_dump()
-    else:
-        summary["width_mm"] = element.width_mm
-
-    return working, summary, False
-
-
 def _is_macro_request(text: str) -> bool:
     t = text.lower()
     return any(
@@ -178,191 +129,51 @@ def _is_macro_request(text: str) -> bool:
     )
 
 
-def _is_new_shed_request(text: str) -> bool:
+def _is_structural_layout_request(text: str) -> bool:
     t = text.lower()
-    build_words = (
-        "build",
-        "create",
-        "design",
-        "generate",
-        "make",
-        "start",
-        "new",
-        "need",
-        "want",
-        "give me",
-        "draw",
+    if _is_macro_request(text):
+        return False
+    keywords = (
+        "build", "create", "design", "generate", "make", "shed", "portal",
+        "frame", "warehouse", "structure", "bracing", "purlin", "girt",
+        "truss", "rafter", "column", "bay", "roof", "add", "enable",
+        "resize", "change", "update", "remove", "disable", "wider", "longer",
+        "מחסן", "מסגרת", "גג", "פורטל", "קורה", "עמוד",
     )
-    shed_words = (
-        "shed",
-        "portal frame",
-        "portal-frame",
-        "warehouse",
-        "building",
-        "structure",
-        "hangar",
-        "barn",
-    )
-    return any(w in t for w in build_words) and any(w in t for w in shed_words)
-
-
-def _is_layout_modify_request(text: str) -> bool:
-    """Bay / span / extent changes without requiring the word 'shed'."""
-    t = text.lower()
-    layout_words = (
-        "bay",
-        "bays",
-        "span",
-        "spans",
-        "frame",
-        "frames",
-        "spacing",
-        "grid",
-        "right",
-        "left",
-        "length",
-        "width",
-        "extend",
-        "extension",
-    )
-    action_words = (
-        "add",
-        "remove",
-        "delete",
-        "another",
-        "extra",
-        "more",
-        "extend",
-        "shorten",
-        "widen",
-        "lengthen",
-    )
-    return any(w in t for w in layout_words) and any(w in t for w in action_words)
-
-
-def _is_shed_param_request(text: str) -> bool:
-    """Pitch, roof form, height, toggles — often without 'shed'."""
-    t = text.lower()
-    param_words = (
-        "pitch",
-        "roof",
-        "eave",
-        "height",
-        "truss",
-        "trusses",
-        "bracing",
-        "girt",
-        "girts",
-        "sag",
-        "mono",
-        "duo",
-        "flat",
-        "purlin",
-    )
-    change_words = (
-        "raise",
-        "lower",
-        "change",
-        "set",
-        "make",
-        "update",
-        "increase",
-        "decrease",
-        "to ",
-        "enable",
-        "disable",
-        "turn on",
-        "turn off",
-        "add",
-        "remove",
-        "degrees",
-        "degree",
-        "°",
-    )
-    return any(w in t for w in param_words) and any(w in t for w in change_words)
-
-
-def _is_shed_modify_request(text: str) -> bool:
-    t = text.lower()
-    if _is_layout_modify_request(text) or _is_shed_param_request(text):
+    if any(w in t for w in keywords):
         return True
-    shed_words = (
-        "shed",
-        "portal frame",
-        "portal-frame",
-        "warehouse",
-        "building",
-        "hangar",
+    # e.g. 10x30m, 10×30 m, 4000mm
+    return bool(
+        re.search(r"\d+\s*[x×]\s*\d+", t)
+        or re.search(r"\d+\s*(?:m|mm)\b", t)
     )
-    change_words = (
-        "higher",
-        "taller",
-        "wider",
-        "longer",
-        "shorter",
-        "lower",
-        "resize",
-        "change",
-        "update",
-        "increase",
-        "decrease",
-        "make the",
-        "add",
-        "enable",
-        "disable",
-        "turn on",
-        "turn off",
-        "meter",
-        "metre",
-        "mm",
-    )
-    return any(w in t for w in shed_words) and any(w in t for w in change_words)
 
 
-def _requires_structural_tool(
-    text: str,
-    *,
-    has_shed: bool,
-    has_elements: bool,
-) -> bool:
-    """User intent needs a tool call — not a prose-only reply."""
-    if _is_new_shed_request(text) and not _is_shed_modify_request(text):
-        return True
-    if has_shed and _is_shed_modify_request(text):
-        return True
-    if has_elements and _is_macro_request(text):
-        return True
-    return False
-
-
-def _forced_tool_for_turn(
-    *,
-    force_checklist: bool,
-    force_shed: bool,
-    force_macro: bool,
-    tools_used: bool,
-    structural_required: bool,
-) -> str | None:
-    if force_checklist and not tools_used:
-        return "show_component_checklist"
-    if force_shed and not tools_used:
-        return "modify_shed_assembly"
-    if force_macro and not tools_used:
-        return "apply_macro_action"
-    if structural_required and not tools_used:
-        return "modify_shed_assembly"
-    return None
-
-
-def _execute_show_component_checklist(arguments: str) -> tuple[dict[str, Any], ChatUiBlock]:
+def _parse_grid_layout(arguments: str) -> StructuralGridLayout:
     try:
-        args = json.loads(arguments or "{}")
+        raw = json.loads(arguments or "{}")
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid tool arguments JSON: {e}") from e
+    layout = StructuralGridLayout.model_validate(raw)
+    # Python OWNS the geometry: ignore any AI-authored members and always rebuild
+    # the complete, correct shed from the parametric grid_definition + toggles.
+    layout = layout.model_copy(update={"structural_members": []})
+    return ensure_layout_members(layout)
 
-    payload = ShedChecklistPayload.model_validate(args)
-    ui_block = ChatUiBlock(type="show_component_checklist", payload=payload)
-    return {"success": True, "checklist": True}, ui_block
+
+def _design_to_validated_layout(
+    arguments: str,
+) -> tuple[StructuralGridLayout, list[str]]:
+    """Expand operations → layout, resolve to mm, and run structural validation."""
+    try:
+        raw = json.loads(arguments or "{}")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid tool arguments JSON: {e}") from e
+    design = StructuralDesign.model_validate(raw)
+    layout = expand_design(design)
+    macro_members = layout_to_macro_members(layout)
+    errors = validate_macro_members(macro_members)
+    return layout, errors
 
 
 def _execute_macro_action(
@@ -391,14 +202,15 @@ def run_chat_turn(
     *,
     spatial_context: str | None = None,
     target_element_id: str | None = None,
-) -> tuple[str, list[str], ProjectState, ChatUiBlock | None]:
-    """GPT-4o-mini tool loop with spatial context from existing projectElements."""
+) -> tuple[str, list[str], ProjectState, ChatUiBlock | None, dict[str, Any] | None]:
+    """
+    AI submits grid layout + structural_members; frontend calls /api/macro/generate-shed.
+    """
     statuses: list[str] = ["Parsing request..."]
     client = _client()
     statuses.append("Calling Steelera AI (gpt-4o-mini)...")
 
     elements: list[ProjectElementMm] = list(project_state.projectElements)
-    initial_count = len(elements)
     system_content = spatial_context or build_system_prompt(
         elements,
         target_element_id=target_element_id,
@@ -411,36 +223,20 @@ def run_chat_turn(
 
     last_user_text = messages[-1].content if messages else ""
     force_macro = bool(elements and _is_macro_request(last_user_text))
-    has_shed = bool(shed_members_in(elements, SHED_ASSEMBLY_ID))
-    force_checklist = _is_new_shed_request(last_user_text) and not _is_shed_modify_request(
-        last_user_text
-    )
-    force_shed = bool(
-        has_shed
-        and _is_shed_modify_request(last_user_text)
-        and not force_checklist
-    )
-    structural_required = _requires_structural_tool(
-        last_user_text,
-        has_shed=has_shed,
-        has_elements=bool(elements),
-    )
+    force_layout = _is_structural_layout_request(last_user_text)
 
-    # Append mode when model already has members (supports "add beam on column")
-    replace_next = len(elements) == 0
     assistant_content = ""
     tools_used = False
-    shed_tool_used = False
+    config_submitted: dict[str, Any] | None = None
     ui_block: ChatUiBlock | None = None
 
     for turn in range(MAX_TURNS):
-        forced_name = _forced_tool_for_turn(
-            force_checklist=force_checklist,
-            force_shed=force_shed,
-            force_macro=force_macro,
-            tools_used=tools_used,
-            structural_required=structural_required and has_shed,
-        )
+        forced_name: str | None = None
+        if force_layout and config_submitted is None:
+            forced_name = "submit_structural_grid_layout"
+        elif force_macro and not tools_used:
+            forced_name = "apply_macro_action"
+
         tool_choice: Any = "auto"
         if forced_name:
             tool_choice = {
@@ -451,29 +247,22 @@ def run_chat_turn(
         response = client.chat.completions.create(
             model=MODEL,
             messages=openai_messages,
-            tools=ELEMENT_TOOLS,
+            tools=CHAT_TOOLS,
             tool_choice=tool_choice,
         )
         msg = response.choices[0].message
 
         if not msg.tool_calls:
-            if (
-                forced_name
-                and not tools_used
-                and turn < MAX_TURNS - 1
-            ):
+            if forced_name and not tools_used and turn < MAX_TURNS - 1:
                 openai_messages.append(
-                    {
-                        "role": "assistant",
-                        "content": msg.content or "",
-                    }
+                    {"role": "assistant", "content": msg.content or ""}
                 )
                 openai_messages.append(
                     {
                         "role": "user",
                         "content": (
-                            "You must call the required tool now with concrete arguments. "
-                            f"Call {forced_name} immediately. Do not reply with text only."
+                            f"Call `{forced_name}` now with complete parameters. "
+                            "No prose-only replies."
                         ),
                     }
                 )
@@ -502,23 +291,55 @@ def run_chat_turn(
 
         for tc in msg.tool_calls:
             name = tc.function.name
-            if name == "add_structural_element":
-                statuses.append("Adding structural element...")
+            if name == "submit_structural_design":
+                statuses.append("Expanding & validating structural design...")
                 try:
-                    elements, summary, replace_next = _execute_add_element(
-                        tc.function.arguments or "{}",
-                        elements,
-                        replace_next,
+                    layout, errors = _design_to_validated_layout(
+                        tc.function.arguments or "{}"
                     )
-                    tools_used = tools_used or summary.get("success") is True
-                    if summary.get("anchored_to"):
+                    if errors:
                         statuses.append(
-                            f"Anchored to {summary['anchored_to']} ({summary.get('anchor_point')})..."
+                            f"Validation found {len(errors)} issue(s); asking AI to fix..."
                         )
-                    elif summary.get("profile_name"):
+                        summary = {
+                            "success": False,
+                            "validation_errors": errors,
+                            "hint": (
+                                "Your design is structurally invalid. Fix every issue "
+                                "above and call submit_structural_design again. Common fix: "
+                                "make high-side/interior column tops use elevation 'roof' "
+                                "so they meet the rafters."
+                            ),
+                        }
+                    else:
+                        config_submitted = layout_to_api_dict(layout)
+                        tools_used = True
+                        gd = layout.grid_definition
                         statuses.append(
-                            f"Loaded catalog {summary['profile_name']}..."
+                            f"Design valid: {len(layout.structural_members)} members "
+                            f"across {len(gd.z_spans)} Z-bays."
                         )
+                        summary = {
+                            "success": True,
+                            "structural_grid_layout": config_submitted,
+                        }
+                except (ValueError, ValidationError) as e:
+                    summary = {"success": False, "error": str(e)}
+            elif name == "submit_structural_grid_layout":
+                statuses.append("Validating spatial grid layout...")
+                try:
+                    layout = _parse_grid_layout(tc.function.arguments or "{}")
+                    config_submitted = layout_to_api_dict(layout)
+                    tools_used = True
+                    gd = layout.grid_definition
+                    statuses.append(
+                        f"Grid ready: {len(gd.z_spans)} Z-bays, "
+                        f"{len(gd.x_spans)} X-bays, {len(layout.structural_members)} members..."
+                    )
+                    summary = {
+                        "success": True,
+                        "structural_grid_layout": config_submitted,
+                    }
                 except (ValueError, ValidationError) as e:
                     summary = {"success": False, "error": str(e)}
             elif name == "apply_macro_action":
@@ -530,50 +351,13 @@ def run_chat_turn(
                         fallback_target_id=target_element_id,
                     )
                     tools_used = tools_used or summary.get("success") is True
-                    if summary.get("action") == "ARRAY":
-                        statuses.append(
-                            f"Arrayed {summary.get('source_id')} → "
-                            f"{summary.get('count')} copies along {summary.get('axis')} "
-                            f"at {summary.get('spacing_mm')} mm..."
-                        )
-                    elif summary.get("action") == "DELETE":
-                        statuses.append(
-                            f"Deleted {summary.get('deleted_id')}..."
-                        )
-                except (ValueError, ValidationError) as e:
-                    summary = {"success": False, "error": str(e)}
-            elif name == "modify_shed_assembly":
-                statuses.append("Regenerating portal frame shed...")
-                try:
-                    elements, summary = apply_modify_shed_assembly(
-                        elements,
-                        tc.function.arguments or "{}",
-                    )
-                    ok = summary.get("success") is True
-                    tools_used = tools_used or ok
-                    shed_tool_used = shed_tool_used or ok
-                    applied = summary.get("applied_params") or {}
-                    statuses.append(
-                        "Shed updated: "
-                        f"{applied.get('width')}×{applied.get('length')} mm, "
-                        f"height {applied.get('height')} mm, "
-                        f"pitch {applied.get('roof_pitch_deg')}°..."
-                    )
-                except (ValueError, ValidationError) as e:
-                    summary = {"success": False, "error": str(e)}
-            elif name == "show_component_checklist":
-                statuses.append("Preparing structural checklist...")
-                try:
-                    summary, block = _execute_show_component_checklist(
-                        tc.function.arguments or "{}"
-                    )
-                    ui_block = block
-                    tools_used = True
-                    statuses.append("Checklist ready — confirm in chat.")
                 except (ValueError, ValidationError) as e:
                     summary = {"success": False, "error": str(e)}
             else:
-                summary = {"success": False, "error": f"Unknown tool: {name}"}
+                summary = {
+                    "success": False,
+                    "error": f"Unknown tool: {name}. Use submit_structural_grid_layout.",
+                }
 
             openai_messages.append(
                 {
@@ -583,59 +367,55 @@ def run_chat_turn(
                 }
             )
 
-        statuses.append("Building millimeter geometry...")
-    else:
-        assistant_content = assistant_content or (
-            "Structural update complete. Check the 3D viewport."
-        )
+        # A structure was submitted successfully — stop here so a later "auto" turn
+        # cannot overwrite the Python-built layout with a different tool call.
+        if config_submitted is not None:
+            break
 
-    if ui_block and not assistant_content:
+    if force_layout and not config_submitted:
         assistant_content = (
-            "I've set up your portal frame shed from what you described. "
-            "Review the structural options in the checklist below, then confirm to generate."
-        )
-    elif force_checklist and not tools_used:
-        assistant_content = (
-            "I couldn't open the shed checklist. "
-            "Try rephrasing, e.g. “Build a 10 m × 40 m duo-pitch shed, 4 m eave height.”"
-        )
-    elif (force_shed or (structural_required and has_shed)) and not shed_tool_used:
-        assistant_content = (
-            "I couldn't apply that structural change to the shed. "
-            "Please try again (e.g. specify bay width in mm or which dimension changes)."
-        )
-    elif force_macro and not tools_used:
-        assistant_content = (
-            "I couldn't apply that change to the selected member. "
-            "Please try again with the member selected in the viewport."
+            "I could not submit a valid shed layout. "
+            "Tell me the width, length (or bay count), eave height, and roof type and I will rebuild it."
         )
     elif not assistant_content:
-        if tools_used:
-            if shed_tool_used:
-                assistant_content = (
-                    "Done — the portal frame shed was regenerated with your updated parameters. "
-                    "Check the 3D viewport."
+        if config_submitted:
+            try:
+                openai_messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "The shed was generated successfully by the engine. In 3-6 short "
+                            "lines, summarise what was built (dimensions, roof type/pitch, bay "
+                            "count, and which systems are included). Do not call any tools."
+                        ),
+                    }
                 )
-            else:
-                assistant_content = (
-                    "Structural update applied. Check the 3D viewport."
+                followup = client.chat.completions.create(
+                    model=MODEL,
+                    messages=openai_messages,
                 )
-        elif structural_required and not tools_used:
-            assistant_content = (
-                "I couldn't run a structural tool for that request. "
-                "Generate a shed first, or rephrase the change."
-            )
+                assistant_content = (
+                    followup.choices[0].message.content
+                    or "Shed generated. Check the 3D viewport."
+                )
+            except Exception:
+                assistant_content = "Shed generated. Check the 3D viewport."
+        elif tools_used:
+            assistant_content = "Update applied. Check the 3D viewport."
         else:
             followup = client.chat.completions.create(
                 model=MODEL,
                 messages=openai_messages,
             )
             assistant_content = followup.choices[0].message.content or (
-                "How can I help with your structural model?"
+                "How can I help with your structural layout?"
             )
 
-    if not ui_block:
-        statuses.append("Rendering structure...")
-    return assistant_content, statuses, ProjectState(
-        version=3, projectElements=elements
-    ), ui_block
+    statuses.append("Done.")
+    return (
+        assistant_content,
+        statuses,
+        ProjectState(version=3, projectElements=elements),
+        ui_block,
+        config_submitted,
+    )
