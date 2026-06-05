@@ -41,7 +41,10 @@ _MEMBER_SCHEMA = {
         },
         "profile": {
             "type": "string",
-            "enum": ["HEA200", "IPE200", "IPE300", "C150", "L50x50", "ROD12"],
+            "description": (
+                "EN catalog designation (e.g. IPE300, HEA200, UB457x191x67, "
+                "RHS120x80x5, CHS168.3x5, L100x100x10). Validated server-side."
+            ),
         },
         "start_node": _GRID_NODE_SCHEMA,
         "end_node": _GRID_NODE_SCHEMA,
@@ -165,6 +168,42 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                             "type": "number",
                             "description": "Wall girt vertical spacing (default 1500).",
                         },
+                        "column_profile": {
+                            "type": ["string", "null"],
+                            "description": (
+                                "Column section, e.g. HEA200 or SHS300x300x10. "
+                                "null = default HEA200."
+                            ),
+                        },
+                        "bracing_profile": {
+                            "type": ["string", "null"],
+                            "description": (
+                                "Bracing angle, e.g. L50x50 or L100x100x10. "
+                                "null = default L50x50."
+                            ),
+                        },
+                        "purlin_profile": {
+                            "type": ["string", "null"],
+                            "description": (
+                                "Purlin section, e.g. C200x2.0 or Z200x2.0. "
+                                "null = default C150x2."
+                            ),
+                        },
+                        "girt_profile": {
+                            "type": ["string", "null"],
+                            "description": (
+                                "Girt section, e.g. C150x2.0 or Z150x2.0. "
+                                "null = default C150x2."
+                            ),
+                        },
+                        "sag_rod_profile": {
+                            "type": ["string", "null"],
+                            "description": "Sag/tie rod, e.g. ROD12 or ROD16. null = default ROD12.",
+                        },
+                        "base_plate_profile": {
+                            "type": ["string", "null"],
+                            "description": "Base plate thickness, e.g. PL12 or PL20. null = default PL20.",
+                        },
                     },
                     "required": [
                         "x_spans",
@@ -187,6 +226,12 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                         "generate_tie_beams",
                         "purlin_spacing_mm",
                         "girt_spacing_mm",
+                        "column_profile",
+                        "bracing_profile",
+                        "purlin_profile",
+                        "girt_profile",
+                        "sag_rod_profile",
+                        "base_plate_profile",
                     ],
                     "additionalProperties": False,
                 },

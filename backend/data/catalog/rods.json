@@ -1,0 +1,68 @@
+[
+  {
+    "designation": "ROD10",
+    "family": "ROD",
+    "shape": "Pipe",
+    "h": 10.0,
+    "b": 10.0,
+    "d": 10.0,
+    "tw": 10.0,
+    "tf": 10.0,
+    "mass_per_m": 0.62
+  },
+  {
+    "designation": "ROD12",
+    "family": "ROD",
+    "shape": "Pipe",
+    "h": 12.0,
+    "b": 12.0,
+    "d": 12.0,
+    "tw": 12.0,
+    "tf": 12.0,
+    "mass_per_m": 0.89
+  },
+  {
+    "designation": "ROD16",
+    "family": "ROD",
+    "shape": "Pipe",
+    "h": 16.0,
+    "b": 16.0,
+    "d": 16.0,
+    "tw": 16.0,
+    "tf": 16.0,
+    "mass_per_m": 1.58
+  },
+  {
+    "designation": "ROD20",
+    "family": "ROD",
+    "shape": "Pipe",
+    "h": 20.0,
+    "b": 20.0,
+    "d": 20.0,
+    "tw": 20.0,
+    "tf": 20.0,
+    "mass_per_m": 2.47
+  },
+  {
+    "designation": "ROD24",
+    "family": "ROD",
+    "shape": "Pipe",
+    "h": 24.0,
+    "b": 24.0,
+    "d": 24.0,
+    "tw": 24.0,
+    "tf": 24.0,
+    "mass_per_m": 3.55
+  },
+  {
+    "designation": "ROD30",
+    "family": "ROD",
+    "shape": "Pipe",
+    "h": 30.0,
+    "b": 30.0,
+    "d": 30.0,
+    "tw": 30.0,
+    "tf": 30.0,
+    "mass_per_m": 5.55
+  }
+]

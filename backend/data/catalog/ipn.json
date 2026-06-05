@@ -1,0 +1,233 @@
+[
+  {
+    "designation": "IPN80",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 80.0,
+    "b": 42.0,
+    "tw": 3.9,
+    "tf": 5.9,
+    "r": 3.9,
+    "mass_per_m": 5.94
+  },
+  {
+    "designation": "IPN100",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 100.0,
+    "b": 50.0,
+    "tw": 4.5,
+    "tf": 6.8,
+    "r": 4.5,
+    "mass_per_m": 8.34
+  },
+  {
+    "designation": "IPN120",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 120.0,
+    "b": 58.0,
+    "tw": 5.1,
+    "tf": 7.7,
+    "r": 5.1,
+    "mass_per_m": 11.1
+  },
+  {
+    "designation": "IPN140",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 140.0,
+    "b": 66.0,
+    "tw": 5.7,
+    "tf": 8.6,
+    "r": 5.7,
+    "mass_per_m": 14.3
+  },
+  {
+    "designation": "IPN160",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 160.0,
+    "b": 74.0,
+    "tw": 6.3,
+    "tf": 9.5,
+    "r": 6.3,
+    "mass_per_m": 17.9
+  },
+  {
+    "designation": "IPN180",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 180.0,
+    "b": 82.0,
+    "tw": 6.9,
+    "tf": 10.4,
+    "r": 6.9,
+    "mass_per_m": 21.9
+  },
+  {
+    "designation": "IPN200",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 200.0,
+    "b": 90.0,
+    "tw": 7.5,
+    "tf": 11.3,
+    "r": 7.5,
+    "mass_per_m": 26.2
+  },
+  {
+    "designation": "IPN220",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 220.0,
+    "b": 98.0,
+    "tw": 8.1,
+    "tf": 12.2,
+    "r": 8.1,
+    "mass_per_m": 31.1
+  },
+  {
+    "designation": "IPN240",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 240.0,
+    "b": 106.0,
+    "tw": 8.7,
+    "tf": 13.1,
+    "r": 8.7,
+    "mass_per_m": 36.2
+  },
+  {
+    "designation": "IPN260",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 260.0,
+    "b": 113.0,
+    "tw": 9.4,
+    "tf": 14.1,
+    "r": 9.4,
+    "mass_per_m": 41.9
+  },
+  {
+    "designation": "IPN280",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 280.0,
+    "b": 119.0,
+    "tw": 10.1,
+    "tf": 15.2,
+    "r": 10.1,
+    "mass_per_m": 47.9
+  },
+  {
+    "designation": "IPN300",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 300.0,
+    "b": 125.0,
+    "tw": 10.8,
+    "tf": 16.2,
+    "r": 10.8,
+    "mass_per_m": 54.2
+  },
+  {
+    "designation": "IPN320",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 320.0,
+    "b": 131.0,
+    "tw": 11.5,
+    "tf": 17.3,
+    "r": 11.5,
+    "mass_per_m": 61.0
+  },
+  {
+    "designation": "IPN340",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 340.0,
+    "b": 137.0,
+    "tw": 12.2,
+    "tf": 18.3,
+    "r": 12.2,
+    "mass_per_m": 68.0
+  },
+  {
+    "designation": "IPN360",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 360.0,
+    "b": 143.0,
+    "tw": 13.0,
+    "tf": 19.5,
+    "r": 13.0,
+    "mass_per_m": 76.1
+  },
+  {
+    "designation": "IPN380",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 380.0,
+    "b": 149.0,
+    "tw": 13.7,
+    "tf": 20.5,
+    "r": 13.7,
+    "mass_per_m": 84.0
+  },
+  {
+    "designation": "IPN400",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 400.0,
+    "b": 155.0,
+    "tw": 14.4,
+    "tf": 21.6,
+    "r": 14.4,
+    "mass_per_m": 92.4
+  },
+  {
+    "designation": "IPN450",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 450.0,
+    "b": 170.0,
+    "tw": 16.2,
+    "tf": 24.3,
+    "r": 16.2,
+    "mass_per_m": 115.0
+  },
+  {
+    "designation": "IPN500",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 500.0,
+    "b": 185.0,
+    "tw": 18.0,
+    "tf": 27.0,
+    "r": 18.0,
+    "mass_per_m": 141.0
+  },
+  {
+    "designation": "IPN550",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 550.0,
+    "b": 200.0,
+    "tw": 19.0,
+    "tf": 30.0,
+    "r": 19.0,
+    "mass_per_m": 166.0
+  },
+  {
+    "designation": "IPN600",
+    "family": "IPN",
+    "shape": "I-beam",
+    "h": 600.0,
+    "b": 215.0,
+    "tw": 21.6,
+    "tf": 32.4,
+    "r": 21.6,
+    "mass_per_m": 199.0
+  }
+]

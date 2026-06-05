@@ -1,0 +1,582 @@
+[
+  {
+    "designation": "CHS21.3x2.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 21.3,
+    "t": 2.3,
+    "h": 21.3,
+    "b": 21.3,
+    "mass_per_m": 1.08
+  },
+  {
+    "designation": "CHS21.3x3.2",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 21.3,
+    "t": 3.2,
+    "h": 21.3,
+    "b": 21.3,
+    "mass_per_m": 1.43
+  },
+  {
+    "designation": "CHS26.9x2.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 26.9,
+    "t": 2.3,
+    "h": 26.9,
+    "b": 26.9,
+    "mass_per_m": 1.4
+  },
+  {
+    "designation": "CHS26.9x3.2",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 26.9,
+    "t": 3.2,
+    "h": 26.9,
+    "b": 26.9,
+    "mass_per_m": 1.87
+  },
+  {
+    "designation": "CHS33.7x2.6",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 33.7,
+    "t": 2.6,
+    "h": 33.7,
+    "b": 33.7,
+    "mass_per_m": 1.99
+  },
+  {
+    "designation": "CHS33.7x3.2",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 33.7,
+    "t": 3.2,
+    "h": 33.7,
+    "b": 33.7,
+    "mass_per_m": 2.41
+  },
+  {
+    "designation": "CHS33.7x4",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 33.7,
+    "t": 4.0,
+    "h": 33.7,
+    "b": 33.7,
+    "mass_per_m": 2.93
+  },
+  {
+    "designation": "CHS42.4x2.6",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 42.4,
+    "t": 2.6,
+    "h": 42.4,
+    "b": 42.4,
+    "mass_per_m": 2.55
+  },
+  {
+    "designation": "CHS42.4x3.2",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 42.4,
+    "t": 3.2,
+    "h": 42.4,
+    "b": 42.4,
+    "mass_per_m": 3.09
+  },
+  {
+    "designation": "CHS42.4x4",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 42.4,
+    "t": 4.0,
+    "h": 42.4,
+    "b": 42.4,
+    "mass_per_m": 3.79
+  },
+  {
+    "designation": "CHS48.3x3.2",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 48.3,
+    "t": 3.2,
+    "h": 48.3,
+    "b": 48.3,
+    "mass_per_m": 3.56
+  },
+  {
+    "designation": "CHS48.3x4",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 48.3,
+    "t": 4.0,
+    "h": 48.3,
+    "b": 48.3,
+    "mass_per_m": 4.37
+  },
+  {
+    "designation": "CHS48.3x5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 48.3,
+    "t": 5.0,
+    "h": 48.3,
+    "b": 48.3,
+    "mass_per_m": 5.34
+  },
+  {
+    "designation": "CHS60.3x3.2",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 60.3,
+    "t": 3.2,
+    "h": 60.3,
+    "b": 60.3,
+    "mass_per_m": 4.51
+  },
+  {
+    "designation": "CHS60.3x4",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 60.3,
+    "t": 4.0,
+    "h": 60.3,
+    "b": 60.3,
+    "mass_per_m": 5.55
+  },
+  {
+    "designation": "CHS60.3x5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 60.3,
+    "t": 5.0,
+    "h": 60.3,
+    "b": 60.3,
+    "mass_per_m": 6.82
+  },
+  {
+    "designation": "CHS76.1x3.2",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 76.1,
+    "t": 3.2,
+    "h": 76.1,
+    "b": 76.1,
+    "mass_per_m": 5.75
+  },
+  {
+    "designation": "CHS76.1x4",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 76.1,
+    "t": 4.0,
+    "h": 76.1,
+    "b": 76.1,
+    "mass_per_m": 7.11
+  },
+  {
+    "designation": "CHS76.1x5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 76.1,
+    "t": 5.0,
+    "h": 76.1,
+    "b": 76.1,
+    "mass_per_m": 8.77
+  },
+  {
+    "designation": "CHS88.9x3.2",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 88.9,
+    "t": 3.2,
+    "h": 88.9,
+    "b": 88.9,
+    "mass_per_m": 6.76
+  },
+  {
+    "designation": "CHS88.9x4",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 88.9,
+    "t": 4.0,
+    "h": 88.9,
+    "b": 88.9,
+    "mass_per_m": 8.38
+  },
+  {
+    "designation": "CHS88.9x5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 88.9,
+    "t": 5.0,
+    "h": 88.9,
+    "b": 88.9,
+    "mass_per_m": 10.35
+  },
+  {
+    "designation": "CHS88.9x6.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 88.9,
+    "t": 6.3,
+    "h": 88.9,
+    "b": 88.9,
+    "mass_per_m": 12.83
+  },
+  {
+    "designation": "CHS114.3x3.6",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 114.3,
+    "t": 3.6,
+    "h": 114.3,
+    "b": 114.3,
+    "mass_per_m": 9.83
+  },
+  {
+    "designation": "CHS114.3x5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 114.3,
+    "t": 5.0,
+    "h": 114.3,
+    "b": 114.3,
+    "mass_per_m": 13.48
+  },
+  {
+    "designation": "CHS114.3x6.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 114.3,
+    "t": 6.3,
+    "h": 114.3,
+    "b": 114.3,
+    "mass_per_m": 16.78
+  },
+  {
+    "designation": "CHS139.7x5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 139.7,
+    "t": 5.0,
+    "h": 139.7,
+    "b": 139.7,
+    "mass_per_m": 16.61
+  },
+  {
+    "designation": "CHS139.7x6.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 139.7,
+    "t": 6.3,
+    "h": 139.7,
+    "b": 139.7,
+    "mass_per_m": 20.73
+  },
+  {
+    "designation": "CHS139.7x8",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 139.7,
+    "t": 8.0,
+    "h": 139.7,
+    "b": 139.7,
+    "mass_per_m": 25.98
+  },
+  {
+    "designation": "CHS168.3x5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 168.3,
+    "t": 5.0,
+    "h": 168.3,
+    "b": 168.3,
+    "mass_per_m": 20.14
+  },
+  {
+    "designation": "CHS168.3x6.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 168.3,
+    "t": 6.3,
+    "h": 168.3,
+    "b": 168.3,
+    "mass_per_m": 25.17
+  },
+  {
+    "designation": "CHS168.3x8",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 168.3,
+    "t": 8.0,
+    "h": 168.3,
+    "b": 168.3,
+    "mass_per_m": 31.63
+  },
+  {
+    "designation": "CHS168.3x10",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 168.3,
+    "t": 10.0,
+    "h": 168.3,
+    "b": 168.3,
+    "mass_per_m": 39.04
+  },
+  {
+    "designation": "CHS193.7x5.4",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 193.7,
+    "t": 5.4,
+    "h": 193.7,
+    "b": 193.7,
+    "mass_per_m": 25.08
+  },
+  {
+    "designation": "CHS193.7x6.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 193.7,
+    "t": 6.3,
+    "h": 193.7,
+    "b": 193.7,
+    "mass_per_m": 29.12
+  },
+  {
+    "designation": "CHS193.7x8",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 193.7,
+    "t": 8.0,
+    "h": 193.7,
+    "b": 193.7,
+    "mass_per_m": 36.64
+  },
+  {
+    "designation": "CHS193.7x10",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 193.7,
+    "t": 10.0,
+    "h": 193.7,
+    "b": 193.7,
+    "mass_per_m": 45.3
+  },
+  {
+    "designation": "CHS219.1x6.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 219.1,
+    "t": 6.3,
+    "h": 219.1,
+    "b": 219.1,
+    "mass_per_m": 33.06
+  },
+  {
+    "designation": "CHS219.1x8",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 219.1,
+    "t": 8.0,
+    "h": 219.1,
+    "b": 219.1,
+    "mass_per_m": 41.65
+  },
+  {
+    "designation": "CHS219.1x10",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 219.1,
+    "t": 10.0,
+    "h": 219.1,
+    "b": 219.1,
+    "mass_per_m": 51.57
+  },
+  {
+    "designation": "CHS219.1x12.5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 219.1,
+    "t": 12.5,
+    "h": 219.1,
+    "b": 219.1,
+    "mass_per_m": 63.69
+  },
+  {
+    "designation": "CHS244.5x6.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 244.5,
+    "t": 6.3,
+    "h": 244.5,
+    "b": 244.5,
+    "mass_per_m": 37.01
+  },
+  {
+    "designation": "CHS244.5x8",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 244.5,
+    "t": 8.0,
+    "h": 244.5,
+    "b": 244.5,
+    "mass_per_m": 46.66
+  },
+  {
+    "designation": "CHS244.5x10",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 244.5,
+    "t": 10.0,
+    "h": 244.5,
+    "b": 244.5,
+    "mass_per_m": 57.83
+  },
+  {
+    "designation": "CHS273x6.3",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 273.0,
+    "t": 6.3,
+    "h": 273.0,
+    "b": 273.0,
+    "mass_per_m": 41.44
+  },
+  {
+    "designation": "CHS273x8",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 273.0,
+    "t": 8.0,
+    "h": 273.0,
+    "b": 273.0,
+    "mass_per_m": 52.28
+  },
+  {
+    "designation": "CHS273x10",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 273.0,
+    "t": 10.0,
+    "h": 273.0,
+    "b": 273.0,
+    "mass_per_m": 64.86
+  },
+  {
+    "designation": "CHS273x12.5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 273.0,
+    "t": 12.5,
+    "h": 273.0,
+    "b": 273.0,
+    "mass_per_m": 80.3
+  },
+  {
+    "designation": "CHS323.9x8",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 323.9,
+    "t": 8.0,
+    "h": 323.9,
+    "b": 323.9,
+    "mass_per_m": 62.32
+  },
+  {
+    "designation": "CHS323.9x10",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 323.9,
+    "t": 10.0,
+    "h": 323.9,
+    "b": 323.9,
+    "mass_per_m": 77.41
+  },
+  {
+    "designation": "CHS323.9x12.5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 323.9,
+    "t": 12.5,
+    "h": 323.9,
+    "b": 323.9,
+    "mass_per_m": 95.99
+  },
+  {
+    "designation": "CHS355.6x8",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 355.6,
+    "t": 8.0,
+    "h": 355.6,
+    "b": 355.6,
+    "mass_per_m": 68.58
+  },
+  {
+    "designation": "CHS355.6x10",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 355.6,
+    "t": 10.0,
+    "h": 355.6,
+    "b": 355.6,
+    "mass_per_m": 85.23
+  },
+  {
+    "designation": "CHS355.6x12.5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 355.6,
+    "t": 12.5,
+    "h": 355.6,
+    "b": 355.6,
+    "mass_per_m": 105.77
+  },
+  {
+    "designation": "CHS355.6x16",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 355.6,
+    "t": 16.0,
+    "h": 355.6,
+    "b": 355.6,
+    "mass_per_m": 134.0
+  },
+  {
+    "designation": "CHS406.4x10",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 406.4,
+    "t": 10.0,
+    "h": 406.4,
+    "b": 406.4,
+    "mass_per_m": 97.76
+  },
+  {
+    "designation": "CHS406.4x12.5",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 406.4,
+    "t": 12.5,
+    "h": 406.4,
+    "b": 406.4,
+    "mass_per_m": 121.43
+  },
+  {
+    "designation": "CHS406.4x16",
+    "family": "CHS",
+    "shape": "CHS",
+    "d": 406.4,
+    "t": 16.0,
+    "h": 406.4,
+    "b": 406.4,
+    "mass_per_m": 154.05
+  }
+]

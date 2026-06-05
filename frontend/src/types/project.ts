@@ -1,4 +1,15 @@
-export type ShapeType = "I-beam" | "C-channel" | "Box" | "Pipe" | "Plate" | "Haunch";
+export type ShapeType =
+  | "I-beam"
+  | "C-channel"
+  | "Box"
+  | "Pipe"
+  | "Plate"
+  | "Haunch"
+  | "RHS"
+  | "CHS"
+  | "Angle"
+  | "Tee"
+  | "Zed";
 export type SectionSource = "catalog" | "parametric";
 export type ExtrusionAxis = "x" | "y" | "z";
 export type ElementRotation = 0 | 90 | 180 | 270;
@@ -9,6 +20,16 @@ export interface SectionDimensionsMm {
   b: number;
   tw: number;
   tf: number;
+  /** Wall thickness (RHS/SHS/CHS). */
+  t?: number | null;
+  /** Outer diameter (CHS). */
+  d?: number | null;
+  /** Outer corner radius (RHS/SHS). */
+  ro?: number | null;
+  /** Root radius (open sections). */
+  r?: number | null;
+  /** Lip length (cold-formed C/Z purlins and girts). */
+  lip?: number | null;
 }
 
 /** Millimeter-based element from backend geometry_engine */

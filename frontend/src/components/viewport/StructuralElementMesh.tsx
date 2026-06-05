@@ -2,6 +2,10 @@
 
 import { IBeamExtrudedMesh } from "@/components/viewport/IBeamExtrudedMesh";
 import { HaunchMesh } from "@/components/viewport/HaunchMesh";
+import {
+  SectionExtrudedMesh,
+  isSectionExtruded,
+} from "@/components/viewport/SectionExtrudedMesh";
 import { ElementMeshGroup } from "@/components/viewport/ElementMeshGroup";
 import { geometryExtentsM, memberLengthM } from "@/lib/coordinates";
 import { isElementRenderable } from "@/lib/elementValidation";
@@ -16,6 +20,11 @@ const SHAPE_COLORS: Record<string, string> = {
   Pipe: "#9aa8bc",
   Plate: "#7d8694",
   Haunch: "#4f86c6",
+  RHS: "#6f9bc3",
+  CHS: "#7fa6c9",
+  Angle: "#8896ad",
+  Tee: "#6d8eb0",
+  Zed: "#6b8cae",
 };
 
 const SELECTED_COLOR = "#38bdf8";
@@ -50,6 +59,18 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
     return (
       <ElementMeshGroup element={element}>
         <HaunchMesh element={element} color={color} />
+      </ElementMeshGroup>
+    );
+  }
+
+  if (isSectionExtruded(element) && element.section_mm) {
+    return (
+      <ElementMeshGroup element={element}>
+        <SectionExtrudedMesh
+          element={element}
+          section={element.section_mm}
+          color={color}
+        />
       </ElementMeshGroup>
     );
   }

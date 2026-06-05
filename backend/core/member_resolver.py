@@ -14,6 +14,7 @@ from core.engineering_rules import (
     seat_purlin_bottom_on_rafter,
     wall_girt_center_outside_x,
 )
+from catalog_loader import get_profile, has_profile
 from core.geometry_engine import macro_members_to_project_elements
 from core.spatial_grid import StructuralGridEngine
 from schemas.spatial_grid import StructuralGridLayout, StructuralMember
@@ -27,16 +28,40 @@ _PROFILE_DEFAULTS: dict[str, tuple[str, str]] = {
     "rafter": ("IPE200", "I-beam"),
     "truss_chord": ("IPE200", "I-beam"),
     "truss_web": ("HEA200", "I-beam"),
-    "purlin": ("C150", "C-channel"),
-    "wall_girt": ("C150", "C-channel"),
+    "purlin": ("C150x2", "C-channel"),
+    "wall_girt": ("C150x2", "C-channel"),
     "tie_beam": ("IPE200", "I-beam"),
-    "bracing": ("L50x50", "Box"),
-    "x_brace": ("L50x50", "Box"),
+    "bracing": ("L50x50", "Angle"),
+    "x_brace": ("L50x50", "Angle"),
     "sag_rod": ("ROD12", "Pipe"),
     "haunch": ("IPE300", "Haunch"),
-    "fly_brace": ("L50x50", "Box"),
+    "fly_brace": ("L50x50", "Angle"),
     "base_plate": ("PL20", "Plate"),
 }
+
+# Catalog ``shape`` field → frontend ``ShapeType``.
+_CATALOG_SHAPE_TO_TYPE: dict[str, str] = {
+    "I-beam": "I-beam",
+    "C-channel": "C-channel",
+    "Zed": "Zed",
+    "RHS": "RHS",
+    "SHS": "RHS",
+    "CHS": "CHS",
+    "Angle": "Angle",
+    "Tee": "Tee",
+    "Pipe": "Pipe",
+    "Plate": "Plate",
+    "Haunch": "Haunch",
+}
+
+
+def _shape_for_member(element_type: str, profile: str) -> str:
+    """Resolve render shape from catalog when possible; else element-type default."""
+    fallback = _PROFILE_DEFAULTS.get(element_type, (profile, "I-beam"))[1]
+    if not has_profile(profile):
+        return fallback
+    cat_shape = str(get_profile(profile).get("shape", "")).strip()
+    return _CATALOG_SHAPE_TO_TYPE.get(cat_shape, fallback)
 
 
 def _macro_member(
@@ -91,7 +116,7 @@ def _place_secondary_steel(
                     start[0],
                     grid.total_width_mm,
                     column_profile=_COLUMN_PROFILE,
-                    girt_profile="C150",
+                    girt_profile="C150x2",
                 )
                 return (
                     (x_out, start[1], start[2]),
@@ -103,7 +128,7 @@ def _place_secondary_steel(
                 start[2],
                 grid.total_length_mm,
                 column_profile=_COLUMN_PROFILE,
-                girt_profile="C150",
+                girt_profile="C150x2",
             )
             return (
                 (start[0], start[1], z_out),
@@ -243,7 +268,7 @@ def member_from_grid_nodes(
     grid: StructuralGridEngine | None = None,
 ) -> dict[str, Any] | None:
     profile = member.profile
-    shape = _PROFILE_DEFAULTS.get(member.element_type, (profile, "I-beam"))[1]
+    shape = _shape_for_member(member.element_type, profile)
 
     rotation_euler = [0.0, 0.0, 0.0]
     alignment = member.alignment

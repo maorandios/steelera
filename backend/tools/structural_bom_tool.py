@@ -1,7 +1,5 @@
 """OpenAI tool: submit_structural_layout — AI-computed structural BOM (explicit nodes)."""
 
-_BOM_PROFILE_ENUM = ["HEA200", "IPE200", "IPE300", "C150", "L50x50", "ROD12"]
-
 _BOM_MEMBER_SCHEMA = {
     "type": "object",
     "properties": {
@@ -20,7 +18,10 @@ _BOM_MEMBER_SCHEMA = {
         },
         "profile": {
             "type": "string",
-            "enum": _BOM_PROFILE_ENUM,
+            "description": (
+                "EN catalog designation (e.g. IPE300, HEA200, UB457x191x67, "
+                "RHS120x80x5, CHS168.3x5, L100x100x10). Validated server-side."
+            ),
         },
         "start_node": {
             "type": "array",

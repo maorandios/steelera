@@ -68,15 +68,8 @@ StructuralElementType = Literal[
     "base_plate",
 ]
 
-MemberProfile = Literal[
-    "HEA200",
-    "IPE200",
-    "IPE300",
-    "C150",
-    "L50x50",
-    "ROD12",
-    "PL20",
-]
+# Any catalog designation is accepted (validated against the loaded catalog at runtime).
+MemberProfile = str
 
 
 class GridNodeReference(BaseModel):
@@ -130,6 +123,24 @@ class GridDefinition(BaseModel):
     generate_tie_beams: bool = True
     purlin_spacing_mm: float = Field(1200.0, gt=0)
     girt_spacing_mm: float = Field(1500.0, gt=0)
+    column_profile: str | None = Field(
+        None, description="Catalog column section (e.g. HEA200 / SHS300x300x10)."
+    )
+    bracing_profile: str | None = Field(
+        None, description="Catalog bracing angle (e.g. L50x50 / L100x100x10)."
+    )
+    purlin_profile: str | None = Field(
+        None, description="Catalog purlin section (e.g. C200x2.0 / Z200x2.0)."
+    )
+    girt_profile: str | None = Field(
+        None, description="Catalog girt section (e.g. C150x2.0 / Z150x2.0)."
+    )
+    sag_rod_profile: str | None = Field(
+        None, description="Catalog sag/tie rod (e.g. ROD12 / ROD16)."
+    )
+    base_plate_profile: str | None = Field(
+        None, description="Catalog base plate thickness (e.g. PL12 / PL20)."
+    )
     custom_levels: dict[str, float] = Field(
         default_factory=dict,
         description="AI-defined named elevation levels in mm (e.g. {'mezzanine': 3500}). "
@@ -143,6 +154,27 @@ class GridDefinition(BaseModel):
         if any(s <= 0 for s in out):
             raise ValueError("all span values must be positive")
         return out
+
+    @field_validator(
+        "column_profile",
+        "bracing_profile",
+        "purlin_profile",
+        "girt_profile",
+        "sag_rod_profile",
+        "base_plate_profile",
+    )
+    @classmethod
+    def validate_profile(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        name = str(value).strip()
+        if not name:
+            return None
+        from catalog_loader import has_profile
+
+        if not has_profile(name):
+            raise ValueError(f"unknown catalog profile '{name}'")
+        return name
 
     @field_validator("truss_type", mode="before")
     @classmethod
@@ -167,6 +199,18 @@ class StructuralMember(BaseModel):
         if not key:
             raise ValueError("member id is required")
         return key
+
+    @field_validator("profile")
+    @classmethod
+    def validate_profile(cls, value: str) -> str:
+        name = str(value).strip()
+        if not name:
+            raise ValueError("member profile is required")
+        from catalog_loader import has_profile
+
+        if not has_profile(name):
+            raise ValueError(f"unknown catalog profile '{name}'")
+        return name
 
 
 class StructuralGridLayout(BaseModel):

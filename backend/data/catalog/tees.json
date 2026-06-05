@@ -1,0 +1,101 @@
+[
+  {
+    "designation": "T30x30x4",
+    "family": "T",
+    "shape": "Tee",
+    "h": 30.0,
+    "b": 30.0,
+    "tw": 4.0,
+    "tf": 4.0,
+    "r": 1.5,
+    "mass_per_m": 1.77
+  },
+  {
+    "designation": "T40x40x5",
+    "family": "T",
+    "shape": "Tee",
+    "h": 40.0,
+    "b": 40.0,
+    "tw": 5.0,
+    "tf": 5.0,
+    "r": 2.0,
+    "mass_per_m": 2.96
+  },
+  {
+    "designation": "T50x50x6",
+    "family": "T",
+    "shape": "Tee",
+    "h": 50.0,
+    "b": 50.0,
+    "tw": 6.0,
+    "tf": 6.0,
+    "r": 3.0,
+    "mass_per_m": 4.44
+  },
+  {
+    "designation": "T60x60x7",
+    "family": "T",
+    "shape": "Tee",
+    "h": 60.0,
+    "b": 60.0,
+    "tw": 7.0,
+    "tf": 7.0,
+    "r": 3.5,
+    "mass_per_m": 6.21
+  },
+  {
+    "designation": "T70x70x8",
+    "family": "T",
+    "shape": "Tee",
+    "h": 70.0,
+    "b": 70.0,
+    "tw": 8.0,
+    "tf": 8.0,
+    "r": 4.0,
+    "mass_per_m": 8.3
+  },
+  {
+    "designation": "T80x80x9",
+    "family": "T",
+    "shape": "Tee",
+    "h": 80.0,
+    "b": 80.0,
+    "tw": 9.0,
+    "tf": 9.0,
+    "r": 4.5,
+    "mass_per_m": 10.7
+  },
+  {
+    "designation": "T100x100x11",
+    "family": "T",
+    "shape": "Tee",
+    "h": 100.0,
+    "b": 100.0,
+    "tw": 11.0,
+    "tf": 11.0,
+    "r": 5.5,
+    "mass_per_m": 16.4
+  },
+  {
+    "designation": "T120x120x13",
+    "family": "T",
+    "shape": "Tee",
+    "h": 120.0,
+    "b": 120.0,
+    "tw": 13.0,
+    "tf": 13.0,
+    "r": 6.5,
+    "mass_per_m": 23.2
+  },
+  {
+    "designation": "T140x140x15",
+    "family": "T",
+    "shape": "Tee",
+    "h": 140.0,
+    "b": 140.0,
+    "tw": 15.0,
+    "tf": 15.0,
+    "r": 7.0,
+    "mass_per_m": 31.3
+  }
+]

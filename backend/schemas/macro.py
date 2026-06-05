@@ -38,6 +38,24 @@ class GenerateShedRequest(BaseModel):
         gt=0,
         description="Vertical spacing of horizontal wall girts (mm)",
     )
+    column_profile: str | None = Field(
+        None, description="Catalog column section (e.g. HEA200 / SHS300x300x10)."
+    )
+    bracing_profile: str | None = Field(
+        None, description="Catalog bracing angle (e.g. L50x50 / L100x100x10)."
+    )
+    purlin_profile: str | None = Field(
+        None, description="Catalog purlin section (e.g. C200x2.0 / Z200x2.0)."
+    )
+    girt_profile: str | None = Field(
+        None, description="Catalog girt section (e.g. C150x2.0 / Z150x2.0)."
+    )
+    sag_rod_profile: str | None = Field(
+        None, description="Catalog sag/tie rod (e.g. ROD12 / ROD16)."
+    )
+    base_plate_profile: str | None = Field(
+        None, description="Catalog base plate thickness (e.g. PL12 / PL20)."
+    )
     use_truss: bool = Field(
         False,
         description="Replace solid IPE rafters with a roof truss (chords + web pattern)",

@@ -1,0 +1,290 @@
+[
+  {
+    "designation": "L20x20x3",
+    "family": "L",
+    "shape": "Angle",
+    "h": 20.0,
+    "b": 20.0,
+    "t": 3.0,
+    "mass_per_m": 0.87
+  },
+  {
+    "designation": "L25x25x3",
+    "family": "L",
+    "shape": "Angle",
+    "h": 25.0,
+    "b": 25.0,
+    "t": 3.0,
+    "mass_per_m": 1.11
+  },
+  {
+    "designation": "L25x25x4",
+    "family": "L",
+    "shape": "Angle",
+    "h": 25.0,
+    "b": 25.0,
+    "t": 4.0,
+    "mass_per_m": 1.44
+  },
+  {
+    "designation": "L30x30x3",
+    "family": "L",
+    "shape": "Angle",
+    "h": 30.0,
+    "b": 30.0,
+    "t": 3.0,
+    "mass_per_m": 1.34
+  },
+  {
+    "designation": "L30x30x4",
+    "family": "L",
+    "shape": "Angle",
+    "h": 30.0,
+    "b": 30.0,
+    "t": 4.0,
+    "mass_per_m": 1.76
+  },
+  {
+    "designation": "L35x35x4",
+    "family": "L",
+    "shape": "Angle",
+    "h": 35.0,
+    "b": 35.0,
+    "t": 4.0,
+    "mass_per_m": 2.07
+  },
+  {
+    "designation": "L40x40x4",
+    "family": "L",
+    "shape": "Angle",
+    "h": 40.0,
+    "b": 40.0,
+    "t": 4.0,
+    "mass_per_m": 2.39
+  },
+  {
+    "designation": "L40x40x5",
+    "family": "L",
+    "shape": "Angle",
+    "h": 40.0,
+    "b": 40.0,
+    "t": 5.0,
+    "mass_per_m": 2.94
+  },
+  {
+    "designation": "L45x45x5",
+    "family": "L",
+    "shape": "Angle",
+    "h": 45.0,
+    "b": 45.0,
+    "t": 5.0,
+    "mass_per_m": 3.34
+  },
+  {
+    "designation": "L50x50x5",
+    "family": "L",
+    "shape": "Angle",
+    "h": 50.0,
+    "b": 50.0,
+    "t": 5.0,
+    "mass_per_m": 3.73
+  },
+  {
+    "designation": "L50x50x6",
+    "family": "L",
+    "shape": "Angle",
+    "h": 50.0,
+    "b": 50.0,
+    "t": 6.0,
+    "mass_per_m": 4.43
+  },
+  {
+    "designation": "L60x60x6",
+    "family": "L",
+    "shape": "Angle",
+    "h": 60.0,
+    "b": 60.0,
+    "t": 6.0,
+    "mass_per_m": 5.37
+  },
+  {
+    "designation": "L60x60x8",
+    "family": "L",
+    "shape": "Angle",
+    "h": 60.0,
+    "b": 60.0,
+    "t": 8.0,
+    "mass_per_m": 7.03
+  },
+  {
+    "designation": "L70x70x6",
+    "family": "L",
+    "shape": "Angle",
+    "h": 70.0,
+    "b": 70.0,
+    "t": 6.0,
+    "mass_per_m": 6.31
+  },
+  {
+    "designation": "L70x70x7",
+    "family": "L",
+    "shape": "Angle",
+    "h": 70.0,
+    "b": 70.0,
+    "t": 7.0,
+    "mass_per_m": 7.31
+  },
+  {
+    "designation": "L80x80x8",
+    "family": "L",
+    "shape": "Angle",
+    "h": 80.0,
+    "b": 80.0,
+    "t": 8.0,
+    "mass_per_m": 9.55
+  },
+  {
+    "designation": "L90x90x9",
+    "family": "L",
+    "shape": "Angle",
+    "h": 90.0,
+    "b": 90.0,
+    "t": 9.0,
+    "mass_per_m": 12.08
+  },
+  {
+    "designation": "L100x100x10",
+    "family": "L",
+    "shape": "Angle",
+    "h": 100.0,
+    "b": 100.0,
+    "t": 10.0,
+    "mass_per_m": 14.91
+  },
+  {
+    "designation": "L100x100x12",
+    "family": "L",
+    "shape": "Angle",
+    "h": 100.0,
+    "b": 100.0,
+    "t": 12.0,
+    "mass_per_m": 17.71
+  },
+  {
+    "designation": "L120x120x12",
+    "family": "L",
+    "shape": "Angle",
+    "h": 120.0,
+    "b": 120.0,
+    "t": 12.0,
+    "mass_per_m": 21.48
+  },
+  {
+    "designation": "L150x150x15",
+    "family": "L",
+    "shape": "Angle",
+    "h": 150.0,
+    "b": 150.0,
+    "t": 15.0,
+    "mass_per_m": 33.56
+  },
+  {
+    "designation": "L200x200x20",
+    "family": "L",
+    "shape": "Angle",
+    "h": 200.0,
+    "b": 200.0,
+    "t": 20.0,
+    "mass_per_m": 59.66
+  },
+  {
+    "designation": "L65x50x5",
+    "family": "L",
+    "shape": "Angle",
+    "h": 65.0,
+    "b": 50.0,
+    "t": 5.0,
+    "mass_per_m": 4.32
+  },
+  {
+    "designation": "L75x50x6",
+    "family": "L",
+    "shape": "Angle",
+    "h": 75.0,
+    "b": 50.0,
+    "t": 6.0,
+    "mass_per_m": 5.6
+  },
+  {
+    "designation": "L80x60x7",
+    "family": "L",
+    "shape": "Angle",
+    "h": 80.0,
+    "b": 60.0,
+    "t": 7.0,
+    "mass_per_m": 7.31
+  },
+  {
+    "designation": "L100x50x8",
+    "family": "L",
+    "shape": "Angle",
+    "h": 100.0,
+    "b": 50.0,
+    "t": 8.0,
+    "mass_per_m": 8.92
+  },
+  {
+    "designation": "L100x75x8",
+    "family": "L",
+    "shape": "Angle",
+    "h": 100.0,
+    "b": 75.0,
+    "t": 8.0,
+    "mass_per_m": 10.49
+  },
+  {
+    "designation": "L125x75x8",
+    "family": "L",
+    "shape": "Angle",
+    "h": 125.0,
+    "b": 75.0,
+    "t": 8.0,
+    "mass_per_m": 12.06
+  },
+  {
+    "designation": "L125x75x10",
+    "family": "L",
+    "shape": "Angle",
+    "h": 125.0,
+    "b": 75.0,
+    "t": 10.0,
+    "mass_per_m": 14.91
+  },
+  {
+    "designation": "L150x75x10",
+    "family": "L",
+    "shape": "Angle",
+    "h": 150.0,
+    "b": 75.0,
+    "t": 10.0,
+    "mass_per_m": 16.88
+  },
+  {
+    "designation": "L150x90x10",
+    "family": "L",
+    "shape": "Angle",
+    "h": 150.0,
+    "b": 90.0,
+    "t": 10.0,
+    "mass_per_m": 18.05
+  },
+  {
+    "designation": "L200x100x12",
+    "family": "L",
+    "shape": "Angle",
+    "h": 200.0,
+    "b": 100.0,
+    "t": 12.0,
+    "mass_per_m": 27.13
+  }
+]

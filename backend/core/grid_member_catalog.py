@@ -25,6 +25,14 @@ _MAX_DIV_PER_SPAN = 12
 # from rafter bottom flange to purlin bottom at each purlin × frame crossing.
 _FLY_BRACE_Z_LEG_MM = 200.0
 
+# Default secondary-steel profiles (overridable per-generation via the config).
+DEFAULT_COLUMN_PROFILE = "HEA200"
+DEFAULT_BRACING_PROFILE = "L50x50"
+DEFAULT_PURLIN_PROFILE = "C150x2"
+DEFAULT_GIRT_PROFILE = "C150x2"
+DEFAULT_SAG_ROD_PROFILE = "ROD12"
+DEFAULT_BASE_PLATE_PROFILE = "PL20"
+
 
 def _ref(
     x: str, z: str, elev: str, offset: dict[str, float] | None = None
@@ -106,6 +114,7 @@ def _columns(
     grid: StructuralGridEngine,
     aid: str,
     trussed_frames: set[str],
+    profile: str = DEFAULT_COLUMN_PROFILE,
 ) -> list[StructuralMember]:
     """Columns to the level where their roof structure connects.
 
@@ -122,7 +131,7 @@ def _columns(
                 StructuralMember(
                     id=f"{aid}-col-{x_label}-{z_label}",
                     element_type="column",
-                    profile="HEA200",
+                    profile=profile,
                     start_node=_ref(x_label, z_label, "ground"),
                     end_node=_ref(x_label, z_label, top),
                 )
@@ -353,7 +362,10 @@ def _eave_ridge_ties(
 
 
 def _purlins(
-    grid: StructuralGridEngine, aid: str, spacing_mm: float
+    grid: StructuralGridEngine,
+    aid: str,
+    spacing_mm: float,
+    profile: str = DEFAULT_PURLIN_PROFILE,
 ) -> list[StructuralMember]:
     if spacing_mm <= 0 or len(grid.z_labels) < 2:
         return []
@@ -371,7 +383,7 @@ def _purlins(
             StructuralMember(
                 id=f"{aid}-purlin-{i}",
                 element_type="purlin",
-                profile="C150",
+                profile=profile,
                 start_node=_ref(xr, z_first, "roof"),
                 end_node=_ref(xr, z_last, "roof"),
             )
@@ -417,6 +429,7 @@ def _side_wall_girts(
     grid: StructuralGridEngine,
     aid: str,
     levels: list[float],
+    profile: str = DEFAULT_GIRT_PROFILE,
 ) -> list[StructuralMember]:
     """Horizontal rails on BOTH long side walls at the shared global girt levels."""
     if not levels:
@@ -435,7 +448,7 @@ def _side_wall_girts(
                 StructuralMember(
                     id=f"{aid}-girt-{wall}-L{li}",
                     element_type="wall_girt",
-                    profile="C150",
+                    profile=profile,
                     start_node=_ref(wall, z_first, elev, y_off),
                     end_node=_ref(wall, z_last, elev, y_off),
                 )
@@ -480,6 +493,7 @@ def _gable_girts(
     aid: str,
     levels: list[float],
     post_spacing_mm: float,
+    profile: str = DEFAULT_GIRT_PROFILE,
 ) -> list[StructuralMember]:
     """Fill END walls at the same global levels as the side walls.
 
@@ -506,7 +520,7 @@ def _gable_girts(
                 StructuralMember(
                     id=f"{aid}-gablegirt-{z_label}-L{li}",
                     element_type="wall_girt",
-                    profile="C150",
+                    profile=profile,
                     start_node=_ref(cols[0], z_label, elev, y_off),
                     end_node=_ref(cols[-1], z_label, elev, y_off),
                 )
@@ -544,7 +558,13 @@ def _cross(
 
 
 def _x_bracing(
-    grid: StructuralGridEngine, aid: str, wall: str, bay_i: int, z0: str, z1: str
+    grid: StructuralGridEngine,
+    aid: str,
+    wall: str,
+    bay_i: int,
+    z0: str,
+    z1: str,
+    profile: str = DEFAULT_BRACING_PROFILE,
 ) -> list[StructuralMember]:
     """Vertical cross in a LONG side wall plane (fixed X), across one Z-bay."""
     top = _column_top_elev(grid, wall)
@@ -555,11 +575,15 @@ def _x_bracing(
         _ref(wall, z1, top),
         _ref(wall, z0, top),
         _ref(wall, z1, "ground"),
+        profile=profile,
     )
 
 
 def _end_wall_bracing(
-    grid: StructuralGridEngine, aid: str, post_spacing_mm: float
+    grid: StructuralGridEngine,
+    aid: str,
+    post_spacing_mm: float,
+    profile: str = DEFAULT_BRACING_PROFILE,
 ) -> list[StructuralMember]:
     """Vertical cross in EACH gable END wall plane (fixed Z), in ONE corner bay.
 
@@ -581,6 +605,7 @@ def _end_wall_bracing(
                 _ref(xb, z_label, "eave"),
                 _ref(xa, z_label, "eave"),
                 _ref(xb, z_label, "ground"),
+                profile=profile,
             )
         )
     return out
@@ -612,6 +637,7 @@ def _roof_bracing(
     z0: str,
     z1: str,
     ridge_label: str | None,
+    profile: str = DEFAULT_BRACING_PROFILE,
 ) -> list[StructuralMember]:
     """Cross bracing in the ROOF planes, tying adjacent rafters across one Z-bay.
 
@@ -628,6 +654,7 @@ def _roof_bracing(
                 _ref(xb, z1, eb),
                 _ref(xa, z1, ea),
                 _ref(xb, z0, eb),
+                profile=profile,
             )
         )
     return out
@@ -650,6 +677,7 @@ def _roof_sag_rods(
     z0: str,
     z1: str,
     purlin_spacing_mm: float,
+    profile: str = DEFAULT_SAG_ROD_PROFILE,
 ) -> list[StructuralMember]:
     """Anti-sag rods between EACH adjacent purlin, in 1-2 rows per bay (LTB control).
 
@@ -666,7 +694,7 @@ def _roof_sag_rods(
                 StructuralMember(
                     id=f"{aid}-sag-roof-b{bay_i}-r{r}-{k}",
                     element_type="sag_rod",
-                    profile="ROD12",
+                    profile=profile,
                     start_node=_ref(left, zr, "roof"),
                     end_node=_ref(right, zr, "roof"),
                 )
@@ -681,6 +709,7 @@ def _long_wall_sag_rods(
     z0: str,
     z1: str,
     girt_levels: list[float],
+    profile: str = DEFAULT_SAG_ROD_PROFILE,
 ) -> list[StructuralMember]:
     """Anti-sag rods on the LONG side walls, wiring adjacent girts vertically.
 
@@ -703,7 +732,7 @@ def _long_wall_sag_rods(
                     StructuralMember(
                         id=f"{aid}-sag-wall-{wall}-b{bay_i}-r{r}-{li}",
                         element_type="sag_rod",
-                        profile="ROD12",
+                        profile=profile,
                         start_node=_ref(wall, zr, e_lo, off_lo),
                         end_node=_ref(wall, zr, e_hi, off_hi),
                     )
@@ -716,6 +745,7 @@ def _gable_wall_sag_rods(
     aid: str,
     girt_levels: list[float],
     post_spacing_mm: float,
+    profile: str = DEFAULT_SAG_ROD_PROFILE,
 ) -> list[StructuralMember]:
     """Anti-sag rods on the GABLE end walls, wiring adjacent girts vertically.
 
@@ -746,7 +776,7 @@ def _gable_wall_sag_rods(
                     StructuralMember(
                         id=f"{aid}-sag-gable-{z_label}-x{xi}-{li}",
                         element_type="sag_rod",
-                        profile="ROD12",
+                        profile=profile,
                         start_node=_ref(left, z_label, e_lo, s_off),
                         end_node=_ref(left, z_label, e_hi, e_off),
                     )
@@ -838,6 +868,7 @@ def _fly_braces(
     aid: str,
     ridge_label: str | None,
     purlin_spacing_mm: float,
+    profile: str = DEFAULT_BRACING_PROFILE,
 ) -> list[StructuralMember]:
     """Flange braces at every purlin × portal-frame intersection.
 
@@ -860,7 +891,7 @@ def _fly_braces(
                     StructuralMember(
                         id=f"{aid}-fly-{z_label}-x{xi}-{side}",
                         element_type="fly_brace",
-                        profile="L50x50",
+                        profile=profile,
                         start_node=_ref(xr, z_label, "roof"),
                         end_node=_ref(xr, z_label, "roof", {"z": dz}),
                     )
@@ -873,6 +904,7 @@ def _base_plates(
     aid: str,
     gable_post_spacing: float,
     generate_gable: bool,
+    profile: str = DEFAULT_BASE_PLATE_PROFILE,
 ) -> list[StructuralMember]:
     """Square base plates under every column and gable-post foot (at ground level)."""
     half = 180.0
@@ -882,7 +914,7 @@ def _base_plates(
         return StructuralMember(
             id=f"{aid}-baseplate-{tag}",
             element_type="base_plate",
-            profile="PL20",
+            profile=profile,
             start_node=_ref(x_label, z_label, "ground", {"x": -half}),
             end_node=_ref(x_label, z_label, "ground", {"x": half}),
         )
@@ -950,6 +982,12 @@ def members_from_grid_definition(
         ],
         purlin_spacing_mm=float(getattr(grid_def, "purlin_spacing_mm", 1200.0)),
         girt_spacing_mm=float(getattr(grid_def, "girt_spacing_mm", 1500.0)),
+        column_profile=getattr(grid_def, "column_profile", None),
+        bracing_profile=getattr(grid_def, "bracing_profile", None),
+        purlin_profile=getattr(grid_def, "purlin_profile", None),
+        girt_profile=getattr(grid_def, "girt_profile", None),
+        sag_rod_profile=getattr(grid_def, "sag_rod_profile", None),
+        base_plate_profile=getattr(grid_def, "base_plate_profile", None),
         generate_tie_beams=bool(getattr(grid_def, "generate_tie_beams", True)),
         gable_bracing=bool(getattr(grid_def, "gable_bracing", False)),
         roof_bracing=bool(getattr(grid_def, "roof_bracing", False)),
@@ -982,6 +1020,16 @@ def members_from_shed_config(
     ridge = _ridge_label(grid)
     members: list[StructuralMember] = []
 
+    # Profile choices (fall back to sensible defaults).
+    column_profile = getattr(cfg, "column_profile", None) or DEFAULT_COLUMN_PROFILE
+    bracing_profile = getattr(cfg, "bracing_profile", None) or DEFAULT_BRACING_PROFILE
+    purlin_profile = getattr(cfg, "purlin_profile", None) or DEFAULT_PURLIN_PROFILE
+    girt_profile = getattr(cfg, "girt_profile", None) or DEFAULT_GIRT_PROFILE
+    sag_rod_profile = getattr(cfg, "sag_rod_profile", None) or DEFAULT_SAG_ROD_PROFILE
+    base_plate_profile = (
+        getattr(cfg, "base_plate_profile", None) or DEFAULT_BASE_PLATE_PROFILE
+    )
+
     # Determine which frames carry a truss (their columns stop at the bottom chord).
     frame_truss: list[tuple[str, bool, str]] = []
     trussed_frames: set[str] = set()
@@ -994,7 +1042,7 @@ def members_from_shed_config(
     rafter_frames = [z for z in grid.z_labels if z not in trussed_frames]
 
     # Primary frame: columns, then rafters or trusses per frame.
-    members.extend(_columns(grid, aid, trussed_frames))
+    members.extend(_columns(grid, aid, trussed_frames, column_profile))
     for z_label, uses_truss, ttype in frame_truss:
         if uses_truss:
             members.extend(_truss_frame(grid, aid, z_label, ttype, ridge))
@@ -1010,7 +1058,7 @@ def members_from_shed_config(
         members.extend(_eave_ridge_ties(grid, aid, ridge))
 
     # Roof purlins (run along the length, seated on the rafters).
-    members.extend(_purlins(grid, aid, cfg.purlin_spacing_mm))
+    members.extend(_purlins(grid, aid, cfg.purlin_spacing_mm, purlin_profile))
 
     # Gable post spacing: ~2x the girt spacing, but fine enough that each roof slope
     # gets at least one intermediate post so horizontal gable girts can step up the
@@ -1027,9 +1075,11 @@ def members_from_shed_config(
         cfg.girt_spacing_mm,
     )
     if has_wall_girts:
-        members.extend(_side_wall_girts(grid, aid, girt_levels))
+        members.extend(_side_wall_girts(grid, aid, girt_levels, girt_profile))
         if generate_gable:
-            members.extend(_gable_girts(grid, aid, girt_levels, gable_post_spacing))
+            members.extend(
+                _gable_girts(grid, aid, girt_levels, gable_post_spacing, girt_profile)
+            )
     if generate_gable:
         members.extend(_gable_posts(grid, aid, gable_post_spacing, trussed_frames))
 
@@ -1042,38 +1092,70 @@ def members_from_shed_config(
         bay = cfg.bay_at(bay_i)
         z0, z1 = grid.z_labels[bay_i], grid.z_labels[bay_i + 1]
         if bay.x_bracing_left_wall:
-            members.extend(_x_bracing(grid, aid, grid.x_labels[0], bay_i, z0, z1))
+            members.extend(
+                _x_bracing(
+                    grid, aid, grid.x_labels[0], bay_i, z0, z1, bracing_profile
+                )
+            )
         if bay.x_bracing_right_wall:
-            members.extend(_x_bracing(grid, aid, grid.x_labels[-1], bay_i, z0, z1))
+            members.extend(
+                _x_bracing(
+                    grid, aid, grid.x_labels[-1], bay_i, z0, z1, bracing_profile
+                )
+            )
         if roof_bracing and bay_i in roof_brace_bays:
-            members.extend(_roof_bracing(grid, aid, bay_i, z0, z1, ridge))
+            members.extend(
+                _roof_bracing(
+                    grid, aid, bay_i, z0, z1, ridge, bracing_profile
+                )
+            )
         if bay.sag_rods:
             # Roof rods between purlins; long-wall rods between girts per Z-bay.
             members.extend(
                 _roof_sag_rods(
-                    grid, aid, bay_i, z0, z1, purlin_spacing_mm=cfg.purlin_spacing_mm
+                    grid,
+                    aid,
+                    bay_i,
+                    z0,
+                    z1,
+                    purlin_spacing_mm=cfg.purlin_spacing_mm,
+                    profile=sag_rod_profile,
                 )
             )
             if has_wall_girts and bay.wall_girts:
                 members.extend(
-                    _long_wall_sag_rods(grid, aid, bay_i, z0, z1, girt_levels)
+                    _long_wall_sag_rods(
+                        grid, aid, bay_i, z0, z1, girt_levels, sag_rod_profile
+                    )
                 )
 
     any_sag_rods = any(cfg.bay_at(i).sag_rods for i in range(n_bays))
     if generate_gable and has_wall_girts and any_sag_rods:
-        members.extend(_gable_wall_sag_rods(grid, aid, girt_levels, gable_post_spacing))
+        members.extend(
+            _gable_wall_sag_rods(
+                grid, aid, girt_levels, gable_post_spacing, sag_rod_profile
+            )
+        )
 
     # End-wall (gable) bracing — one corner-bay panel per end wall, between two
     # adjacent end-wall columns (aligned to the gable post lines).
     if bool(getattr(cfg, "gable_bracing", False)):
-        members.extend(_end_wall_bracing(grid, aid, gable_post_spacing))
+        members.extend(
+            _end_wall_bracing(grid, aid, gable_post_spacing, bracing_profile)
+        )
 
     # Restraint / detailing members.
     if bool(getattr(cfg, "fly_braces", False)):
-        members.extend(_fly_braces(grid, aid, ridge, cfg.purlin_spacing_mm))
+        members.extend(
+            _fly_braces(grid, aid, ridge, cfg.purlin_spacing_mm, bracing_profile)
+        )
     if bool(getattr(cfg, "bottom_chord_restraint", False)):
         members.extend(_bottom_chord_restraint(grid, aid, trussed_frames))
     if bool(getattr(cfg, "base_plates", False)):
-        members.extend(_base_plates(grid, aid, gable_post_spacing, generate_gable))
+        members.extend(
+            _base_plates(
+                grid, aid, gable_post_spacing, generate_gable, base_plate_profile
+            )
+        )
 
     return members

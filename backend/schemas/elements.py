@@ -2,10 +2,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-ShapeType = Literal["I-beam", "C-channel", "Box", "Pipe", "Plate", "Haunch"]
+ShapeType = Literal[
+    "I-beam", "C-channel", "Box", "Pipe", "Plate", "Haunch",
+    "RHS", "CHS", "Angle", "Tee", "Zed"
+]
 SectionSource = Literal["catalog", "parametric"]
-CatalogProfileName = Literal["IPE200", "IPE300", "HEA200"]
-ProfileNameInput = Literal["NONE", "IPE200", "IPE300", "HEA200"]
+# Any catalog designation is accepted (validated against the loaded catalog at runtime).
+CatalogProfileName = str
+ProfileNameInput = str
 ExtrusionAxis = Literal["x", "y", "z"]
 AnchorPointInput = Literal["NONE", "TOP", "BOTTOM", "START", "END", "CENTER"]
 MacroActionType = Literal["ARRAY", "DELETE"]
@@ -58,10 +62,13 @@ class AddStructuralElementInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_section(self) -> "AddStructuralElementInput":
-        if self.profile_name != "NONE" and self.shape_type != "I-beam":
-            raise ValueError(
-                "Catalog profiles (IPE/HEA) require shape_type 'I-beam'"
-            )
+        if self.profile_name != "NONE":
+            from catalog_loader import has_profile
+
+            if not has_profile(self.profile_name):
+                raise ValueError(
+                    f"Unknown catalog profile '{self.profile_name}' (see /api/catalog)"
+                )
         if self.uses_anchor() and not self.anchor_point:
             raise ValueError("anchor_point required when anchor_element_id is set")
         if self.anchor_point != "NONE" and not self.uses_anchor():
@@ -111,12 +118,22 @@ class ApplyMacroActionInput(BaseModel):
 
 
 class SectionDimensionsMm(BaseModel):
-    """Authentic section dims for extruded I-beam rendering."""
+    """Authentic section dims for extruded rendering.
+
+    h/b/tw/tf cover open I/H/U/Tee sections. Optional fields carry hollow and
+    angle geometry: ``t`` wall thickness (RHS/SHS/CHS), ``d`` outer diameter (CHS),
+    ``ro`` outer corner radius (RHS/SHS), ``r`` root radius (open sections).
+    """
 
     h: float
     b: float
     tw: float
     tf: float
+    t: float | None = None
+    d: float | None = None
+    ro: float | None = None
+    r: float | None = None
+    lip: float | None = None
 
 
 ElementAlignment = Literal["center", "top", "bottom"]

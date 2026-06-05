@@ -16,7 +16,12 @@ from typing import Any
 
 from core.anchoring import resolve_position_from_anchor
 from core.member_nodes import compute_member_nodes
-from catalog_loader import CATALOG_PROFILE_NAMES, get_profile
+from catalog_loader import (
+    CATALOG_PROFILE_NAMES,
+    get_profile,
+    has_profile,
+    names_by_shape,
+)
 from schemas.elements import (
     AddStructuralElementInput,
     ApplyMacroActionInput,
@@ -94,9 +99,38 @@ def bounding_box_from_section(
     raise ValueError(f"Invalid axis: {axis}")
 
 
+_SECTION_OPT_FIELDS = ("t", "d", "ro", "r", "lip")
+
+
 def _resolve_catalog_section(profile_name: str) -> SectionDimensionsMm:
     p = get_profile(profile_name)
-    return SectionDimensionsMm(h=p["h"], b=p["b"], tw=p["tw"], tf=p["tf"])
+    kwargs: dict[str, float] = {
+        "h": p["h"], "b": p["b"], "tw": p["tw"], "tf": p["tf"]
+    }
+    for opt in _SECTION_OPT_FIELDS:
+        if opt in p and p[opt] is not None:
+            kwargs[opt] = float(p[opt])
+    return SectionDimensionsMm(**kwargs)
+
+
+# Catalog shape string → frontend ShapeType. Most map 1:1; SHS is stored as RHS.
+_CATALOG_SHAPE_TO_SHAPETYPE: dict[str, str] = {
+    "I-beam": "I-beam",
+    "C-channel": "C-channel",
+    "Zed": "Zed",
+    "RHS": "RHS",
+    "SHS": "RHS",
+    "CHS": "CHS",
+    "Angle": "Angle",
+    "Tee": "Tee",
+    "Pipe": "Pipe",
+    "Plate": "Plate",
+}
+
+
+def _shapetype_for_catalog(profile_name: str) -> str:
+    shape = str(get_profile(profile_name).get("shape", "")).strip()
+    return _CATALOG_SHAPE_TO_SHAPETYPE.get(shape, PURLIN_SHAPE)
 
 
 def _build_element(
@@ -304,8 +338,9 @@ def apply_macro_action(
     }
 
 
-# Only primary I/H sections are extruded as I-beams; C150 etc. use C-channel path.
-CATALOG_MACRO_PROFILES = frozenset({"IPE200", "IPE300", "HEA200"})
+# Any catalog I/H section (IPE, HEA/B/M, IPN, UB, UC) is extruded as an I-beam;
+# channels/angles/hollow/rods use their own paths.
+CATALOG_MACRO_PROFILES = names_by_shape("I-beam")
 PURLIN_PROFILE = "C150"
 PURLIN_SHAPE = "C-channel"
 PURLIN_SECTION_MM = {"h": 150.0, "b": 75.0, "tw": 4.0, "tf": 12.0}
@@ -333,9 +368,9 @@ def _macro_nodes_or_compute(
 
 
 def _special_macro_element(macro: dict[str, Any]) -> ProjectElementMm | None:
-    """Plate / haunch / fly-brace members bypass the I-beam & C-channel paths."""
+    """Plate / haunch members bypass the standard catalog extrusion paths."""
     et = macro.get("element_type")
-    if et not in ("base_plate", "haunch", "fly_brace"):
+    if et not in ("base_plate", "haunch"):
         return None
 
     pos = macro["position"]
@@ -358,7 +393,11 @@ def _special_macro_element(macro: dict[str, Any]) -> ProjectElementMm | None:
     if et == "base_plate":
         col = get_profile(BASE_PLATE_COLUMN_PROFILE)
         plan = max(length_mm, col["b"] * BASE_PLATE_PLAN_FACTOR)
-        thickness = BASE_PLATE_THICKNESS_MM
+        plate_profile = str(macro.get("profile") or "").strip().upper().replace(" ", "")
+        if has_profile(plate_profile):
+            thickness = float(get_profile(plate_profile).get("t", BASE_PLATE_THICKNESS_MM))
+        else:
+            thickness = BASE_PLATE_THICKNESS_MM
         el = ProjectElementMm(
             shape_type="Plate",
             size_mm={"x": plan, "y": thickness, "z": plan},
@@ -385,20 +424,6 @@ def _special_macro_element(macro: dict[str, Any]) -> ProjectElementMm | None:
             **{k: v for k, v in common.items() if k != "alignment"},
         )
         return _macro_nodes_or_compute(el, macro)
-
-    # fly_brace — slender square stub.
-    s = FLY_BRACE_SIDE_MM
-    el = ProjectElementMm(
-        shape_type="Box",
-        size_mm={"x": length_mm, "y": s, "z": s},
-        length_mm=length_mm,
-        width_mm=s,
-        depth_mm=s,
-        section_mm=SectionDimensionsMm(h=s, b=s, tw=s, tf=s),
-        **{k: v for k, v in common.items() if k != "section_mm"},
-    )
-    return _macro_nodes_or_compute(el, macro)
-
 
 def _frame_positions_along(length_mm: float, spacing_mm: float) -> list[float]:
     """Bay positions from 0 through length inclusive."""
@@ -489,8 +514,11 @@ def macro_member_to_project_element(macro: dict[str, Any]) -> ProjectElementMm:
     pos = macro["position"]
     alignment = macro.get("alignment", "center")
     rotation = macro.get("rotation", [0.0, 0.0, 0.0])
+    is_catalog = has_profile(profile)
     shape_type = macro.get("shape_type") or (
-        "I-beam" if profile in CATALOG_MACRO_PROFILES else PURLIN_SHAPE
+        "I-beam"
+        if profile in CATALOG_MACRO_PROFILES
+        else (_shapetype_for_catalog(profile) if is_catalog else PURLIN_SHAPE)
     )
 
     if profile in CATALOG_MACRO_PROFILES:
@@ -506,11 +534,18 @@ def macro_member_to_project_element(macro: dict[str, Any]) -> ProjectElementMm:
         }
         element = parse_add_structural_element(raw, 0, existing_elements=[])
     else:
-        section = PURLIN_SECTION_MM
+        # Purlins/girts/rods/secondary steel: pull real dims from the catalog when
+        # the profile is known; otherwise fall back to the legacy C150 stand-in.
+        if is_catalog:
+            section_obj = _resolve_catalog_section(profile)
+            sec_h, sec_b = section_obj.h, section_obj.b
+        else:
+            section_obj = SectionDimensionsMm(**PURLIN_SECTION_MM)
+            sec_h, sec_b = PURLIN_SECTION_MM["h"], PURLIN_SECTION_MM["b"]
         raw = {
             "shape_type": shape_type,
             "length": {"value": length_mm, "unit": "mm"},
-            "width": {"value": section["b"], "unit": "mm"},
+            "width": {"value": sec_b, "unit": "mm"},
             "profile_name": "NONE",
             "axis": axis,
             "position": {"x": pos[0], "y": pos[1], "z": pos[2]},
@@ -518,11 +553,15 @@ def macro_member_to_project_element(macro: dict[str, Any]) -> ProjectElementMm:
             "anchor_point": "NONE",
         }
         element = parse_add_structural_element(raw, 0, existing_elements=[])
+        size = bounding_box_from_section(shape_type, length_mm, sec_b, sec_h, axis)
         element = element.model_copy(
             update={
-                "depth_mm": section["h"],
-                "width_mm": section["b"],
-                "section_mm": SectionDimensionsMm(**section),
+                "size_mm": size,
+                "depth_mm": sec_h,
+                "width_mm": sec_b,
+                "section_mm": section_obj,
+                "section_source": "catalog" if is_catalog else "parametric",
+                "profile_name": profile if is_catalog else None,
             }
         )
 

@@ -4,7 +4,13 @@ _ELEMENT_TYPES = [
     "column", "rafter", "truss_chord", "truss_web", "purlin",
     "wall_girt", "tie_beam", "bracing", "x_brace", "sag_rod",
 ]
-_PROFILES = ["HEA200", "IPE200", "IPE300", "C150", "L50x50", "ROD12"]
+_PROFILE_FIELD = {
+    "type": "string",
+    "description": (
+        "EN catalog designation (e.g. IPE300, HEA200, UB457x191x67, "
+        "RHS120x80x5, CHS168.3x5, L100x100x10). Validated server-side."
+    ),
+}
 
 _NODE = {
     "type": "object",
@@ -37,7 +43,7 @@ _PLACE_MEMBER = {
         "kind": {"type": "string", "enum": ["place_member"]},
         "id": {"type": "string"},
         "element_type": {"type": "string", "enum": _ELEMENT_TYPES},
-        "profile": {"type": "string", "enum": _PROFILES},
+        "profile": _PROFILE_FIELD,
         "start_node": _NODE,
         "end_node": _NODE,
     },
@@ -55,7 +61,7 @@ _ARRAY_MEMBER = {
         "kind": {"type": "string", "enum": ["array_member"]},
         "id_prefix": {"type": "string"},
         "element_type": {"type": "string", "enum": _ELEMENT_TYPES},
-        "profile": {"type": "string", "enum": _PROFILES},
+        "profile": _PROFILE_FIELD,
         "start_node": _NODE,
         "end_node": _NODE,
         "x_lines": {"type": "array", "items": {"type": "string"}},
@@ -78,7 +84,7 @@ _ARRAY_ADJACENT = {
         "kind": {"type": "string", "enum": ["array_adjacent"]},
         "id_prefix": {"type": "string"},
         "element_type": {"type": "string", "enum": _ELEMENT_TYPES},
-        "profile": {"type": "string", "enum": _PROFILES},
+        "profile": _PROFILE_FIELD,
         "axis": {"type": "string", "enum": ["x", "z"]},
         "at_lines": {"type": "array", "items": {"type": "string"}},
         "elevation_start": {"type": "string"},

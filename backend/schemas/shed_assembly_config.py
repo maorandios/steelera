@@ -74,6 +74,24 @@ class ShedAssemblyConfig(BaseModel):
     mono_high_side: Literal["A", "B"] = "B"
     purlin_spacing_mm: float = Field(1200.0, gt=0)
     girt_spacing_mm: float = Field(1500.0, gt=0)
+    column_profile: str | None = Field(
+        None, description="Catalog column section, e.g. HEA200 or SHS300x300x10"
+    )
+    bracing_profile: str | None = Field(
+        None, description="Catalog bracing angle, e.g. L50x50 or L100x100x10"
+    )
+    purlin_profile: str | None = Field(
+        None, description="Catalog purlin section, e.g. C200x2.0 or Z200x2.0"
+    )
+    girt_profile: str | None = Field(
+        None, description="Catalog girt section, e.g. C150x2.0 or Z150x2.0"
+    )
+    sag_rod_profile: str | None = Field(
+        None, description="Catalog sag/tie rod, e.g. ROD12 or ROD16"
+    )
+    base_plate_profile: str | None = Field(
+        None, description="Catalog base plate thickness, e.g. PL12 or PL20"
+    )
     generate_tie_beams: bool = True
     gable_bracing: bool = False
     roof_bracing: bool = False
@@ -81,6 +99,27 @@ class ShedAssemblyConfig(BaseModel):
     fly_braces: bool = False
     base_plates: bool = False
     bottom_chord_restraint: bool = False
+
+    @field_validator(
+        "column_profile",
+        "bracing_profile",
+        "purlin_profile",
+        "girt_profile",
+        "sag_rod_profile",
+        "base_plate_profile",
+    )
+    @classmethod
+    def validate_profile(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        name = str(value).strip()
+        if not name:
+            return None
+        from catalog_loader import has_profile
+
+        if not has_profile(name):
+            raise ValueError(f"unknown catalog profile '{name}'")
+        return name
 
     @model_validator(mode="after")
     def validate_bay_indices(self) -> "ShedAssemblyConfig":

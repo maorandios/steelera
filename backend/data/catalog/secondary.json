@@ -1,0 +1,13 @@
+[
+  {
+    "designation": "L50x50",
+    "family": "L",
+    "shape": "Angle",
+    "h": 50.0,
+    "b": 50.0,
+    "t": 5.0,
+    "tw": 5.0,
+    "tf": 5.0,
+    "mass_per_m": 3.73
+  }
+]

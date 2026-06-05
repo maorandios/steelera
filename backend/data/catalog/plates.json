@@ -1,0 +1,112 @@
+[
+  {
+    "designation": "PL2",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 2.0,
+    "b": 2.0,
+    "tw": 2.0,
+    "tf": 2.0,
+    "t": 2.0,
+    "mass_per_m": 0.0
+  },
+  {
+    "designation": "PL4",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 4.0,
+    "b": 4.0,
+    "tw": 4.0,
+    "tf": 4.0,
+    "t": 4.0,
+    "mass_per_m": 0.0
+  },
+  {
+    "designation": "PL6",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 6.0,
+    "b": 6.0,
+    "tw": 6.0,
+    "tf": 6.0,
+    "t": 6.0,
+    "mass_per_m": 0.0
+  },
+  {
+    "designation": "PL8",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 8.0,
+    "b": 8.0,
+    "tw": 8.0,
+    "tf": 8.0,
+    "t": 8.0,
+    "mass_per_m": 0.0
+  },
+  {
+    "designation": "PL10",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 10.0,
+    "b": 10.0,
+    "tw": 10.0,
+    "tf": 10.0,
+    "t": 10.0,
+    "mass_per_m": 0.0
+  },
+  {
+    "designation": "PL12",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 12.0,
+    "b": 12.0,
+    "tw": 12.0,
+    "tf": 12.0,
+    "t": 12.0,
+    "mass_per_m": 0.0
+  },
+  {
+    "designation": "PL15",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 15.0,
+    "b": 15.0,
+    "tw": 15.0,
+    "tf": 15.0,
+    "t": 15.0,
+    "mass_per_m": 0.0
+  },
+  {
+    "designation": "PL20",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 20.0,
+    "b": 20.0,
+    "tw": 20.0,
+    "tf": 20.0,
+    "t": 20.0,
+    "mass_per_m": 0.0
+  },
+  {
+    "designation": "PL25",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 25.0,
+    "b": 25.0,
+    "tw": 25.0,
+    "tf": 25.0,
+    "t": 25.0,
+    "mass_per_m": 0.0
+  },
+  {
+    "designation": "PL30",
+    "family": "PL",
+    "shape": "Plate",
+    "h": 30.0,
+    "b": 30.0,
+    "tw": 30.0,
+    "tf": 30.0,
+    "t": 30.0,
+    "mass_per_m": 0.0
+  }
+]

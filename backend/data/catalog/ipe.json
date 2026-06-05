@@ -1,0 +1,200 @@
+[
+  {
+    "designation": "IPE80",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 80.0,
+    "b": 46.0,
+    "tw": 3.8,
+    "tf": 5.2,
+    "r": 5.0,
+    "mass_per_m": 6.0
+  },
+  {
+    "designation": "IPE100",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 100.0,
+    "b": 55.0,
+    "tw": 4.1,
+    "tf": 5.7,
+    "r": 7.0,
+    "mass_per_m": 8.1
+  },
+  {
+    "designation": "IPE120",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 120.0,
+    "b": 64.0,
+    "tw": 4.4,
+    "tf": 6.3,
+    "r": 7.0,
+    "mass_per_m": 10.4
+  },
+  {
+    "designation": "IPE140",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 140.0,
+    "b": 73.0,
+    "tw": 4.7,
+    "tf": 6.9,
+    "r": 7.0,
+    "mass_per_m": 12.9
+  },
+  {
+    "designation": "IPE160",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 160.0,
+    "b": 82.0,
+    "tw": 5.0,
+    "tf": 7.4,
+    "r": 9.0,
+    "mass_per_m": 15.8
+  },
+  {
+    "designation": "IPE180",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 180.0,
+    "b": 91.0,
+    "tw": 5.3,
+    "tf": 8.0,
+    "r": 9.0,
+    "mass_per_m": 18.8
+  },
+  {
+    "designation": "IPE200",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 200.0,
+    "b": 100.0,
+    "tw": 5.6,
+    "tf": 8.5,
+    "r": 12.0,
+    "mass_per_m": 22.4
+  },
+  {
+    "designation": "IPE220",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 220.0,
+    "b": 110.0,
+    "tw": 5.9,
+    "tf": 9.2,
+    "r": 12.0,
+    "mass_per_m": 26.2
+  },
+  {
+    "designation": "IPE240",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 240.0,
+    "b": 120.0,
+    "tw": 6.2,
+    "tf": 9.8,
+    "r": 15.0,
+    "mass_per_m": 30.7
+  },
+  {
+    "designation": "IPE270",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 270.0,
+    "b": 135.0,
+    "tw": 6.6,
+    "tf": 10.2,
+    "r": 15.0,
+    "mass_per_m": 36.1
+  },
+  {
+    "designation": "IPE300",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 300.0,
+    "b": 150.0,
+    "tw": 7.1,
+    "tf": 10.7,
+    "r": 15.0,
+    "mass_per_m": 42.2
+  },
+  {
+    "designation": "IPE330",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 330.0,
+    "b": 160.0,
+    "tw": 7.5,
+    "tf": 11.5,
+    "r": 18.0,
+    "mass_per_m": 49.1
+  },
+  {
+    "designation": "IPE360",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 360.0,
+    "b": 170.0,
+    "tw": 8.0,
+    "tf": 12.7,
+    "r": 18.0,
+    "mass_per_m": 57.1
+  },
+  {
+    "designation": "IPE400",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 400.0,
+    "b": 180.0,
+    "tw": 8.6,
+    "tf": 13.5,
+    "r": 21.0,
+    "mass_per_m": 66.3
+  },
+  {
+    "designation": "IPE450",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 450.0,
+    "b": 190.0,
+    "tw": 9.4,
+    "tf": 14.6,
+    "r": 21.0,
+    "mass_per_m": 77.6
+  },
+  {
+    "designation": "IPE500",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 500.0,
+    "b": 200.0,
+    "tw": 10.2,
+    "tf": 16.0,
+    "r": 21.0,
+    "mass_per_m": 90.7
+  },
+  {
+    "designation": "IPE550",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 550.0,
+    "b": 210.0,
+    "tw": 11.1,
+    "tf": 17.2,
+    "r": 24.0,
+    "mass_per_m": 106.0
+  },
+  {
+    "designation": "IPE600",
+    "family": "IPE",
+    "shape": "I-beam",
+    "h": 600.0,
+    "b": 220.0,
+    "tw": 12.0,
+    "tf": 19.0,
+    "r": 24.0,
+    "mass_per_m": 122.0
+  }
+]

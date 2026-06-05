@@ -1,0 +1,672 @@
+[
+  {
+    "designation": "RHS50x30x3",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 50.0,
+    "b": 30.0,
+    "t": 3.0,
+    "ro": 6.0,
+    "mass_per_m": 3.24
+  },
+  {
+    "designation": "RHS50x30x4",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 50.0,
+    "b": 30.0,
+    "t": 4.0,
+    "ro": 8.0,
+    "mass_per_m": 4.09
+  },
+  {
+    "designation": "RHS50x30x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 50.0,
+    "b": 30.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 4.82
+  },
+  {
+    "designation": "RHS60x40x3",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 60.0,
+    "b": 40.0,
+    "t": 3.0,
+    "ro": 6.0,
+    "mass_per_m": 4.18
+  },
+  {
+    "designation": "RHS60x40x4",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 60.0,
+    "b": 40.0,
+    "t": 4.0,
+    "ro": 8.0,
+    "mass_per_m": 5.35
+  },
+  {
+    "designation": "RHS60x40x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 60.0,
+    "b": 40.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 6.39
+  },
+  {
+    "designation": "RHS80x40x3",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 80.0,
+    "b": 40.0,
+    "t": 3.0,
+    "ro": 6.0,
+    "mass_per_m": 5.13
+  },
+  {
+    "designation": "RHS80x40x4",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 80.0,
+    "b": 40.0,
+    "t": 4.0,
+    "ro": 8.0,
+    "mass_per_m": 6.6
+  },
+  {
+    "designation": "RHS80x40x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 80.0,
+    "b": 40.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 7.96
+  },
+  {
+    "designation": "RHS80x60x3",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 80.0,
+    "b": 60.0,
+    "t": 3.0,
+    "ro": 6.0,
+    "mass_per_m": 6.07
+  },
+  {
+    "designation": "RHS80x60x4",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 80.0,
+    "b": 60.0,
+    "t": 4.0,
+    "ro": 8.0,
+    "mass_per_m": 7.86
+  },
+  {
+    "designation": "RHS80x60x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 80.0,
+    "b": 60.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 9.53
+  },
+  {
+    "designation": "RHS80x60x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 80.0,
+    "b": 60.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 11.09
+  },
+  {
+    "designation": "RHS90x50x3",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 90.0,
+    "b": 50.0,
+    "t": 3.0,
+    "ro": 6.0,
+    "mass_per_m": 6.07
+  },
+  {
+    "designation": "RHS90x50x4",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 90.0,
+    "b": 50.0,
+    "t": 4.0,
+    "ro": 8.0,
+    "mass_per_m": 7.86
+  },
+  {
+    "designation": "RHS90x50x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 90.0,
+    "b": 50.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 9.53
+  },
+  {
+    "designation": "RHS100x50x3",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 100.0,
+    "b": 50.0,
+    "t": 3.0,
+    "ro": 6.0,
+    "mass_per_m": 6.54
+  },
+  {
+    "designation": "RHS100x50x4",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 100.0,
+    "b": 50.0,
+    "t": 4.0,
+    "ro": 8.0,
+    "mass_per_m": 8.49
+  },
+  {
+    "designation": "RHS100x50x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 100.0,
+    "b": 50.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 10.32
+  },
+  {
+    "designation": "RHS100x50x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 100.0,
+    "b": 50.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 12.03
+  },
+  {
+    "designation": "RHS100x60x3",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 100.0,
+    "b": 60.0,
+    "t": 3.0,
+    "ro": 6.0,
+    "mass_per_m": 7.01
+  },
+  {
+    "designation": "RHS100x60x4",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 100.0,
+    "b": 60.0,
+    "t": 4.0,
+    "ro": 8.0,
+    "mass_per_m": 9.11
+  },
+  {
+    "designation": "RHS100x60x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 100.0,
+    "b": 60.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 11.1
+  },
+  {
+    "designation": "RHS100x60x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 100.0,
+    "b": 60.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 12.97
+  },
+  {
+    "designation": "RHS120x60x4",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 120.0,
+    "b": 60.0,
+    "t": 4.0,
+    "ro": 8.0,
+    "mass_per_m": 10.37
+  },
+  {
+    "designation": "RHS120x60x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 120.0,
+    "b": 60.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 12.67
+  },
+  {
+    "designation": "RHS120x60x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 120.0,
+    "b": 60.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 14.86
+  },
+  {
+    "designation": "RHS120x60x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 120.0,
+    "b": 60.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 18.87
+  },
+  {
+    "designation": "RHS120x80x4",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 120.0,
+    "b": 80.0,
+    "t": 4.0,
+    "ro": 8.0,
+    "mass_per_m": 11.63
+  },
+  {
+    "designation": "RHS120x80x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 120.0,
+    "b": 80.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 14.24
+  },
+  {
+    "designation": "RHS120x80x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 120.0,
+    "b": 80.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 16.74
+  },
+  {
+    "designation": "RHS120x80x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 120.0,
+    "b": 80.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 21.39
+  },
+  {
+    "designation": "RHS140x80x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 140.0,
+    "b": 80.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 15.81
+  },
+  {
+    "designation": "RHS140x80x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 140.0,
+    "b": 80.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 18.62
+  },
+  {
+    "designation": "RHS140x80x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 140.0,
+    "b": 80.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 23.9
+  },
+  {
+    "designation": "RHS150x100x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 150.0,
+    "b": 100.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 18.17
+  },
+  {
+    "designation": "RHS150x100x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 150.0,
+    "b": 100.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 21.45
+  },
+  {
+    "designation": "RHS150x100x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 150.0,
+    "b": 100.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 27.67
+  },
+  {
+    "designation": "RHS150x100x10",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 150.0,
+    "b": 100.0,
+    "t": 10.0,
+    "ro": 20.0,
+    "mass_per_m": 33.41
+  },
+  {
+    "designation": "RHS160x80x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 160.0,
+    "b": 80.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 17.38
+  },
+  {
+    "designation": "RHS160x80x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 160.0,
+    "b": 80.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 20.51
+  },
+  {
+    "designation": "RHS160x80x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 160.0,
+    "b": 80.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 26.41
+  },
+  {
+    "designation": "RHS180x100x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 180.0,
+    "b": 100.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 20.52
+  },
+  {
+    "designation": "RHS180x100x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 180.0,
+    "b": 100.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 24.28
+  },
+  {
+    "designation": "RHS180x100x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 180.0,
+    "b": 100.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 31.43
+  },
+  {
+    "designation": "RHS180x100x10",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 180.0,
+    "b": 100.0,
+    "t": 10.0,
+    "ro": 20.0,
+    "mass_per_m": 38.12
+  },
+  {
+    "designation": "RHS200x100x5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 200.0,
+    "b": 100.0,
+    "t": 5.0,
+    "ro": 10.0,
+    "mass_per_m": 22.09
+  },
+  {
+    "designation": "RHS200x100x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 200.0,
+    "b": 100.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 26.16
+  },
+  {
+    "designation": "RHS200x100x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 200.0,
+    "b": 100.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 33.95
+  },
+  {
+    "designation": "RHS200x100x10",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 200.0,
+    "b": 100.0,
+    "t": 10.0,
+    "ro": 20.0,
+    "mass_per_m": 41.26
+  },
+  {
+    "designation": "RHS200x100x12.5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 200.0,
+    "b": 100.0,
+    "t": 12.5,
+    "ro": 25.0,
+    "mass_per_m": 49.76
+  },
+  {
+    "designation": "RHS200x120x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 200.0,
+    "b": 120.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 28.04
+  },
+  {
+    "designation": "RHS200x120x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 200.0,
+    "b": 120.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 36.46
+  },
+  {
+    "designation": "RHS200x120x10",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 200.0,
+    "b": 120.0,
+    "t": 10.0,
+    "ro": 20.0,
+    "mass_per_m": 44.4
+  },
+  {
+    "designation": "RHS200x120x12.5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 200.0,
+    "b": 120.0,
+    "t": 12.5,
+    "ro": 25.0,
+    "mass_per_m": 53.68
+  },
+  {
+    "designation": "RHS250x150x6",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 250.0,
+    "b": 150.0,
+    "t": 6.0,
+    "ro": 12.0,
+    "mass_per_m": 35.58
+  },
+  {
+    "designation": "RHS250x150x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 250.0,
+    "b": 150.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 46.51
+  },
+  {
+    "designation": "RHS250x150x10",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 250.0,
+    "b": 150.0,
+    "t": 10.0,
+    "ro": 20.0,
+    "mass_per_m": 56.96
+  },
+  {
+    "designation": "RHS250x150x12.5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 250.0,
+    "b": 150.0,
+    "t": 12.5,
+    "ro": 25.0,
+    "mass_per_m": 69.38
+  },
+  {
+    "designation": "RHS250x150x16",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 250.0,
+    "b": 150.0,
+    "t": 16.0,
+    "ro": 32.0,
+    "mass_per_m": 85.54
+  },
+  {
+    "designation": "RHS300x200x8",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 300.0,
+    "b": 200.0,
+    "t": 8.0,
+    "ro": 16.0,
+    "mass_per_m": 59.07
+  },
+  {
+    "designation": "RHS300x200x10",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 300.0,
+    "b": 200.0,
+    "t": 10.0,
+    "ro": 20.0,
+    "mass_per_m": 72.66
+  },
+  {
+    "designation": "RHS300x200x12.5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 300.0,
+    "b": 200.0,
+    "t": 12.5,
+    "ro": 25.0,
+    "mass_per_m": 89.01
+  },
+  {
+    "designation": "RHS300x200x16",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 300.0,
+    "b": 200.0,
+    "t": 16.0,
+    "ro": 32.0,
+    "mass_per_m": 110.66
+  },
+  {
+    "designation": "RHS400x200x10",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 400.0,
+    "b": 200.0,
+    "t": 10.0,
+    "ro": 20.0,
+    "mass_per_m": 88.36
+  },
+  {
+    "designation": "RHS400x200x12.5",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 400.0,
+    "b": 200.0,
+    "t": 12.5,
+    "ro": 25.0,
+    "mass_per_m": 108.63
+  },
+  {
+    "designation": "RHS400x200x16",
+    "family": "RHS",
+    "shape": "RHS",
+    "h": 400.0,
+    "b": 200.0,
+    "t": 16.0,
+    "ro": 32.0,
+    "mass_per_m": 135.78
+  }
+]

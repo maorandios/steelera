@@ -6,7 +6,7 @@ from typing import Any
 
 from schemas.elements import ProjectElementMm
 
-DEFAULT_SHED_PARAMS: dict[str, float | list[float] | str | bool] = {
+DEFAULT_SHED_PARAMS: dict[str, float | list[float] | str | bool | None] = {
     "x_spans": [3000.0, 7000.0, 10000.0, 5000.0],
     "z_spans": [5000.0, 5000.0, 5000.0, 5000.0, 5000.0, 5000.0],
     "width": 25000.0,
@@ -16,6 +16,10 @@ DEFAULT_SHED_PARAMS: dict[str, float | list[float] | str | bool] = {
     "roof_style": "duo_pitch",
     "purlin_spacing": 1200.0,
     "girt_spacing_mm": 1500.0,
+    "purlin_profile": None,
+    "girt_profile": None,
+    "sag_rod_profile": None,
+    "base_plate_profile": None,
     "use_truss": False,
     "use_bracing": False,
     "use_sag_rods": False,
@@ -102,6 +106,16 @@ def merge_shed_param_overrides(
         key = str(overrides["roof_style"]).strip().lower().replace("-", "_")
         if key in ("duo_pitch", "mono_pitch", "flat"):
             merged["roof_style"] = key
+
+    for key in (
+        "purlin_profile",
+        "girt_profile",
+        "sag_rod_profile",
+        "base_plate_profile",
+    ):
+        if overrides.get(key) is not None:
+            value = str(overrides[key]).strip()
+            merged[key] = value or None
 
     for key in (
         "use_truss",

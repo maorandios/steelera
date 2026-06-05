@@ -1,0 +1,178 @@
+[
+  {
+    "designation": "UPN80",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 80.0,
+    "b": 45.0,
+    "tw": 6.0,
+    "tf": 8.0,
+    "r": 8.0,
+    "mass_per_m": 8.64
+  },
+  {
+    "designation": "UPN100",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 100.0,
+    "b": 50.0,
+    "tw": 6.0,
+    "tf": 8.5,
+    "r": 8.5,
+    "mass_per_m": 10.6
+  },
+  {
+    "designation": "UPN120",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 120.0,
+    "b": 55.0,
+    "tw": 7.0,
+    "tf": 9.0,
+    "r": 9.0,
+    "mass_per_m": 13.4
+  },
+  {
+    "designation": "UPN140",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 140.0,
+    "b": 60.0,
+    "tw": 7.0,
+    "tf": 10.0,
+    "r": 10.0,
+    "mass_per_m": 16.0
+  },
+  {
+    "designation": "UPN160",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 160.0,
+    "b": 65.0,
+    "tw": 7.5,
+    "tf": 10.5,
+    "r": 10.5,
+    "mass_per_m": 18.8
+  },
+  {
+    "designation": "UPN180",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 180.0,
+    "b": 70.0,
+    "tw": 8.0,
+    "tf": 11.0,
+    "r": 11.0,
+    "mass_per_m": 22.0
+  },
+  {
+    "designation": "UPN200",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 200.0,
+    "b": 75.0,
+    "tw": 8.5,
+    "tf": 11.5,
+    "r": 11.5,
+    "mass_per_m": 25.3
+  },
+  {
+    "designation": "UPN220",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 220.0,
+    "b": 80.0,
+    "tw": 9.0,
+    "tf": 12.5,
+    "r": 12.5,
+    "mass_per_m": 29.4
+  },
+  {
+    "designation": "UPN240",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 240.0,
+    "b": 85.0,
+    "tw": 9.5,
+    "tf": 13.0,
+    "r": 13.0,
+    "mass_per_m": 33.2
+  },
+  {
+    "designation": "UPN260",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 260.0,
+    "b": 90.0,
+    "tw": 10.0,
+    "tf": 14.0,
+    "r": 14.0,
+    "mass_per_m": 37.9
+  },
+  {
+    "designation": "UPN280",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 280.0,
+    "b": 95.0,
+    "tw": 10.0,
+    "tf": 15.0,
+    "r": 15.0,
+    "mass_per_m": 41.8
+  },
+  {
+    "designation": "UPN300",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 300.0,
+    "b": 100.0,
+    "tw": 10.0,
+    "tf": 16.0,
+    "r": 16.0,
+    "mass_per_m": 46.2
+  },
+  {
+    "designation": "UPN320",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 320.0,
+    "b": 100.0,
+    "tw": 14.0,
+    "tf": 17.5,
+    "r": 17.5,
+    "mass_per_m": 59.5
+  },
+  {
+    "designation": "UPN350",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 350.0,
+    "b": 100.0,
+    "tw": 14.0,
+    "tf": 16.0,
+    "r": 16.0,
+    "mass_per_m": 60.6
+  },
+  {
+    "designation": "UPN380",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 380.0,
+    "b": 102.0,
+    "tw": 13.5,
+    "tf": 16.0,
+    "r": 16.0,
+    "mass_per_m": 63.1
+  },
+  {
+    "designation": "UPN400",
+    "family": "UPN",
+    "shape": "C-channel",
+    "h": 400.0,
+    "b": 110.0,
+    "tw": 14.0,
+    "tf": 18.0,
+    "r": 18.0,
+    "mass_per_m": 71.8
+  }
+]

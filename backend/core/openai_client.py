@@ -6,7 +6,7 @@ from typing import Any
 from openai import OpenAI
 from pydantic import ValidationError
 
-from catalog_loader import list_profiles
+from catalog_loader import list_families
 from core.env_loader import load_env
 from core.geometry_engine import apply_macro_action
 from core.spatial_context import format_project_context
@@ -27,9 +27,9 @@ load_env()
 MODEL = "gpt-4o-mini"
 MAX_TURNS = 6
 
-_CATALOG_SUMMARY = ", ".join(
-    f"{p['profile_name']} (h={p['h_mm']} b={p['b_mm']} tw={p['tw_mm']} tf={p['tf_mm']} mm)"
-    for p in list_profiles()
+_CATALOG_SUMMARY = "; ".join(
+    f"{f['family']} ({f['shape']}, {f['count']} sizes, h {int(f['min_h'])}-{int(f['max_h'])} mm)"
+    for f in list_families()
 )
 
 BASE_SYSTEM_PROMPT = f"""You are a Structural Engineering Consultant for Steelera. You do the ENGINEERING
@@ -65,6 +65,9 @@ grid_definition fields:
 - bottom_chord_restraint (bool): longitudinal runners restraining truss bottom chords (trusses only).
 - generate_wall_girts (bool, default true), generate_tie_beams (bool, default true).
 - purlin_spacing_mm (default 1200), girt_spacing_mm (default 1500).
+- column_profile (e.g. HEA200 / SHS300x300x10; null = default), bracing_profile (e.g. L50x50; null = default).
+- purlin_profile / girt_profile (cold-formed Cee or Zed, e.g. C200x2.0 / Z200x2.0; null = default).
+- sag_rod_profile (plain rod, e.g. ROD12 / ROD16; null = default), base_plate_profile (e.g. PL12 / PL20; null = default).
 
 Choosing spans:
 - A single clear-span width → one x_span. e.g. 12 m wide → x_spans:[12000].
@@ -91,7 +94,10 @@ submit_structural_grid_layout({{
     "x_bracing": false, "gable_bracing": false, "roof_bracing": false, "sag_rods": false,
     "haunches": false, "fly_braces": false, "base_plates": false, "bottom_chord_restraint": false,
     "generate_wall_girts": true, "generate_tie_beams": true,
-    "purlin_spacing_mm": 1200, "girt_spacing_mm": 1500
+    "purlin_spacing_mm": 1200, "girt_spacing_mm": 1500,
+    "column_profile": null, "bracing_profile": null,
+    "purlin_profile": null, "girt_profile": null,
+    "sag_rod_profile": null, "base_plate_profile": null
   }},
   "structural_members": []
 }})
@@ -99,7 +105,8 @@ submit_structural_grid_layout({{
 After the tool succeeds, briefly summarise what was built (dimensions, roof, bays, and which systems
 are included). Never claim a model was built without a successful submit_structural_grid_layout call.
 
-Profiles: {_CATALOG_SUMMARY}. Units: mm.
+Profile catalog (European, EN): {_CATALOG_SUMMARY}. Units: mm. Use full designations
+(e.g. IPE300, HEA200, UB457x191x67, RHS120x80x5, CHS168.3x5, L100x100x10) when specifying sections.
 """
 
 
