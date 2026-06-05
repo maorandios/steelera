@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { ShedMacroFields, type ShedFormValues } from "@/components/sidebar/ShedMacroFields";
+import { assemblyParamsToShedConfig } from "@/lib/shed-config";
 import {
   DEFAULT_SHED_PARAMS,
   SHED_ASSEMBLY_ID,
@@ -36,7 +37,7 @@ export function AssemblyShedInspector() {
     }
     setError(null);
     try {
-      await generateShedMacro(parsed.params);
+      await generateShedMacro(assemblyParamsToShedConfig(parsed.params));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to update assembly.",

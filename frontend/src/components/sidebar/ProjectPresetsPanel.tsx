@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { parseBaySpansMm } from "@/lib/shed-assembly";
+import { assemblyParamsToShedConfig } from "@/lib/shed-config";
 import {
   DEFAULT_SHED_PARAMS,
   parseShedFormValues,
@@ -57,7 +58,7 @@ export function ProjectPresetsPanel() {
     }
     setShedError(null);
     try {
-      await generateShedMacro(parsed.params);
+      await generateShedMacro(assemblyParamsToShedConfig(parsed.params));
     } catch (err) {
       setShedError(
         err instanceof Error ? err.message : "Shed generation failed.",

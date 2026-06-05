@@ -7,9 +7,16 @@ import {
   inferShedParamsFromElements,
   mergeShedParams,
   SHED_ASSEMBLY_ID,
-  shedParamsToApiPayload,
   type ShedAssemblyParams,
 } from "@/lib/shed-assembly";
+import {
+  assemblyParamsToShedConfig,
+  shedConfigToAssemblyParams,
+} from "@/lib/shed-config";
+import type { ShedAssemblyConfig } from "@/types/shed-config";
+import type { StructuralGridLayout } from "@/types/spatial-grid";
+import type { GenerateShedBody } from "@/lib/api";
+import { gridLayoutToShedParams } from "@/lib/grid-layout";
 import {
   buildStructuralGridState,
   DEFAULT_STRUCTURAL_GRID,
@@ -72,7 +79,7 @@ interface ProjectStore {
     payload: ShedChecklistPayload,
     selections: ShedChecklistSelections,
   ) => Promise<void>;
-  generateShedMacro: (params: ShedAssemblyParams) => Promise<void>;
+  generateShedMacro: (body: GenerateShedBody) => Promise<void>;
   modifyShedAssembly: (partial: Partial<ShedAssemblyParams>) => Promise<void>;
   setProjectElements: (elements: ProjectElementMm[]) => void;
   setStructuralGridFromSpans: (xSpacingInput: string, zSpacingInput: string) => void;
@@ -88,7 +95,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     {
       role: "assistant",
       content:
-        "Welcome to Steelera. Ask me to build a portal-frame shed (e.g. “Build a 10×40 m duo-pitch shed”) and I'll walk you through an interactive structural checklist before generating your 3D model.",
+        "Welcome to Steelera. Describe a portal-frame shed — I'll place members on the spatial grid (axes A,B,… and 1,2,…) and resolve them to 3D. Example: “Build 10×30 m duo shed, 4 m eave, 10° pitch, Pratt truss in bay 1.”",
     },
   ],
   projectElements: emptyProjectState().projectElements,
@@ -115,7 +122,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   confirmShedChecklist: async (payload, selections) => {
     const params = checklistPayloadToShedParams(payload, selections);
-    await get().generateShedMacro(params);
+    const config = assemblyParamsToShedConfig(params);
+    await get().generateShedMacro(config);
     set((state) => ({
       messages: [
         ...state.messages,
@@ -128,19 +136,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }));
   },
 
-  generateShedMacro: async (params) => {
-    if (get().isMacroLoading || get().isLoading) return;
+  generateShedMacro: async (body: GenerateShedBody) => {
+    // Chat keeps isLoading true while awaiting macro; only block concurrent macros.
+    if (get().isMacroLoading) return;
 
     const selectedId = get().selectedElementId;
+    const isGridLayout = "structural_members" in body && "grid_definition" in body;
+    const params = isGridLayout
+      ? gridLayoutToShedParams(body as StructuralGridLayout)
+      : shedConfigToAssemblyParams(body as ShedAssemblyConfig);
 
     set({ isMacroLoading: true, error: null });
 
     try {
-      const response = await postGenerateShed({
-        assembly_id: "shed_1",
-        replace_existing: true,
-        ...shedParamsToApiPayload(params),
-      });
+      const payload = {
+        ...body,
+        assembly_id: body.assembly_id ?? "shed_1",
+        replace_existing: body.replace_existing ?? true,
+      };
+      const response = await postGenerateShed(payload);
       const elements = (response.projectElements ?? []).map((element) =>
         normalizeElement(element),
       );
@@ -169,7 +183,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (!current) {
       throw new Error("No shed assembly in the project. Generate a shed first.");
     }
-    await get().generateShedMacro(mergeShedParams(current, partial));
+    await get().generateShedMacro(
+      assemblyParamsToShedConfig(mergeShedParams(current, partial)),
+    );
   },
 
   selectElement: (id) => set({ selectedElementId: id }),
@@ -221,29 +237,37 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         response.projectElements ??
         response.projectState?.projectElements ??
         [];
-      const isChecklist = Boolean(response.message.ui_block);
-      const elements =
-        !isChecklist && incoming.length > 0
-          ? applyElementsFromApi(incoming, priorElements)
-          : priorElements;
-      const geometryUpdated =
-        !isChecklist &&
-        incoming.length > 0 &&
-        projectElementsFingerprint(elements) !==
-          projectElementsFingerprint(priorElements);
+      const gridLayoutRaw =
+        response.structural_grid_layout ??
+        response.shed_assembly_config;
+      let elements = priorElements;
+      let nextShedParams = get().shedAssemblyParams;
+
+      if (gridLayoutRaw) {
+        set({ statuses: ["Resolving structural members on spatial grid..."] });
+        await get().generateShedMacro(
+          gridLayoutRaw as StructuralGridLayout | ShedAssemblyConfig,
+        );
+        elements = get().projectElements;
+        nextShedParams = get().shedAssemblyParams;
+        if (elements.length === 0) {
+          throw new Error(
+            "Shed macro returned no elements. Check the backend on port 8000.",
+          );
+        }
+      } else if (incoming.length > 0) {
+        elements = applyElementsFromApi(incoming, priorElements);
+        const inferredShed = elements.some(
+          (element) => element.assembly_id === SHED_ASSEMBLY_ID,
+        )
+          ? inferShedParamsFromElements(elements)
+          : null;
+        nextShedParams = inferredShed ?? get().shedAssemblyParams;
+      }
+
       const selectedStillExists = elements.some(
         (element) => element.id === selectedId,
       );
-      const inferredShed = elements.some(
-        (element) => element.assembly_id === SHED_ASSEMBLY_ID,
-      )
-        ? inferShedParamsFromElements(elements)
-        : null;
-      const nextShedParams = isChecklist
-        ? get().shedAssemblyParams
-        : geometryUpdated
-          ? (inferredShed ?? get().shedAssemblyParams)
-          : (inferredShed ?? get().shedAssemblyParams);
 
       const assistantMessage: ChatMessage = {
         role: "assistant",

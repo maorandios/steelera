@@ -1,5 +1,6 @@
 import type { ProjectElementMm, ProjectState } from "@/types/project";
 import type { ShedRoofStyle } from "@/types/macro";
+import type { StructuralGridLayout } from "@/types/spatial-grid";
 
 export type ChatRole = "user" | "assistant";
 
@@ -43,4 +44,8 @@ export interface ChatResponse {
   statuses: string[];
   projectElements: ProjectElementMm[];
   projectState?: ProjectState;
+  /** Universal grid layout from AI; client POSTs /api/macro/generate-shed */
+  structural_grid_layout?: StructuralGridLayout | Record<string, unknown> | null;
+  /** @deprecated use structural_grid_layout */
+  shed_assembly_config?: Record<string, unknown> | null;
 }

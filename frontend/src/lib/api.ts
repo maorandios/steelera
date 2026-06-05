@@ -1,5 +1,7 @@
 import type { ChatMessage, ChatResponse } from "@/types/chat";
-import type { GenerateShedParams, GenerateShedResponse } from "@/types/macro";
+import type { GenerateShedResponse } from "@/types/macro";
+import type { ShedAssemblyConfig } from "@/types/shed-config";
+import type { StructuralGridLayout } from "@/types/spatial-grid";
 import type { ProjectState } from "@/types/project";
 
 /**
@@ -7,10 +9,15 @@ import type { ProjectState } from "@/types/project";
  * Avoids CORS and flaky localhost resolution on Windows.
  */
 function apiBaseUrl(): string {
+  // Call FastAPI directly in the browser — Next.js rewrites time out on long chat (~30s).
   if (typeof window !== "undefined") {
-    return "";
+    return process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
   }
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+  return (
+    process.env.BACKEND_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    "http://127.0.0.1:8000"
+  );
 }
 
 const CHAT_TIMEOUT_MS = 120_000;
@@ -59,8 +66,10 @@ export async function postChat(
 
 const MACRO_TIMEOUT_MS = 60_000;
 
+export type GenerateShedBody = ShedAssemblyConfig | StructuralGridLayout;
+
 export async function postGenerateShed(
-  params: GenerateShedParams,
+  body: GenerateShedBody,
 ): Promise<GenerateShedResponse> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), MACRO_TIMEOUT_MS);
@@ -70,15 +79,21 @@ export async function postGenerateShed(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
-      body: JSON.stringify({
-        replace_existing: true,
-        ...params,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
       const detail = await res.text();
-      throw new Error(detail || `Shed macro failed (${res.status})`);
+      let message = detail || `Shed macro failed (${res.status})`;
+      try {
+        const parsed = JSON.parse(detail) as { detail?: unknown };
+        if (typeof parsed.detail === "string") {
+          message = parsed.detail;
+        }
+      } catch {
+        /* plain text error body */
+      }
+      throw new Error(message);
     }
 
     return res.json() as Promise<GenerateShedResponse>;
