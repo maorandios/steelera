@@ -50,11 +50,19 @@ grid_definition fields:
 - roof_pitch_deg = roof pitch in degrees (0 for flat).
 - roof_style = "duo_pitch" | "mono_pitch" | "flat".
 - mono_high_side = "A" or "B" (mono only): which side is the tall side. Default "B".
-- use_truss (bool) + truss_type ("pratt"|"warren"|"none"): trusses instead of solid rafters.
+- use_truss (bool) + truss_type: trusses instead of solid rafters. Options:
+  "pratt"|"howe"|"warren" (auto-panelled, any span/roof), "fink"|"king_post"|
+  "queen_post"|"scissor" (symmetric duo-pitch gables), or "none". Pick the type
+  the user names; default "pratt" when they just say "truss".
 - x_bracing (bool): cross (X) bracing on the LONG side walls.
 - gable_bracing (bool): cross (X) bracing on the two GABLE END walls.
 - roof_bracing (bool): cross (X) bracing in the ROOF planes (end bays).
 - sag_rods (bool): anti-sag rods between purlins.
+- haunches (bool): tapered eave (knee) + apex haunches on RAFTER (portal) frames — standard
+  detailing for portal sheds (ignored on truss frames).
+- fly_braces (bool): small fly/flange braces restraining rafter inner flanges (purlin stays).
+- base_plates (bool): steel base plates under every column / gable-post foot (clean IFC export).
+- bottom_chord_restraint (bool): longitudinal runners restraining truss bottom chords (trusses only).
 - generate_wall_girts (bool, default true), generate_tie_beams (bool, default true).
 - purlin_spacing_mm (default 1200), girt_spacing_mm (default 1500).
 
@@ -64,7 +72,8 @@ Choosing spans:
 - If the user gives only total length + bay count, divide evenly.
 
 Defaults when the user is silent: duo_pitch, 10° pitch, generate_wall_girts true, generate_tie_beams
-true, truss off, bracing off, sag rods off. Always set EVERY field in the schema (it is strict).
+true, truss off, bracing off, sag rods off, haunches/fly_braces/base_plates/bottom_chord_restraint
+off. Always set EVERY field in the schema (it is strict).
 
 MODIFICATIONS: to resize or toggle a feature (add bracing, more bays, change pitch, etc.), call
 `submit_structural_grid_layout` again with the FULL updated grid_definition and structural_members:[].
@@ -80,6 +89,7 @@ submit_structural_grid_layout({{
     "height_mm": 4500, "roof_pitch_deg": 12, "roof_style": "duo_pitch",
     "mono_high_side": "B", "use_truss": false, "truss_type": "none",
     "x_bracing": false, "gable_bracing": false, "roof_bracing": false, "sag_rods": false,
+    "haunches": false, "fly_braces": false, "base_plates": false, "bottom_chord_restraint": false,
     "generate_wall_girts": true, "generate_tie_beams": true,
     "purlin_spacing_mm": 1200, "girt_spacing_mm": 1500
   }},

@@ -25,7 +25,10 @@ export type StructuralElementType =
   | "tie_beam"
   | "bracing"
   | "x_brace"
-  | "sag_rod";
+  | "sag_rod"
+  | "haunch"
+  | "fly_brace"
+  | "base_plate";
 
 export interface GridDefinition {
   x_spans: number[];
@@ -33,6 +36,12 @@ export interface GridDefinition {
   height_mm: number;
   roof_pitch_deg: number;
   roof_style: ShedRoofStyle | "flat";
+  use_truss?: boolean;
+  truss_type?: string;
+  haunches?: boolean;
+  fly_braces?: boolean;
+  base_plates?: boolean;
+  bottom_chord_restraint?: boolean;
 }
 
 export interface StructuralMember {

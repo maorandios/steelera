@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-ShapeType = Literal["I-beam", "C-channel", "Box", "Pipe"]
+ShapeType = Literal["I-beam", "C-channel", "Box", "Pipe", "Plate", "Haunch"]
 SectionSource = Literal["catalog", "parametric"]
 CatalogProfileName = Literal["IPE200", "IPE300", "HEA200"]
 ProfileNameInput = Literal["NONE", "IPE200", "IPE300", "HEA200"]
@@ -133,6 +133,8 @@ class ProjectElementMm(BaseModel):
     length_mm: float
     width_mm: float
     depth_mm: float
+    # Tapered members (e.g. haunches): section depth at the far end (start depth = depth_mm).
+    taper_end_depth_mm: float | None = None
     section_source: SectionSource = "parametric"
     profile_name: str | None = None
     section_mm: SectionDimensionsMm | None = None

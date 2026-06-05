@@ -1,6 +1,7 @@
 "use client";
 
 import { IBeamExtrudedMesh } from "@/components/viewport/IBeamExtrudedMesh";
+import { HaunchMesh } from "@/components/viewport/HaunchMesh";
 import { ElementMeshGroup } from "@/components/viewport/ElementMeshGroup";
 import { geometryExtentsM, memberLengthM } from "@/lib/coordinates";
 import { isElementRenderable } from "@/lib/elementValidation";
@@ -13,6 +14,8 @@ const SHAPE_COLORS: Record<string, string> = {
   "C-channel": "#6b8cae",
   Box: "#8b9cb3",
   Pipe: "#9aa8bc",
+  Plate: "#7d8694",
+  Haunch: "#4f86c6",
 };
 
 const SELECTED_COLOR = "#38bdf8";
@@ -39,6 +42,14 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
           section={element.section_mm}
           color={color}
         />
+      </ElementMeshGroup>
+    );
+  }
+
+  if (element.shape_type === "Haunch") {
+    return (
+      <ElementMeshGroup element={element}>
+        <HaunchMesh element={element} color={color} />
       </ElementMeshGroup>
     );
   }

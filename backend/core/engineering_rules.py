@@ -133,6 +133,40 @@ def seat_purlin_bottom_on_rafter(
     )
 
 
+def seat_haunch_top_on_rafter_bottom(
+    x: float,
+    y_centerline: float,
+    z: float,
+    *,
+    rafter_profile: str,
+    pitch_rad: float,
+    pitch_sign: float = 1.0,
+) -> tuple[float, float, float]:
+    """Top-of-haunch node on rafter bottom flange (use with top-aligned Haunch mesh)."""
+    half = profile_half_depth_mm(rafter_profile)
+    nx, ny = _rafter_outward_normal(pitch_rad, pitch_sign)
+    return (
+        x - half * nx,
+        y_centerline - half * ny,
+        z,
+    )
+
+
+def haunch_roll_deg(
+    start_y_mm: float,
+    end_y_mm: float,
+    pitch_sign: float,
+) -> float:
+    """Roll about member +X so local -Y hangs toward the rafter bottom flange.
+
+    ``setFromUnitVectors`` picks opposite cross-section orientations for uphill
+    vs downhill runs; flip 180° when climb direction and pitch_sign disagree.
+    """
+    climbing = end_y_mm > start_y_mm + 1e-6
+    uphill_side = pitch_sign > 0
+    return 180.0 if climbing != uphill_side else 0.0
+
+
 def purlin_roll_deg(pitch_rad: float, pitch_sign: float) -> float:
     """Roll C-channel lips vertical to the roof plane (90° to rafter)."""
     return math.degrees(pitch_rad) * pitch_sign
@@ -367,6 +401,144 @@ def generate_standard_pratt_webs(
         top_nodes=top,
         webs=webs,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Full practical truss web-pattern registry
+#
+# Every truss is a 2D frame in the X–Y plane at one Z line. It has a top chord
+# (follows the roof), a bottom chord (tie), and webs between shared panel nodes.
+# Panel nodes are indexed 0..n left→right; top[i] sits directly above bottom[i],
+# so a web is fully defined by (chord, node-index) endpoints. Connectivity is
+# therefore guaranteed and degenerate (zero-length) members drop downstream.
+# --------------------------------------------------------------------------- #
+
+TrussType = Literal[
+    "pratt",
+    "howe",
+    "warren",
+    "fink",
+    "king_post",
+    "queen_post",
+    "scissor",
+]
+
+# Diagonals/verticals carried (auto-panelled across each chord run).
+PARAMETRIC_TRUSS_TYPES = frozenset({"pratt", "howe", "warren"})
+# Fixed patterns that require a central apex (symmetric duo-pitch only).
+APEX_TRUSS_TYPES = frozenset({"king_post", "queen_post", "fink", "scissor"})
+ALL_TRUSS_TYPES = PARAMETRIC_TRUSS_TYPES | APEX_TRUSS_TYPES
+
+# Panel count across the FULL span for fixed-pattern apex trusses.
+_FIXED_TRUSS_PANELS: dict[str, int] = {
+    "king_post": 2,
+    "queen_post": 4,
+    "fink": 4,
+    "scissor": 4,
+}
+
+# Scissor: bottom chord lifts toward the centre by this fraction of the top rise.
+SCISSOR_BOTTOM_RISE_FRACTION = 0.5
+
+# A web end: which chord ("top" | "bottom") and which panel-node index.
+WebEnd = tuple[str, int]
+WebPair = tuple[WebEnd, WebEnd]
+
+
+def truss_panel_count(span_x_mm: float, chord_depth_mm: float, rise_mm: float) -> int:
+    """Panels across a chord run so diagonals sit in the 30°–60° band (EC3)."""
+    return _optimal_pratt_panel_count(
+        abs(span_x_mm), max(float(chord_depth_mm), 200.0), abs(rise_mm)
+    )
+
+
+def truss_fixed_panels(truss_type: str) -> int | None:
+    """Full-span panel count for fixed-pattern trusses (None ⇒ auto-panel)."""
+    return _FIXED_TRUSS_PANELS.get(truss_type)
+
+
+def scissor_bottom_rise_mm(
+    node_i: int, n: int, ridge_i: int, total_rise_mm: float
+) -> float:
+    """Vertical lift of a scissor bottom-chord node above the eave datum."""
+    if ridge_i <= 0:
+        return 0.0
+    frac = min(node_i, n - node_i) / ridge_i
+    return frac * SCISSOR_BOTTOM_RISE_FRACTION * float(total_rise_mm)
+
+
+def truss_web_plan(truss_type: str, n: int, ridge_i: int | None) -> list[WebPair]:
+    """
+    Web members for an n-panel truss as (chord, node-index) endpoint pairs.
+
+    ridge_i is the apex node index for pitched trusses (None ⇒ parallel chords).
+    Verticals are emitted at every node; zero-depth ones at the eaves drop later,
+    which also yields the correct end post on mono / parallel trusses.
+    """
+    m = ridge_i if ridge_i is not None else n
+
+    def v(i: int) -> WebPair:
+        return (("top", i), ("bottom", i))
+
+    def d(a: str, ai: int, b: str, bi: int) -> WebPair:
+        return ((a, ai), (b, bi))
+
+    plan: list[WebPair] = []
+
+    if truss_type == "warren":
+        # Zig-zag of equal triangles, no verticals.
+        for i in range(n):
+            if i % 2 == 0:
+                plan.append(d("bottom", i, "top", i + 1))
+            else:
+                plan.append(d("top", i, "bottom", i + 1))
+        return plan
+
+    if truss_type == "howe":
+        # Verticals + diagonals sloping down toward the eaves (Pratt mirror).
+        for i in range(n + 1):
+            plan.append(v(i))
+        for i in range(0, m):
+            plan.append(d("top", i, "bottom", i + 1))
+        for i in range(m, n):
+            plan.append(d("top", i + 1, "bottom", i))
+        return plan
+
+    if truss_type == "king_post":
+        # n == 2: single central post under the apex.
+        plan.append(v(m))
+        return plan
+
+    if truss_type == "queen_post":
+        # n == 4: two posts + struts up to the apex.
+        plan.append(v(1))
+        plan.append(v(3))
+        plan.append(d("bottom", 1, "top", 2))
+        plan.append(d("bottom", 3, "top", 2))
+        return plan
+
+    if truss_type == "fink":
+        # n == 4: central post + struts up to the mid-rafters (classic "W").
+        plan.append(v(2))
+        plan.append(d("bottom", 2, "top", 1))
+        plan.append(d("bottom", 2, "top", 3))
+        return plan
+
+    if truss_type == "scissor":
+        # n == 4: crossing diagonals over a raised bottom chord + central post.
+        plan.append(v(2))
+        plan.append(d("bottom", 1, "top", 3))
+        plan.append(d("bottom", 3, "top", 1))
+        return plan
+
+    # default: pratt — verticals + diagonals rising toward the apex/centre.
+    for i in range(n + 1):
+        plan.append(v(i))
+    for i in range(0, m):
+        plan.append(d("bottom", i, "top", i + 1))
+    for i in range(m, n):
+        plan.append(d("bottom", i + 1, "top", i))
+    return plan
 
 
 def sag_rod_bay_fractions(bay_spacing_mm: float) -> list[float]:

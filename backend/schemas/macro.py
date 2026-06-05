@@ -40,8 +40,22 @@ class GenerateShedRequest(BaseModel):
     )
     use_truss: bool = Field(
         False,
-        description="Replace solid IPE rafters with a simplified roof truss (chords + web)",
+        description="Replace solid IPE rafters with a roof truss (chords + web pattern)",
     )
+    truss_type: str = Field(
+        "pratt",
+        description=(
+            "Truss web pattern when use_truss=true: pratt | howe | warren | fink | "
+            "king_post | queen_post | scissor."
+        ),
+    )
+
+    @field_validator("truss_type", mode="before")
+    @classmethod
+    def _normalize_truss_type(cls, value: str | None) -> str:
+        from schemas.spatial_grid import _normalize_truss_type_value
+
+        return _normalize_truss_type_value(value, "pratt")
     use_bracing: bool = Field(
         False,
         description="Cross (X) bracing on the LONG side walls",
@@ -57,6 +71,22 @@ class GenerateShedRequest(BaseModel):
     use_sag_rods: bool = Field(
         False,
         description="Slender ties between adjacent purlins / girts mid-bay",
+    )
+    use_haunches: bool = Field(
+        False,
+        description="Tapered eave (knee) + apex haunches on rafter (portal) frames",
+    )
+    use_fly_braces: bool = Field(
+        False,
+        description="Small fly/flange braces restraining rafter inner flange (purlin stays)",
+    )
+    use_base_plates: bool = Field(
+        False,
+        description="Steel base plates under every column / gable-post foot",
+    )
+    use_bottom_chord_restraint: bool = Field(
+        False,
+        description="Longitudinal runners restraining truss bottom chords between frames",
     )
     generate_wall_girts: bool = Field(
         True,

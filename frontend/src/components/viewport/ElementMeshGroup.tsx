@@ -55,6 +55,8 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
   const userRotation = elementRotationRad(element);
   const { height, width } = geometryExtentsM(element);
   const lengthM = nodeFrame?.lengthM ?? legacy?.extents.length ?? 0;
+  const selectBoxPos: [number, number, number] =
+    element.shape_type === "Haunch" ? [0, -height / 2, 0] : [0, 0, 0];
   if (!Number.isFinite(lengthM) || lengthM < 1e-6) {
     return null;
   }
@@ -75,7 +77,7 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
             <group rotation={[userRotation, 0, 0]}>
               {children}
               {isSelected && (
-                <mesh>
+                <mesh position={selectBoxPos}>
                   <boxGeometry args={[lengthM, height, width]} />
                   <meshBasicMaterial visible={false} />
                   <Edges color="#38bdf8" threshold={15} />

@@ -12,10 +12,15 @@ export interface GenerateShedParams {
   purlin_spacing: number;
   girt_spacing_mm: number;
   use_truss: boolean;
+  truss_type?: string;
   use_bracing: boolean;
   use_gable_bracing: boolean;
   use_roof_bracing: boolean;
   use_sag_rods: boolean;
+  use_haunches: boolean;
+  use_fly_braces: boolean;
+  use_base_plates: boolean;
+  use_bottom_chord_restraint: boolean;
   generate_wall_girts: boolean;
   generate_tie_beams: boolean;
   replace_existing?: boolean;

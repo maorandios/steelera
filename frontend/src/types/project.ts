@@ -1,4 +1,4 @@
-export type ShapeType = "I-beam" | "C-channel" | "Box" | "Pipe";
+export type ShapeType = "I-beam" | "C-channel" | "Box" | "Pipe" | "Plate" | "Haunch";
 export type SectionSource = "catalog" | "parametric";
 export type ExtrusionAxis = "x" | "y" | "z";
 export type ElementRotation = 0 | 90 | 180 | 270;
@@ -21,6 +21,8 @@ export interface ProjectElementMm {
   length_mm: number;
   width_mm: number;
   depth_mm: number;
+  /** Tapered members (haunches): section depth at the far end (start depth = depth_mm). */
+  taper_end_depth_mm?: number | null;
   section_source?: SectionSource;
   profile_name?: string | null;
   section_mm?: SectionDimensionsMm | null;

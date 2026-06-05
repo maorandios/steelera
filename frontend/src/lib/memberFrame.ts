@@ -118,7 +118,11 @@ function quaternionAlongDirection(
 }
 
 function memberRollRad(element: ProjectElementMm): number {
-  if (element.element_type === "purlin") {
+  if (
+    element.element_type === "purlin" ||
+    element.element_type === "haunch" ||
+    element.element_type === "fly_brace"
+  ) {
     const euler = element.rotation_euler_deg;
     if (euler && euler.length >= 1) {
       return (euler[0] ?? 0) * DEG_TO_RAD;

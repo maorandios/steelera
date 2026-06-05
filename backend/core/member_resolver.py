@@ -7,8 +7,10 @@ from typing import Any
 
 from core.engineering_rules import (
     gable_girt_center_outside_z,
+    haunch_roll_deg,
     purlin_roll_deg,
     rafter_pitch_at_x,
+    seat_haunch_top_on_rafter_bottom,
     seat_purlin_bottom_on_rafter,
     wall_girt_center_outside_x,
 )
@@ -31,6 +33,9 @@ _PROFILE_DEFAULTS: dict[str, tuple[str, str]] = {
     "bracing": ("L50x50", "Box"),
     "x_brace": ("L50x50", "Box"),
     "sag_rod": ("ROD12", "Pipe"),
+    "haunch": ("IPE300", "Haunch"),
+    "fly_brace": ("L50x50", "Box"),
+    "base_plate": ("PL20", "Plate"),
 }
 
 
@@ -132,6 +137,71 @@ def _place_secondary_steel(
         roll = purlin_roll_deg(pitch_rad, pitch_sign) if et == "purlin" else 0.0
         return new_start, new_end, [roll, 0.0, 0.0], "bottom"
 
+    if et == "haunch":
+
+        def _seat_haunch(
+            pt: tuple[float, float, float],
+        ) -> tuple[tuple[float, float, float], float]:
+            pitch_rad, pitch_sign = rafter_pitch_at_x(
+                pt[0],
+                style=roof.style,
+                pitch_rad=roof.pitch_rad,
+                ridge_x=roof.ridge_x,
+                mono_high_side=roof.mono_high_side,
+                is_flat=roof.is_flat,
+                is_mono=roof.is_mono,
+            )
+            seated = seat_haunch_top_on_rafter_bottom(
+                *pt,
+                rafter_profile=_RAFTER_PROFILE,
+                pitch_rad=pitch_rad,
+                pitch_sign=pitch_sign,
+            )
+            return seated, pitch_sign
+
+        new_start, _sign_start = _seat_haunch(start)
+        new_end, sign_end = _seat_haunch(end)
+        # Roll sign from the shallow end — unambiguous mid-slope (ridge nodes sit on
+        # both sides and would pick the wrong pitch_sign from the deep end alone).
+        roll = haunch_roll_deg(new_start[1], new_end[1], sign_end)
+        return new_start, new_end, [roll, 0.0, 0.0], "center"
+
+    if et == "fly_brace":
+        def _fly_point(
+            pt: tuple[float, float, float],
+            *,
+            to_purlin: bool,
+        ) -> tuple[tuple[float, float, float], float]:
+            pitch_rad, pitch_sign = rafter_pitch_at_x(
+                pt[0],
+                style=roof.style,
+                pitch_rad=roof.pitch_rad,
+                ridge_x=roof.ridge_x,
+                mono_high_side=roof.mono_high_side,
+                is_flat=roof.is_flat,
+                is_mono=roof.is_mono,
+            )
+            if to_purlin:
+                seated = seat_purlin_bottom_on_rafter(
+                    *pt,
+                    rafter_profile=_RAFTER_PROFILE,
+                    pitch_rad=pitch_rad,
+                    pitch_sign=pitch_sign,
+                )
+            else:
+                seated = seat_haunch_top_on_rafter_bottom(
+                    *pt,
+                    rafter_profile=_RAFTER_PROFILE,
+                    pitch_rad=pitch_rad,
+                    pitch_sign=pitch_sign,
+                )
+            return seated, pitch_sign
+
+        new_start, _ = _fly_point(start, to_purlin=False)
+        new_end, sign_end = _fly_point(end, to_purlin=True)
+        roll = haunch_roll_deg(new_start[1], new_end[1], sign_end)
+        return new_start, new_end, [roll, 0.0, 0.0], "center"
+
     if et == "wall_girt":
         dx = abs(end[0] - start[0])
         dz = abs(end[2] - start[2])
@@ -177,7 +247,13 @@ def member_from_grid_nodes(
 
     rotation_euler = [0.0, 0.0, 0.0]
     alignment = member.alignment
-    if grid is not None and member.element_type in ("purlin", "sag_rod", "wall_girt"):
+    if grid is not None and member.element_type in (
+        "purlin",
+        "sag_rod",
+        "wall_girt",
+        "haunch",
+        "fly_brace",
+    ):
         start, end, rotation_euler, alignment = _place_secondary_steel(
             member, start, end, grid=grid
         )

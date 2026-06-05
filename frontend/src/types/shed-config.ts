@@ -1,6 +1,25 @@
 import type { ShedRoofStyle } from "@/types/macro";
 
-export type TrussType = "pratt" | "warren" | "none";
+export type TrussType =
+  | "pratt"
+  | "howe"
+  | "warren"
+  | "fink"
+  | "king_post"
+  | "queen_post"
+  | "scissor"
+  | "none";
+
+/** Selectable truss patterns (excludes "none") with friendly labels. */
+export const TRUSS_TYPE_OPTIONS: { value: Exclude<TrussType, "none">; label: string }[] = [
+  { value: "pratt", label: "Pratt" },
+  { value: "howe", label: "Howe" },
+  { value: "warren", label: "Warren" },
+  { value: "fink", label: "Fink (W)" },
+  { value: "king_post", label: "King Post" },
+  { value: "queen_post", label: "Queen Post" },
+  { value: "scissor", label: "Scissor" },
+];
 
 export interface ShedGlobalParameters {
   height_mm: number;
@@ -34,4 +53,8 @@ export interface ShedAssemblyConfig {
   generate_tie_beams: boolean;
   gable_bracing?: boolean;
   roof_bracing?: boolean;
+  haunches?: boolean;
+  fly_braces?: boolean;
+  base_plates?: boolean;
+  bottom_chord_restraint?: boolean;
 }

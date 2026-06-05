@@ -97,7 +97,22 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                         },
                         "truss_type": {
                             "type": "string",
-                            "enum": ["pratt", "warren", "none"],
+                            "enum": [
+                                "pratt",
+                                "howe",
+                                "warren",
+                                "fink",
+                                "king_post",
+                                "queen_post",
+                                "scissor",
+                                "none",
+                            ],
+                            "description": (
+                                "Truss web pattern (used when use_truss=true). "
+                                "pratt/howe/warren auto-panel for any span; "
+                                "fink/king_post/queen_post/scissor suit symmetric "
+                                "duo-pitch gables. 'none' = solid rafters."
+                            ),
                         },
                         "x_bracing": {
                             "type": "boolean",
@@ -114,6 +129,31 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                         "sag_rods": {
                             "type": "boolean",
                             "description": "Add anti-sag tension rods between purlins.",
+                        },
+                        "haunches": {
+                            "type": "boolean",
+                            "description": (
+                                "Tapered eave (knee) + apex haunches on RAFTER (portal) "
+                                "frames. Standard for portal sheds; ignored on truss frames."
+                            ),
+                        },
+                        "fly_braces": {
+                            "type": "boolean",
+                            "description": (
+                                "Small fly/flange braces restraining the rafter inner flange "
+                                "(purlin stays). Detail-level lateral restraint."
+                            ),
+                        },
+                        "base_plates": {
+                            "type": "boolean",
+                            "description": "Steel base plates under every column / gable-post foot.",
+                        },
+                        "bottom_chord_restraint": {
+                            "type": "boolean",
+                            "description": (
+                                "Longitudinal runners restraining truss bottom chords between "
+                                "frames (only meaningful with trusses)."
+                            ),
                         },
                         "generate_wall_girts": {"type": "boolean"},
                         "generate_tie_beams": {"type": "boolean"},
@@ -139,6 +179,10 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                         "gable_bracing",
                         "roof_bracing",
                         "sag_rods",
+                        "haunches",
+                        "fly_braces",
+                        "base_plates",
+                        "bottom_chord_restraint",
                         "generate_wall_girts",
                         "generate_tie_beams",
                         "purlin_spacing_mm",

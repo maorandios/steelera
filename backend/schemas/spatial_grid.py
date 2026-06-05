@@ -5,7 +5,44 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 RoofStyleLiteral = Literal["duo_pitch", "mono_pitch", "flat"]
-TrussTypeLiteral = Literal["pratt", "warren", "none"]
+TrussTypeLiteral = Literal[
+    "pratt",
+    "howe",
+    "warren",
+    "fink",
+    "king_post",
+    "queen_post",
+    "scissor",
+    "none",
+]
+
+_TRUSS_TYPE_VALUES = {
+    "pratt",
+    "howe",
+    "warren",
+    "fink",
+    "king_post",
+    "queen_post",
+    "scissor",
+    "none",
+}
+
+_TRUSS_TYPE_ALIASES = {
+    "kingpost": "king_post",
+    "king": "king_post",
+    "queenpost": "queen_post",
+    "queen": "queen_post",
+    "scissors": "scissor",
+}
+
+
+def _normalize_truss_type_value(value: str | None, default: str) -> str:
+    if value is None:
+        return default
+    key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    key = key.removesuffix("_truss")
+    key = _TRUSS_TYPE_ALIASES.get(key, key)
+    return key if key in _TRUSS_TYPE_VALUES else default
 
 ElevationLiteral = Literal[
     "ground",
@@ -26,6 +63,9 @@ StructuralElementType = Literal[
     "bracing",
     "x_brace",
     "sag_rod",
+    "haunch",
+    "fly_brace",
+    "base_plate",
 ]
 
 MemberProfile = Literal[
@@ -35,6 +75,7 @@ MemberProfile = Literal[
     "C150",
     "L50x50",
     "ROD12",
+    "PL20",
 ]
 
 
@@ -81,6 +122,10 @@ class GridDefinition(BaseModel):
     gable_bracing: bool = False
     roof_bracing: bool = False
     sag_rods: bool = False
+    haunches: bool = False
+    fly_braces: bool = False
+    base_plates: bool = False
+    bottom_chord_restraint: bool = False
     generate_wall_girts: bool = True
     generate_tie_beams: bool = True
     purlin_spacing_mm: float = Field(1200.0, gt=0)
@@ -102,10 +147,7 @@ class GridDefinition(BaseModel):
     @field_validator("truss_type", mode="before")
     @classmethod
     def normalize_truss_type(cls, value: str | None) -> str:
-        if value is None:
-            return "none"
-        key = str(value).strip().lower()
-        return key if key in ("pratt", "warren", "none") else "none"
+        return _normalize_truss_type_value(value, "none")
 
 
 class StructuralMember(BaseModel):

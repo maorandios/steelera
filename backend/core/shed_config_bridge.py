@@ -27,7 +27,7 @@ def legacy_request_to_config(request: GenerateShedRequest) -> ShedAssemblyConfig
             ShedBayConfiguration(
                 bay_index=i,
                 use_truss=request.use_truss,
-                truss_type="pratt" if request.use_truss else "none",
+                truss_type=request.truss_type if request.use_truss else "none",
                 x_bracing_left_wall=request.use_bracing,
                 x_bracing_right_wall=request.use_bracing,
                 wall_girts=request.generate_wall_girts,
@@ -49,6 +49,10 @@ def legacy_request_to_config(request: GenerateShedRequest) -> ShedAssemblyConfig
         generate_tie_beams=request.generate_tie_beams,
         gable_bracing=request.use_gable_bracing,
         roof_bracing=request.use_roof_bracing,
+        haunches=request.use_haunches,
+        fly_braces=request.use_fly_braces,
+        base_plates=request.use_base_plates,
+        bottom_chord_restraint=request.use_bottom_chord_restraint,
     )
 
 

@@ -1,6 +1,16 @@
 import { formatSpansInput, totalFromSpans, type ShedAssemblyParams } from "@/lib/shed-assembly";
-import type { ShedAssemblyConfig } from "@/types/shed-config";
+import type { ShedAssemblyConfig, TrussType } from "@/types/shed-config";
 import type { StructuralGridLayout } from "@/types/spatial-grid";
+
+const SELECTABLE_TRUSS_TYPES: ReadonlySet<string> = new Set([
+  "pratt",
+  "howe",
+  "warren",
+  "fink",
+  "king_post",
+  "queen_post",
+  "scissor",
+]);
 
 /** Infer sidebar params from a resolved grid layout (spans + global heights). */
 export function gridLayoutToShedParams(
@@ -22,6 +32,9 @@ export function gridLayoutToShedParams(
     purlin_spacing: 1200,
     girt_spacing_mm: 1500,
     use_truss: layout.structural_members.some((m) => m.element_type === "truss_web"),
+    truss_type: (gd.truss_type && SELECTABLE_TRUSS_TYPES.has(gd.truss_type)
+      ? gd.truss_type
+      : "pratt") as Exclude<TrussType, "none">,
     use_bracing: layout.structural_members.some((m) => m.element_type === "bracing"),
     use_gable_bracing: layout.structural_members.some((m) =>
       m.id.includes("-brace-end-"),
@@ -30,6 +43,14 @@ export function gridLayoutToShedParams(
       m.id.includes("-brace-roof-"),
     ),
     use_sag_rods: layout.structural_members.some((m) => m.element_type === "sag_rod"),
+    use_haunches: layout.structural_members.some((m) => m.element_type === "haunch"),
+    use_fly_braces: layout.structural_members.some((m) => m.element_type === "fly_brace"),
+    use_base_plates: layout.structural_members.some(
+      (m) => m.element_type === "base_plate",
+    ),
+    use_bottom_chord_restraint: layout.structural_members.some((m) =>
+      m.id.includes("-bctie-"),
+    ),
     generate_wall_girts: layout.structural_members.some(
       (m) => m.element_type === "wall_girt",
     ),

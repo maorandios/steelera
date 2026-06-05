@@ -8,19 +8,31 @@ import { Button } from "@/components/ui/button";
 import { formatChecklistDimensions } from "@/lib/shed-checklist";
 import { useProjectStore } from "@/store/project-store";
 import type { ShedChecklistPayload, ShedChecklistSelections } from "@/types/chat";
+import { TRUSS_TYPE_OPTIONS, type TrussType } from "@/types/shed-config";
 
 const DEFAULT_SELECTIONS: ShedChecklistSelections = {
   use_bracing: false,
   use_gable_bracing: false,
   use_roof_bracing: false,
   use_truss: false,
+  truss_type: "pratt",
   use_sag_rods: false,
+  use_haunches: false,
+  use_fly_braces: false,
+  use_base_plates: false,
+  use_bottom_chord_restraint: false,
   generate_wall_girts: true,
   generate_tie_beams: true,
 };
 
+type BooleanSelectionKey = {
+  [K in keyof ShedChecklistSelections]: ShedChecklistSelections[K] extends boolean
+    ? K
+    : never;
+}[keyof ShedChecklistSelections];
+
 type ChecklistOption = {
-  id: keyof ShedChecklistSelections;
+  id: BooleanSelectionKey;
   label: string;
   description: string;
 };
@@ -57,6 +69,26 @@ const OPTIONS: ChecklistOption[] = [
     description: "Mid-bay ties to stabilize purlins against sag.",
   },
   {
+    id: "use_haunches",
+    label: "Eave & Apex Haunches",
+    description: "Tapered knee/apex haunches on rafter (portal) frames.",
+  },
+  {
+    id: "use_fly_braces",
+    label: "Fly / Flange Braces",
+    description: "Small stays restraining the rafter inner flange.",
+  },
+  {
+    id: "use_base_plates",
+    label: "Column Base Plates",
+    description: "Steel base plates under every column foot (clean IFC).",
+  },
+  {
+    id: "use_bottom_chord_restraint",
+    label: "Truss Bottom-Chord Restraint",
+    description: "Longitudinal runners tying truss bottom chords (trusses only).",
+  },
+  {
     id: "use_truss",
     label: "Heavy-Duty Roof Truss",
     description: "Trussed roof frames instead of solid IPE rafters.",
@@ -75,7 +107,7 @@ export function ShedComponentChecklist({ payload }: ShedComponentChecklistProps)
   const [error, setError] = useState<string | null>(null);
 
   const setOption =
-    (key: keyof ShedChecklistSelections) => (checked: boolean) =>
+    (key: BooleanSelectionKey) => (checked: boolean) =>
       setSelections((prev) => ({ ...prev, [key]: checked }));
 
   const handleConfirm = async () => {
@@ -120,7 +152,7 @@ export function ShedComponentChecklist({ payload }: ShedComponentChecklistProps)
             </div>
             <Switch
               id={`checklist-${opt.id}`}
-              checked={selections[opt.id]}
+              checked={Boolean(selections[opt.id])}
               disabled={isMacroLoading}
               onCheckedChange={setOption(opt.id)}
               className="mt-0.5 shrink-0"
@@ -128,6 +160,35 @@ export function ShedComponentChecklist({ payload }: ShedComponentChecklistProps)
           </li>
         ))}
       </ul>
+
+      {selections.use_truss ? (
+        <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/60 px-3 py-2.5">
+          <label
+            htmlFor="checklist-truss-type"
+            className="text-sm font-medium text-foreground"
+          >
+            Truss Pattern
+          </label>
+          <select
+            id="checklist-truss-type"
+            value={selections.truss_type}
+            disabled={isMacroLoading}
+            onChange={(e) =>
+              setSelections((prev) => ({
+                ...prev,
+                truss_type: e.target.value as Exclude<TrussType, "none">,
+              }))
+            }
+            className="h-8 rounded-md border border-border/60 bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            {TRUSS_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       <Button
         type="button"

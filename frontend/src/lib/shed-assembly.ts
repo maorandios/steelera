@@ -1,5 +1,6 @@
 import type { GenerateShedParams, ShedRoofStyle } from "@/types/macro";
 import type { ProjectElementMm } from "@/types/project";
+import type { TrussType } from "@/types/shed-config";
 
 export type { ShedRoofStyle };
 
@@ -19,10 +20,15 @@ export interface ShedAssemblyParams {
   purlin_spacing: number;
   girt_spacing_mm: number;
   use_truss: boolean;
+  truss_type: Exclude<TrussType, "none">;
   use_bracing: boolean;
   use_gable_bracing: boolean;
   use_roof_bracing: boolean;
   use_sag_rods: boolean;
+  use_haunches: boolean;
+  use_fly_braces: boolean;
+  use_base_plates: boolean;
+  use_bottom_chord_restraint: boolean;
   generate_wall_girts: boolean;
   generate_tie_beams: boolean;
 }
@@ -40,10 +46,15 @@ export const DEFAULT_SHED_PARAMS: ShedAssemblyParams = {
   purlin_spacing: 1200,
   girt_spacing_mm: 1500,
   use_truss: false,
+  truss_type: "pratt",
   use_bracing: false,
   use_gable_bracing: false,
   use_roof_bracing: false,
   use_sag_rods: false,
+  use_haunches: false,
+  use_fly_braces: false,
+  use_base_plates: false,
+  use_bottom_chord_restraint: false,
   generate_wall_girts: true,
   generate_tie_beams: true,
 };
@@ -211,10 +222,16 @@ export function mergeShedParams(
     purlin_spacing: partial.purlin_spacing ?? current.purlin_spacing,
     girt_spacing_mm: partial.girt_spacing_mm ?? current.girt_spacing_mm,
     use_truss: partial.use_truss ?? current.use_truss,
+    truss_type: partial.truss_type ?? current.truss_type,
     use_bracing: partial.use_bracing ?? current.use_bracing,
     use_gable_bracing: partial.use_gable_bracing ?? current.use_gable_bracing,
     use_roof_bracing: partial.use_roof_bracing ?? current.use_roof_bracing,
     use_sag_rods: partial.use_sag_rods ?? current.use_sag_rods,
+    use_haunches: partial.use_haunches ?? current.use_haunches,
+    use_fly_braces: partial.use_fly_braces ?? current.use_fly_braces,
+    use_base_plates: partial.use_base_plates ?? current.use_base_plates,
+    use_bottom_chord_restraint:
+      partial.use_bottom_chord_restraint ?? current.use_bottom_chord_restraint,
     generate_wall_girts:
       partial.generate_wall_girts ?? current.generate_wall_girts,
     generate_tie_beams:
@@ -308,10 +325,15 @@ export function parseShedFormValues(
       purlin_spacing: purlin,
       girt_spacing_mm: girt,
       use_truss: form.useTruss,
+      truss_type: DEFAULT_SHED_PARAMS.truss_type,
       use_bracing: form.useBracing,
       use_gable_bracing: DEFAULT_SHED_PARAMS.use_gable_bracing,
       use_roof_bracing: DEFAULT_SHED_PARAMS.use_roof_bracing,
       use_sag_rods: form.useSagRods,
+      use_haunches: DEFAULT_SHED_PARAMS.use_haunches,
+      use_fly_braces: DEFAULT_SHED_PARAMS.use_fly_braces,
+      use_base_plates: DEFAULT_SHED_PARAMS.use_base_plates,
+      use_bottom_chord_restraint: DEFAULT_SHED_PARAMS.use_bottom_chord_restraint,
       generate_wall_girts: form.generateWallGirts,
       generate_tie_beams: DEFAULT_SHED_PARAMS.generate_tie_beams,
     },
@@ -332,10 +354,15 @@ export function shedParamsToApiPayload(
     purlin_spacing: params.purlin_spacing,
     girt_spacing_mm: params.girt_spacing_mm,
     use_truss: params.use_truss,
+    truss_type: params.truss_type,
     use_bracing: params.use_bracing,
     use_gable_bracing: params.use_gable_bracing,
     use_roof_bracing: params.use_roof_bracing,
     use_sag_rods: params.use_sag_rods,
+    use_haunches: params.use_haunches,
+    use_fly_braces: params.use_fly_braces,
+    use_base_plates: params.use_base_plates,
+    use_bottom_chord_restraint: params.use_bottom_chord_restraint,
     generate_wall_girts: params.generate_wall_girts,
     generate_tie_beams: params.generate_tie_beams,
   };

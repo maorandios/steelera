@@ -311,6 +311,94 @@ PURLIN_SHAPE = "C-channel"
 PURLIN_SECTION_MM = {"h": 150.0, "b": 75.0, "tw": 4.0, "tf": 12.0}
 RAFTER_HALF_DEPTH_MM = 100.0  # IPE200 h/2 — seat purlins on top flange
 
+# Haunch: a tapered cut of the rafter section, deep at the knee/apex, tapering to
+# the rafter depth up-slope. Start (deep) depth = factor × rafter depth.
+HAUNCH_RAFTER_PROFILE = "IPE200"
+HAUNCH_START_DEPTH_FACTOR = 2.0
+# Fly brace: small angle stay; render as a slender square stub.
+FLY_BRACE_SIDE_MM = 60.0
+# Base plate: square steel plate under each column foot.
+BASE_PLATE_COLUMN_PROFILE = "HEA200"
+BASE_PLATE_PLAN_FACTOR = 1.8  # × column flange width
+BASE_PLATE_THICKNESS_MM = 25.0
+
+
+def _macro_nodes_or_compute(
+    element: ProjectElementMm, macro: dict[str, Any]
+) -> ProjectElementMm:
+    nodes = macro.get("nodes")
+    if nodes:
+        return element.model_copy(update={"nodes": nodes})
+    return element.model_copy(update={"nodes": compute_member_nodes(element)})
+
+
+def _special_macro_element(macro: dict[str, Any]) -> ProjectElementMm | None:
+    """Plate / haunch / fly-brace members bypass the I-beam & C-channel paths."""
+    et = macro.get("element_type")
+    if et not in ("base_plate", "haunch", "fly_brace"):
+        return None
+
+    pos = macro["position"]
+    length_mm = float(macro["length"])
+    axis = macro.get("axis", "x")
+    rotation = macro.get("rotation", [0.0, 0.0, 0.0])
+    common = {
+        "id": macro["id"],
+        "assembly_id": macro["assembly_id"],
+        "position_mm": {"x": pos[0], "y": pos[1], "z": pos[2]},
+        "axis": axis,
+        "alignment": macro.get("alignment", "center"),
+        "rotation_euler_deg": rotation,
+        "element_type": et,
+        "section_source": "parametric",
+        "profile_name": None,
+        "section_mm": None,
+    }
+
+    if et == "base_plate":
+        col = get_profile(BASE_PLATE_COLUMN_PROFILE)
+        plan = max(length_mm, col["b"] * BASE_PLATE_PLAN_FACTOR)
+        thickness = BASE_PLATE_THICKNESS_MM
+        el = ProjectElementMm(
+            shape_type="Plate",
+            size_mm={"x": plan, "y": thickness, "z": plan},
+            length_mm=plan,
+            width_mm=plan,
+            depth_mm=thickness,
+            **common,
+        )
+        return _macro_nodes_or_compute(el, macro)
+
+    if et == "haunch":
+        raf = get_profile(HAUNCH_RAFTER_PROFILE)
+        start_depth = raf["h"] * HAUNCH_START_DEPTH_FACTOR
+        end_depth = raf["h"]
+        width = raf["b"]
+        el = ProjectElementMm(
+            shape_type="Haunch",
+            size_mm={"x": length_mm, "y": start_depth, "z": width},
+            length_mm=length_mm,
+            width_mm=width,
+            depth_mm=start_depth,
+            taper_end_depth_mm=end_depth,
+            alignment="center",
+            **{k: v for k, v in common.items() if k != "alignment"},
+        )
+        return _macro_nodes_or_compute(el, macro)
+
+    # fly_brace — slender square stub.
+    s = FLY_BRACE_SIDE_MM
+    el = ProjectElementMm(
+        shape_type="Box",
+        size_mm={"x": length_mm, "y": s, "z": s},
+        length_mm=length_mm,
+        width_mm=s,
+        depth_mm=s,
+        section_mm=SectionDimensionsMm(h=s, b=s, tw=s, tf=s),
+        **{k: v for k, v in common.items() if k != "section_mm"},
+    )
+    return _macro_nodes_or_compute(el, macro)
+
 
 def _frame_positions_along(length_mm: float, spacing_mm: float) -> list[float]:
     """Bay positions from 0 through length inclusive."""
@@ -391,6 +479,10 @@ def cumulative_positions_from_spans(spans: list[float]) -> list[float]:
 
 def macro_member_to_project_element(macro: dict[str, Any]) -> ProjectElementMm:
     """Convert a macro member dict into a full ProjectElementMm payload."""
+    special = _special_macro_element(macro)
+    if special is not None:
+        return special
+
     profile = str(macro["profile"]).strip().upper().replace(" ", "")
     axis = macro.get("axis", "y")
     length_mm = float(macro["length"])

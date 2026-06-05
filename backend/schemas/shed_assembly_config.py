@@ -4,8 +4,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from schemas.spatial_grid import TrussTypeLiteral, _normalize_truss_type_value
+
 RoofStyleLiteral = Literal["duo_pitch", "mono_pitch", "flat"]
-TrussTypeLiteral = Literal["pratt", "warren", "none"]
 
 
 class ShedGlobalParameters(BaseModel):
@@ -59,12 +60,7 @@ class ShedBayConfiguration(BaseModel):
     @field_validator("truss_type", mode="before")
     @classmethod
     def normalize_truss_type(cls, value: str | None) -> str:
-        if value is None:
-            return "pratt"
-        key = str(value).strip().lower()
-        if key in ("pratt", "warren", "none"):
-            return key
-        return "pratt"
+        return _normalize_truss_type_value(value, "pratt")
 
 
 class ShedAssemblyConfig(BaseModel):
@@ -81,6 +77,10 @@ class ShedAssemblyConfig(BaseModel):
     generate_tie_beams: bool = True
     gable_bracing: bool = False
     roof_bracing: bool = False
+    haunches: bool = False
+    fly_braces: bool = False
+    base_plates: bool = False
+    bottom_chord_restraint: bool = False
 
     @model_validator(mode="after")
     def validate_bay_indices(self) -> "ShedAssemblyConfig":

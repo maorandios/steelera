@@ -1,5 +1,6 @@
 import type { ProjectElementMm, ProjectState } from "@/types/project";
 import type { ShedRoofStyle } from "@/types/macro";
+import type { TrussType } from "@/types/shed-config";
 import type { StructuralGridLayout } from "@/types/spatial-grid";
 
 export type ChatRole = "user" | "assistant";
@@ -21,7 +22,12 @@ export type ShedChecklistSelections = {
   generate_wall_girts: boolean;
   generate_tie_beams: boolean;
   use_sag_rods: boolean;
+  use_haunches: boolean;
+  use_fly_braces: boolean;
+  use_base_plates: boolean;
+  use_bottom_chord_restraint: boolean;
   use_truss: boolean;
+  truss_type: Exclude<TrussType, "none">;
 };
 
 export type ChatUiBlock = {
