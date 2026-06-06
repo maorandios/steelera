@@ -31,6 +31,12 @@ export interface ShedAssemblyParams {
   use_bottom_chord_restraint: boolean;
   generate_wall_girts: boolean;
   generate_tie_beams: boolean;
+  column_profile?: string | null;
+  bracing_profile?: string | null;
+  purlin_profile?: string | null;
+  girt_profile?: string | null;
+  sag_rod_profile?: string | null;
+  base_plate_profile?: string | null;
 }
 
 export const DEFAULT_SHED_PARAMS: ShedAssemblyParams = {
@@ -127,6 +133,14 @@ function memberHasType(
   );
 }
 
+function firstMemberProfile(
+  members: ProjectElementMm[],
+  predicate: (m: ProjectElementMm) => boolean,
+): string | null {
+  const hit = members.find((m) => predicate(m) && m.profile_name);
+  return hit?.profile_name ?? null;
+}
+
 export function inferShedParamsFromElements(
   elements: ProjectElementMm[],
 ): ShedAssemblyParams | null {
@@ -200,6 +214,29 @@ export function inferShedParamsFromElements(
     generate_tie_beams:
       memberHasType(members, "tie_beam") ||
       members.some((m) => m.id.startsWith("shed-tie")),
+    column_profile: firstMemberProfile(
+      members,
+      (m) => m.element_type === "column" || m.id.startsWith("shed-col"),
+    ),
+    bracing_profile: firstMemberProfile(
+      members,
+      (m) => m.element_type === "bracing" || m.id.includes("-brace-"),
+    ),
+    purlin_profile: firstMemberProfile(
+      members,
+      (m) => m.element_type === "purlin" || m.id.startsWith("shed-purlin"),
+    ),
+    girt_profile: firstMemberProfile(
+      members,
+      (m) =>
+        m.element_type === "wall_girt" ||
+        m.id.includes("-girt-") ||
+        m.id.includes("-gablegirt-"),
+    ),
+    sag_rod_profile: firstMemberProfile(
+      members,
+      (m) => m.element_type === "sag_rod" || m.id.startsWith("shed-sag"),
+    ),
   };
 }
 
@@ -236,6 +273,28 @@ export function mergeShedParams(
       partial.generate_wall_girts ?? current.generate_wall_girts,
     generate_tie_beams:
       partial.generate_tie_beams ?? current.generate_tie_beams,
+    column_profile:
+      partial.column_profile != null
+        ? partial.column_profile
+        : current.column_profile,
+    bracing_profile:
+      partial.bracing_profile != null
+        ? partial.bracing_profile
+        : current.bracing_profile,
+    purlin_profile:
+      partial.purlin_profile != null
+        ? partial.purlin_profile
+        : current.purlin_profile,
+    girt_profile:
+      partial.girt_profile != null ? partial.girt_profile : current.girt_profile,
+    sag_rod_profile:
+      partial.sag_rod_profile != null
+        ? partial.sag_rod_profile
+        : current.sag_rod_profile,
+    base_plate_profile:
+      partial.base_plate_profile != null
+        ? partial.base_plate_profile
+        : current.base_plate_profile,
   };
 }
 

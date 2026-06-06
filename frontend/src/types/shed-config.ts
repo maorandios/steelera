@@ -50,6 +50,12 @@ export interface ShedAssemblyConfig {
   bays_configuration: ShedBayConfiguration[];
   purlin_spacing_mm: number;
   girt_spacing_mm: number;
+  column_profile?: string | null;
+  bracing_profile?: string | null;
+  purlin_profile?: string | null;
+  girt_profile?: string | null;
+  sag_rod_profile?: string | null;
+  base_plate_profile?: string | null;
   generate_tie_beams: boolean;
   gable_bracing?: boolean;
   roof_bracing?: boolean;

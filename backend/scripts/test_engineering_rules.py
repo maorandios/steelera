@@ -9,9 +9,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core.engineering_rules import (
     WEB_ANGLE_MAX_DEG,
     WEB_ANGLE_MIN_DEG,
+    gable_girt_roll_deg,
     generate_standard_pratt_webs,
+    max_column_outside_half_on_x_line,
+    max_column_outside_half_on_z_line,
+    profile_column_outside_half_mm,
     sag_rod_bay_fractions,
     sag_rod_z_positions,
+    wall_girt_roll_deg,
 )
 
 layout = generate_standard_pratt_webs(
@@ -38,5 +43,17 @@ z_rows = sag_rod_z_positions(0.0, 6000.0, 6000.0)
 assert len(z_rows) == 2
 assert abs(z_rows[0] - 2000.0) < 1.0
 assert abs(z_rows[1] - 4000.0) < 1.0
+
+assert wall_girt_roll_deg(0.0, 12000.0) == 90.0
+assert wall_girt_roll_deg(12000.0, 12000.0) == 270.0
+assert gable_girt_roll_deg(0.0, 10000.0) == 270.0
+assert gable_girt_roll_deg(10000.0, 10000.0) == 90.0
+
+cols = {("A", "1"): "HEA200", ("A", "2"): "SHS300X300X10", ("J", "1"): "SHS300X300X10"}
+assert max_column_outside_half_on_x_line("A", cols) == 150.0
+assert profile_column_outside_half_mm("HEA200") == 100.0
+assert profile_column_outside_half_mm("SHS300X300X10") == 150.0
+z_cols = {("A", "1"): "HEA200", ("B", "1"): "SHS300X300X10", ("A+1/3", "1"): "HEA200"}
+assert max_column_outside_half_on_z_line("1", z_cols) == 150.0
 
 print("PASS: engineering_rules")

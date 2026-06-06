@@ -7,12 +7,17 @@ from typing import Any
 
 from core.engineering_rules import (
     gable_girt_center_outside_z,
+    gable_girt_roll_deg,
     haunch_roll_deg,
+    max_column_outside_half_on_x_line,
+    max_column_outside_half_on_z_line,
+    profile_column_outside_half_mm,
     purlin_roll_deg,
     rafter_pitch_at_x,
     seat_haunch_top_on_rafter_bottom,
     seat_purlin_bottom_on_rafter,
     wall_girt_center_outside_x,
+    wall_girt_roll_deg,
 )
 from catalog_loader import get_profile, has_profile
 from core.geometry_engine import macro_members_to_project_elements
@@ -93,12 +98,69 @@ def _macro_member(
     }
 
 
+def _column_profile_index(
+    members: list[StructuralMember],
+) -> dict[tuple[str, str], str]:
+    """Map (x_axis, z_axis) grid address → column catalog profile."""
+    index: dict[tuple[str, str], str] = {}
+    for member in members:
+        if member.element_type != "column":
+            continue
+        key = (member.start_node.x_axis, member.start_node.z_axis)
+        index[key] = member.profile
+    return index
+
+
+def _side_wall_x_label(grid: StructuralGridEngine, x_mm: float) -> str:
+    if x_mm <= 1e-6:
+        return grid.x_labels[0]
+    if x_mm >= grid.total_width_mm - 1e-6:
+        return grid.x_labels[-1]
+    raise ValueError(f"x={x_mm} is not on a side-wall grid line")
+
+
+def _end_wall_z_label(grid: StructuralGridEngine, z_mm: float) -> str:
+    if z_mm <= 1e-6:
+        return grid.z_labels[0]
+    if z_mm >= grid.total_length_mm - 1e-6:
+        return grid.z_labels[-1]
+    raise ValueError(f"z={z_mm} is not on an end-wall grid line")
+
+
+def _column_outside_half_on_x_wall(
+    grid: StructuralGridEngine,
+    x_mm: float,
+    column_profiles: dict[tuple[str, str], str],
+    fallback_profile: str,
+) -> float:
+    try:
+        x_label = _side_wall_x_label(grid, x_mm)
+        return max_column_outside_half_on_x_line(x_label, column_profiles)
+    except ValueError:
+        return profile_column_outside_half_mm(fallback_profile)
+
+
+def _column_outside_half_on_z_wall(
+    grid: StructuralGridEngine,
+    z_mm: float,
+    column_profiles: dict[tuple[str, str], str],
+    fallback_profile: str,
+) -> float:
+    try:
+        z_label = _end_wall_z_label(grid, z_mm)
+        return max_column_outside_half_on_z_line(z_label, column_profiles)
+    except ValueError:
+        return profile_column_outside_half_mm(fallback_profile)
+
+
 def _place_secondary_steel(
     member: StructuralMember,
     start: tuple[float, float, float],
     end: tuple[float, float, float],
     *,
     grid: StructuralGridEngine,
+    column_profile: str,
+    column_profiles: dict[tuple[str, str], str],
 ) -> tuple[tuple[float, float, float], tuple[float, float, float], list[float], str]:
     """Seat girts/purlins outside primary steel, perpendicular to the support."""
     roof = grid.roof
@@ -112,11 +174,14 @@ def _place_secondary_steel(
         dz = abs(end[2] - start[2])
         if dy >= dx and dy >= dz:
             if start[0] <= 1e-6 or start[0] >= grid.total_width_mm - 1e-6:
+                col_half = _column_outside_half_on_x_wall(
+                    grid, start[0], column_profiles, column_profile
+                )
                 x_out = wall_girt_center_outside_x(
                     start[0],
                     grid.total_width_mm,
-                    column_profile=_COLUMN_PROFILE,
-                    girt_profile="C150x2",
+                    col_outside_half_mm=col_half,
+                    girt_profile=profile,
                 )
                 return (
                     (x_out, start[1], start[2]),
@@ -124,11 +189,14 @@ def _place_secondary_steel(
                     [0.0, 0.0, 0.0],
                     member.alignment,
                 )
+            col_half = _column_outside_half_on_z_wall(
+                grid, start[2], column_profiles, column_profile
+            )
             z_out = gable_girt_center_outside_z(
                 start[2],
                 grid.total_length_mm,
-                column_profile=_COLUMN_PROFILE,
-                girt_profile="C150x2",
+                col_outside_half_mm=col_half,
+                girt_profile=profile,
             )
             return (
                 (start[0], start[1], z_out),
@@ -231,28 +299,36 @@ def _place_secondary_steel(
         dx = abs(end[0] - start[0])
         dz = abs(end[2] - start[2])
         if dz >= dx:
+            col_half = _column_outside_half_on_x_wall(
+                grid, start[0], column_profiles, column_profile
+            )
             x_out = wall_girt_center_outside_x(
                 start[0],
                 grid.total_width_mm,
-                column_profile=_COLUMN_PROFILE,
+                col_outside_half_mm=col_half,
                 girt_profile=profile,
             )
+            roll = wall_girt_roll_deg(start[0], grid.total_width_mm)
             return (
                 (x_out, start[1], start[2]),
                 (x_out, end[1], end[2]),
-                [0.0, 0.0, 0.0],
+                [roll, 0.0, 0.0],
                 member.alignment,
             )
+        col_half = _column_outside_half_on_z_wall(
+            grid, start[2], column_profiles, column_profile
+        )
         z_out = gable_girt_center_outside_z(
             start[2],
             grid.total_length_mm,
-            column_profile=_COLUMN_PROFILE,
+            col_outside_half_mm=col_half,
             girt_profile=profile,
         )
+        roll = gable_girt_roll_deg(start[2], grid.total_length_mm)
         return (
             (start[0], start[1], z_out),
             (end[0], end[1], z_out),
-            [0.0, 0.0, 0.0],
+            [roll, 0.0, 0.0],
             member.alignment,
         )
 
@@ -266,6 +342,8 @@ def member_from_grid_nodes(
     start: tuple[float, float, float],
     end: tuple[float, float, float],
     grid: StructuralGridEngine | None = None,
+    column_profile: str = _COLUMN_PROFILE,
+    column_profiles: dict[tuple[str, str], str] | None = None,
 ) -> dict[str, Any] | None:
     profile = member.profile
     shape = _shape_for_member(member.element_type, profile)
@@ -280,7 +358,12 @@ def member_from_grid_nodes(
         "fly_brace",
     ):
         start, end, rotation_euler, alignment = _place_secondary_steel(
-            member, start, end, grid=grid
+            member,
+            start,
+            end,
+            grid=grid,
+            column_profile=column_profile,
+            column_profiles=column_profiles or {},
         )
 
     start_l = list(start)
@@ -325,12 +408,18 @@ def resolve_structural_members(
     members: list[StructuralMember],
     *,
     assembly_id: str,
+    column_profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Iterate uniform BOM; resolve grid references → absolute mm macro members.
 
     Identical members (same resolved endpoints + element type) are de-duplicated so an
     over-eager AI composition can never produce overlapping steel.
     """
+    resolved_column = column_profile or next(
+        (m.profile for m in members if m.element_type == "column"),
+        _COLUMN_PROFILE,
+    )
+    column_profiles = _column_profile_index(members)
     macro: list[dict[str, Any]] = []
     seen: set[tuple] = set()
     for member in members:
@@ -342,6 +431,8 @@ def resolve_structural_members(
             start=start,
             end=end,
             grid=grid,
+            column_profile=resolved_column,
+            column_profiles=column_profiles,
         )
         if built is None:
             continue
@@ -360,10 +451,13 @@ def layout_to_macro_members(layout: StructuralGridLayout) -> list[dict[str, Any]
 
     layout = ensure_layout_members(layout)
     grid = StructuralGridEngine.from_definition(layout.grid_definition)
+    gd = layout.grid_definition
+    column_profile = getattr(gd, "column_profile", None)
     return resolve_structural_members(
         grid,
         layout.structural_members,
         assembly_id=layout.assembly_id,
+        column_profile=column_profile,
     )
 
 

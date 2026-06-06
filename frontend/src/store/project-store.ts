@@ -2,8 +2,11 @@
 
 import { create } from "zustand";
 
-import { postChat, postGenerateShed } from "@/lib/api";
+import { postChat, postGenerateShed, type GenerateShedBody } from "@/lib/api";
+import { gridLayoutToShedParams } from "@/lib/grid-layout";
+import { extractProfilesFromMessages } from "@/lib/profile-overrides";
 import {
+  DEFAULT_SHED_PARAMS,
   inferShedParamsFromElements,
   mergeShedParams,
   SHED_ASSEMBLY_ID,
@@ -15,8 +18,6 @@ import {
 } from "@/lib/shed-config";
 import type { ShedAssemblyConfig } from "@/types/shed-config";
 import type { StructuralGridLayout } from "@/types/spatial-grid";
-import type { GenerateShedBody } from "@/lib/api";
-import { gridLayoutToShedParams } from "@/lib/grid-layout";
 import {
   buildStructuralGridState,
   DEFAULT_STRUCTURAL_GRID,
@@ -142,29 +143,45 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     const selectedId = get().selectedElementId;
     const isGridLayout = "structural_members" in body && "grid_definition" in body;
-    const params = isGridLayout
+    const fromBody = isGridLayout
       ? gridLayoutToShedParams(body as StructuralGridLayout)
       : shedConfigToAssemblyParams(body as ShedAssemblyConfig);
+    const chatProfiles = extractProfilesFromMessages(get().messages);
+    const params = mergeShedParams(
+      mergeShedParams(get().shedAssemblyParams ?? DEFAULT_SHED_PARAMS, fromBody),
+      {
+        column_profile: chatProfiles.column_profile,
+        bracing_profile: chatProfiles.bracing_profile,
+        purlin_profile: chatProfiles.purlin_profile,
+        girt_profile: chatProfiles.girt_profile,
+        sag_rod_profile: chatProfiles.sag_rod_profile,
+        base_plate_profile: chatProfiles.base_plate_profile,
+      },
+    );
 
     set({ isMacroLoading: true, error: null });
 
     try {
-      const payload = {
-        ...body,
-        assembly_id: body.assembly_id ?? "shed_1",
-        replace_existing: body.replace_existing ?? true,
-      };
-      const response = await postGenerateShed(payload);
+      const apiPayload = assemblyParamsToShedConfig(
+        params,
+        body.assembly_id ?? SHED_ASSEMBLY_ID,
+      );
+      apiPayload.replace_existing = body.replace_existing ?? true;
+      const response = await postGenerateShed(apiPayload);
       const elements = (response.projectElements ?? []).map((element) =>
         normalizeElement(element),
       );
+      const fromElements = inferShedParamsFromElements(elements);
+      const finalParams = fromElements
+        ? mergeShedParams(params, fromElements)
+        : params;
       const selectedStillExists = elements.some(
         (element) => element.id === selectedId,
       );
       set({
         projectElements: elements,
-        shedAssemblyParams: params,
-        structuralGrid: structuralGridFromShedParams(params),
+        shedAssemblyParams: finalParams,
+        structuralGrid: structuralGridFromShedParams(finalParams),
         isMacroLoading: false,
         selectedElementId: selectedStillExists ? selectedId : null,
       });

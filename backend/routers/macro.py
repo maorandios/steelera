@@ -14,6 +14,8 @@ from core.grid_member_catalog import members_from_shed_config
 
 from core.member_resolver import layout_to_macro_members
 
+from core.profile_overrides import apply_profile_overrides_to_layout
+
 from core.project_session import get_state, merge_assembly, set_shed_params
 
 from core.shed_config_bridge import legacy_request_to_config
@@ -22,7 +24,8 @@ from schemas.macro import GenerateShedRequest, GenerateShedResponse
 
 from schemas.shed_assembly_config import ShedAssemblyConfig
 
-from schemas.spatial_grid import GridDefinition, StructuralGridLayout
+from core.shed_grid_bridge import grid_definition_from_shed_config
+from schemas.spatial_grid import StructuralGridLayout
 
 
 
@@ -36,29 +39,13 @@ def _layout_from_shed_config(config: ShedAssemblyConfig) -> StructuralGridLayout
 
     cfg = config.with_default_bays()
 
-    gp = cfg.global_parameters
-
     return StructuralGridLayout(
 
         assembly_id=cfg.assembly_id,
 
         replace_existing=cfg.replace_existing,
 
-        grid_definition=GridDefinition(
-
-            x_spans=list(cfg.grid_layout.x_spans),
-
-            z_spans=list(cfg.grid_layout.z_spans),
-
-            height_mm=gp.height_mm,
-
-            roof_pitch_deg=0.0 if gp.roof_style == "flat" else gp.roof_pitch_deg,
-
-            roof_style=gp.roof_style,
-
-            mono_high_side=getattr(cfg, "mono_high_side", "B"),
-
-        ),
+        grid_definition=grid_definition_from_shed_config(cfg),
 
         structural_members=members_from_shed_config(cfg),
 
@@ -122,7 +109,8 @@ def _parse_generate_shed_body(body: Any) -> StructuralGridLayout:
         from core.grid_layout_utils import ensure_layout_members
 
         layout = StructuralGridLayout.model_validate(body)
-        return ensure_layout_members(layout)
+        layout = ensure_layout_members(layout)
+        return apply_profile_overrides_to_layout(layout)
 
     if "global_parameters" in body and "grid_layout" in body:
 

@@ -522,7 +522,7 @@ def _tee_records():
 # standard for cold-formed sections — spot-check against your supplier).       #
 # Flange and lip scale with web depth. Mass from developed width x thickness.  #
 # --------------------------------------------------------------------------- #
-_CF_DEPTHS = [80, 100, 120, 140, 150, 170, 200, 230, 260, 300, 340]
+_CF_DEPTHS = [80, 100, 120, 140, 150, 170, 200, 220, 230, 260, 300, 340]
 _CF_THICKNESSES = [1.5, 2.0, 2.5, 3.0]
 
 

@@ -57,6 +57,12 @@ export function shedConfigToAssemblyParams(
     use_sag_rods: anySag,
     generate_wall_girts: anyGirts,
     generate_tie_beams: config.generate_tie_beams,
+    column_profile: config.column_profile ?? null,
+    bracing_profile: config.bracing_profile ?? null,
+    purlin_profile: config.purlin_profile ?? null,
+    girt_profile: config.girt_profile ?? null,
+    sag_rod_profile: config.sag_rod_profile ?? null,
+    base_plate_profile: config.base_plate_profile ?? null,
   };
 }
 
@@ -89,6 +95,12 @@ export function assemblyParamsToShedConfig(
     bays_configuration: bays,
     purlin_spacing_mm: params.purlin_spacing,
     girt_spacing_mm: params.girt_spacing_mm,
+    column_profile: params.column_profile ?? null,
+    bracing_profile: params.bracing_profile ?? null,
+    purlin_profile: params.purlin_profile ?? null,
+    girt_profile: params.girt_profile ?? null,
+    sag_rod_profile: params.sag_rod_profile ?? null,
+    base_plate_profile: params.base_plate_profile ?? null,
     generate_tie_beams: params.generate_tie_beams,
     gable_bracing: params.use_gable_bracing,
     roof_bracing: params.use_roof_bracing,

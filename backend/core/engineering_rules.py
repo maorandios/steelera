@@ -67,6 +67,42 @@ def profile_half_width_mm(profile_name: str) -> float:
     return float(section["b"]) / 2.0
 
 
+def profile_column_outside_half_mm(profile_name: str) -> float:
+    """Half extent from column centre to its outer face (max of h/b) for girt flush."""
+    section = get_profile(profile_name)
+    return max(float(section["h"]), float(section["b"])) / 2.0
+
+
+def max_column_outside_half_on_x_line(
+    x_label: str,
+    column_profiles: dict[tuple[str, str], str],
+) -> float:
+    """Largest column half-face among every column on an X grid line."""
+    halves = [
+        profile_column_outside_half_mm(prof)
+        for (xl, _zl), prof in column_profiles.items()
+        if xl == x_label
+    ]
+    if not halves:
+        raise ValueError(f"no columns found on x grid line '{x_label}'")
+    return max(halves)
+
+
+def max_column_outside_half_on_z_line(
+    z_label: str,
+    column_profiles: dict[tuple[str, str], str],
+) -> float:
+    """Largest column half-face among every column on a Z grid line."""
+    halves = [
+        profile_column_outside_half_mm(prof)
+        for (_xl, zl), prof in column_profiles.items()
+        if zl == z_label
+    ]
+    if not halves:
+        raise ValueError(f"no columns found on z grid line '{z_label}'")
+    return max(halves)
+
+
 def _rafter_outward_normal(pitch_rad: float, pitch_sign: float) -> tuple[float, float]:
     """Unit normal from rafter centerline to top flange (outward / upward)."""
     return (-math.sin(pitch_rad) * pitch_sign, math.cos(pitch_rad))
@@ -176,16 +212,15 @@ def wall_girt_center_outside_x(
     x_column: float,
     total_width: float,
     *,
-    column_profile: str,
+    col_outside_half_mm: float,
     girt_profile: str,
 ) -> float:
-    """Side-wall girt centerline outside the column flange (perpendicular to column)."""
-    col_half = profile_half_width_mm(column_profile)
-    girt_half = profile_half_depth_mm(girt_profile)
+    """Side-wall girt centre with C-web back flush on the column outer flange face."""
+    girt_seat = profile_girt_web_seat_mm(girt_profile)
     if x_column <= 1e-6:
-        return x_column - col_half - girt_half
+        return x_column - col_outside_half_mm - girt_seat
     if x_column >= total_width - 1e-6:
-        return x_column + col_half + girt_half
+        return x_column + col_outside_half_mm + girt_seat
     return x_column
 
 
@@ -193,17 +228,40 @@ def gable_girt_center_outside_z(
     z_column: float,
     total_length: float,
     *,
-    column_profile: str,
+    col_outside_half_mm: float,
     girt_profile: str,
 ) -> float:
-    """Gable-wall girt centerline outside the column flange (perpendicular to column)."""
-    col_half = profile_half_width_mm(column_profile)
-    girt_half = profile_half_depth_mm(girt_profile)
+    """Gable-wall girt centre with C-web back flush on the column outer flange face."""
+    girt_seat = profile_girt_web_seat_mm(girt_profile)
     if z_column <= 1e-6:
-        return z_column - col_half - girt_half
+        return z_column - col_outside_half_mm - girt_seat
     if z_column >= total_length - 1e-6:
-        return z_column + col_half + girt_half
+        return z_column + col_outside_half_mm + girt_seat
     return z_column
+
+
+def profile_girt_web_seat_mm(girt_profile: str) -> float:
+    """Centroid-to-web-back distance with h horizontal against the column face (mm)."""
+    section = get_profile(girt_profile)
+    return float(section["h"]) / 2.0
+
+
+def wall_girt_roll_deg(x_column: float, total_width: float) -> float:
+    """Roll nested Cee: h horizontal (outward), open side down."""
+    if x_column <= 1e-6:
+        return 90.0
+    if x_column >= total_width - 1e-6:
+        return 270.0
+    return 90.0
+
+
+def gable_girt_roll_deg(z_column: float, total_length: float) -> float:
+    """Roll nested Cee on gable walls: h horizontal (outward), open side down."""
+    if z_column <= 1e-6:
+        return 270.0
+    if z_column >= total_length - 1e-6:
+        return 90.0
+    return 90.0
 
 
 def wall_girt_x_at_column_face(

@@ -42,6 +42,12 @@ export interface GridDefinition {
   fly_braces?: boolean;
   base_plates?: boolean;
   bottom_chord_restraint?: boolean;
+  column_profile?: string | null;
+  bracing_profile?: string | null;
+  purlin_profile?: string | null;
+  girt_profile?: string | null;
+  sag_rod_profile?: string | null;
+  base_plate_profile?: string | null;
 }
 
 export interface StructuralMember {

@@ -336,6 +336,54 @@
     "mass_per_m": 9.04
   },
   {
+    "designation": "Z220x1.5",
+    "family": "Z",
+    "shape": "Zed",
+    "h": 220.0,
+    "b": 74.0,
+    "tw": 1.5,
+    "tf": 1.5,
+    "t": 1.5,
+    "lip": 22.0,
+    "mass_per_m": 4.85
+  },
+  {
+    "designation": "Z220x2",
+    "family": "Z",
+    "shape": "Zed",
+    "h": 220.0,
+    "b": 74.0,
+    "tw": 2.0,
+    "tf": 2.0,
+    "t": 2.0,
+    "lip": 22.0,
+    "mass_per_m": 6.47
+  },
+  {
+    "designation": "Z220x2.5",
+    "family": "Z",
+    "shape": "Zed",
+    "h": 220.0,
+    "b": 74.0,
+    "tw": 2.5,
+    "tf": 2.5,
+    "t": 2.5,
+    "lip": 22.0,
+    "mass_per_m": 8.09
+  },
+  {
+    "designation": "Z220x3",
+    "family": "Z",
+    "shape": "Zed",
+    "h": 220.0,
+    "b": 74.0,
+    "tw": 3.0,
+    "tf": 3.0,
+    "t": 3.0,
+    "lip": 22.0,
+    "mass_per_m": 9.7
+  },
+  {
     "designation": "Z230x1.5",
     "family": "Z",
     "shape": "Zed",

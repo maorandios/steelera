@@ -1,6 +1,6 @@
 import { formatSpansInput, totalFromSpans, type ShedAssemblyParams } from "@/lib/shed-assembly";
 import type { ShedAssemblyConfig, TrussType } from "@/types/shed-config";
-import type { StructuralGridLayout } from "@/types/spatial-grid";
+import type { StructuralGridLayout, StructuralMember } from "@/types/spatial-grid";
 
 const SELECTABLE_TRUSS_TYPES: ReadonlySet<string> = new Set([
   "pratt",
@@ -12,11 +12,19 @@ const SELECTABLE_TRUSS_TYPES: ReadonlySet<string> = new Set([
   "scissor",
 ]);
 
+function profileFromMembers(
+  members: StructuralMember[],
+  elementType: StructuralMember["element_type"],
+): string | undefined {
+  return members.find((m) => m.element_type === elementType)?.profile;
+}
+
 /** Infer sidebar params from a resolved grid layout (spans + global heights). */
 export function gridLayoutToShedParams(
   layout: StructuralGridLayout,
 ): ShedAssemblyParams {
   const gd = layout.grid_definition;
+  const members = layout.structural_members;
   const x = gd.x_spans;
   const z = gd.z_spans;
   return {
@@ -57,6 +65,12 @@ export function gridLayoutToShedParams(
     generate_tie_beams: layout.structural_members.some(
       (m) => m.element_type === "tie_beam",
     ),
+    column_profile: gd.column_profile ?? profileFromMembers(members, "column"),
+    bracing_profile: gd.bracing_profile ?? profileFromMembers(members, "bracing"),
+    purlin_profile: gd.purlin_profile ?? profileFromMembers(members, "purlin"),
+    girt_profile: gd.girt_profile ?? profileFromMembers(members, "wall_girt"),
+    sag_rod_profile: gd.sag_rod_profile ?? profileFromMembers(members, "sag_rod"),
+    base_plate_profile: gd.base_plate_profile,
   };
 }
 

@@ -117,7 +117,82 @@ function quaternionAlongDirection(
   return q;
 }
 
-function memberRollRad(element: ProjectElementMm): number {
+function isWallGirtElement(element: ProjectElementMm): boolean {
+  return (
+    element.element_type === "wall_girt" ||
+    element.id.includes("-girt-") ||
+    element.id.includes("-gablegirt-")
+  );
+}
+
+/** Roll nested Cee: h horizontal (outward from column), open side down. */
+export function inferWallGirtRollDeg(element: ProjectElementMm): number | null {
+  const ep = memberEndpointsMm(element);
+  if (ep) {
+    const sx = ep.start.x;
+    const sy = ep.start.y;
+    const sz = ep.start.z;
+    const ex = ep.end.x;
+    const ey = ep.end.y;
+    const ez = ep.end.z;
+    const dx = Math.abs(ex - sx);
+    const dy = Math.abs(ey - sy);
+    const dz = Math.abs(ez - sz);
+    if (dx >= 1e-6 || dy >= 1e-6 || dz >= 1e-6) {
+      // Side-wall girts run along Z at fixed X; gable girts run along X at fixed Z.
+      if (dz >= dx && dz >= dy) {
+        const xMid = (sx + ex) * 0.5;
+        return xMid <= 1000 ? 90 : 270;
+      }
+      if (dx >= dz && dx >= dy) {
+        const zMid = (sz + ez) * 0.5;
+        return zMid <= 1000 ? 270 : 90;
+      }
+    }
+  }
+
+  // Fallback from shed grid naming: girt-A-* left, girt-B-* right, gablegirt-1-* front.
+  const id = element.id;
+  if (id.includes("-girt-B-") || id.includes("-girt-B+")) {
+    return 270;
+  }
+  if (id.includes("-girt-A-") || id.includes("-girt-A+")) {
+    return 90;
+  }
+  if (/-gablegirt-1(-|\+)/.test(id)) {
+    return 270;
+  }
+  if (/-gablegirt-[2-9]\d*(-|\+)/.test(id)) {
+    return 90;
+  }
+  return null;
+}
+
+/** Z-flip on 90° rolls so lips point down (left side + back gable). */
+export function wallGirtGeometryFlipZ(element: ProjectElementMm): boolean {
+  if (!isWallGirtElement(element)) return false;
+  const roll = wallGirtRollDeg(element);
+  return Math.abs(roll - 90) < 1;
+}
+
+/** @deprecated Use wallGirtGeometryFlipZ */
+export function wallGirtGeometryFlipY(element: ProjectElementMm): boolean {
+  return wallGirtGeometryFlipZ(element);
+}
+
+function wallGirtRollDeg(element: ProjectElementMm): number {
+  const euler = element.rotation_euler_deg;
+  if (euler && euler.length >= 1 && typeof euler[0] === "number") {
+    return euler[0];
+  }
+  return inferWallGirtRollDeg(element) ?? 90;
+}
+
+function memberRollDeg(element: ProjectElementMm): number {
+  if (isWallGirtElement(element)) {
+    return wallGirtRollDeg(element);
+  }
+
   if (
     element.element_type === "purlin" ||
     element.element_type === "haunch" ||
@@ -125,10 +200,21 @@ function memberRollRad(element: ProjectElementMm): number {
   ) {
     const euler = element.rotation_euler_deg;
     if (euler && euler.length >= 1) {
-      return (euler[0] ?? 0) * DEG_TO_RAD;
+      return euler[0] ?? 0;
     }
   }
   return 0;
+}
+
+function memberRollRad(element: ProjectElementMm): number {
+  return memberRollDeg(element) * DEG_TO_RAD;
+}
+
+/**
+ * @deprecated Wall-girt flip is applied on geometry in SectionExtrudedMesh.
+ */
+export function wallGirtMeshScaleY(element: ProjectElementMm): number {
+  return wallGirtGeometryFlipZ(element) ? -1 : 1;
 }
 
 export type MemberNodeFrame = {

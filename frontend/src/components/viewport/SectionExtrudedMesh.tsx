@@ -5,6 +5,7 @@ import * as THREE from "three";
 
 import { memberLengthM } from "@/lib/coordinates";
 import { isFiniteNumber } from "@/lib/elementValidation";
+import { wallGirtGeometryFlipZ } from "@/lib/memberFrame";
 import {
   createAngleShape,
   createCeeShape,
@@ -56,14 +57,20 @@ export function SectionExtrudedMesh({
         return extrudeSection(createAngleShape(h, b, t), lengthM);
       case "Tee":
         return extrudeSection(createTeeShape(h, b, tw, tf), lengthM);
-      case "C-channel":
-        return extrudeSection(createCeeShape(h, b, t, lip), lengthM);
+      case "C-channel": {
+        const geometry = extrudeSection(createCeeShape(h, b, t, lip), lengthM);
+        if (wallGirtGeometryFlipZ(element)) {
+          geometry.scale(1, 1, -1);
+        }
+        return geometry;
+      }
       case "Zed":
         return extrudeSection(createZedShape(h, b, t, lip), lengthM);
       default:
         return null;
     }
   }, [
+    element,
     element.shape_type,
     lengthM,
     section.h,

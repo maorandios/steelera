@@ -13,6 +13,7 @@ from core.spatial_context import format_project_context
 from core.grid_layout_utils import ensure_layout_members
 from core.member_resolver import layout_to_macro_members
 from core.operation_expander import expand_design
+from core.profile_overrides import apply_profile_overrides_to_layout
 from core.structural_renderer import layout_to_api_dict
 from core.structural_validator import validate_macro_members
 from schemas.chat import ChatMessage, ChatUiBlock
@@ -168,7 +169,7 @@ def _is_structural_layout_request(text: str) -> bool:
     )
 
 
-def _parse_grid_layout(arguments: str) -> StructuralGridLayout:
+def _parse_grid_layout(arguments: str, *, user_text: str = "") -> StructuralGridLayout:
     try:
         raw = json.loads(arguments or "{}")
     except json.JSONDecodeError as e:
@@ -177,7 +178,8 @@ def _parse_grid_layout(arguments: str) -> StructuralGridLayout:
     # Python OWNS the geometry: ignore any AI-authored members and always rebuild
     # the complete, correct shed from the parametric grid_definition + toggles.
     layout = layout.model_copy(update={"structural_members": []})
-    return ensure_layout_members(layout)
+    layout = ensure_layout_members(layout)
+    return apply_profile_overrides_to_layout(layout, user_text=user_text)
 
 
 def _design_to_validated_layout(
@@ -347,7 +349,10 @@ def run_chat_turn(
             elif name == "submit_structural_grid_layout":
                 statuses.append("Validating spatial grid layout...")
                 try:
-                    layout = _parse_grid_layout(tc.function.arguments or "{}")
+                    layout = _parse_grid_layout(
+                        tc.function.arguments or "{}",
+                        user_text=last_user_text,
+                    )
                     config_submitted = layout_to_api_dict(layout)
                     tools_used = True
                     gd = layout.grid_definition

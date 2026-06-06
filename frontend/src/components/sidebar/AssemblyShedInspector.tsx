@@ -8,6 +8,7 @@ import {
   DEFAULT_SHED_PARAMS,
   SHED_ASSEMBLY_ID,
   SHED_ASSEMBLY_LABEL,
+  mergeShedParams,
   parseShedFormValues,
   shedParamsToFormStrings,
 } from "@/lib/shed-assembly";
@@ -37,7 +38,11 @@ export function AssemblyShedInspector() {
     }
     setError(null);
     try {
-      await generateShedMacro(assemblyParamsToShedConfig(parsed.params));
+      const merged = mergeShedParams(
+        shedAssemblyParams ?? DEFAULT_SHED_PARAMS,
+        parsed.params,
+      );
+      await generateShedMacro(assemblyParamsToShedConfig(merged));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to update assembly.",

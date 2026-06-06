@@ -25,6 +25,7 @@ frontend/public/swe-worker-*.js
 
 # Build / cache
 *.log
+.dev-logs/
 .DS_Store
 Thumbs.db
 
