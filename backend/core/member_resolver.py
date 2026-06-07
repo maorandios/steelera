@@ -12,6 +12,7 @@ from core.engineering_rules import (
     max_column_outside_half_on_x_line,
     max_column_outside_half_on_z_line,
     profile_column_outside_half_mm,
+    purlin_ridge_mirror_flag,
     purlin_roll_deg,
     rafter_pitch_at_x,
     seat_haunch_top_on_rafter_bottom,
@@ -227,8 +228,16 @@ def _place_secondary_steel(
             pitch_rad=pitch_rad,
             pitch_sign=pitch_sign,
         )
-        roll = purlin_roll_deg(pitch_rad, pitch_sign) if et == "purlin" else 0.0
-        return new_start, new_end, [roll, 0.0, 0.0], "bottom"
+        if et == "purlin":
+            roll = purlin_roll_deg(pitch_rad, pitch_sign)
+            mirror = purlin_ridge_mirror_flag(
+                start[0],
+                ridge_x_mm=roof.ridge_x,
+                is_flat=roof.is_flat,
+                is_mono=roof.is_mono,
+            )
+            return new_start, new_end, [roll, mirror, 0.0], "bottom"
+        return new_start, new_end, [0.0, 0.0, 0.0], "bottom"
 
     if et == "haunch":
 

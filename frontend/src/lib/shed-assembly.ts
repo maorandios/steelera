@@ -17,6 +17,7 @@ export interface ShedAssemblyParams {
   height: number;
   roof_pitch_deg: number;
   roof_style: ShedRoofStyle;
+  mono_high_side: "A" | "B";
   purlin_spacing: number;
   girt_spacing_mm: number;
   use_truss: boolean;
@@ -49,6 +50,7 @@ export const DEFAULT_SHED_PARAMS: ShedAssemblyParams = {
   height: 4000,
   roof_pitch_deg: 10,
   roof_style: "duo_pitch",
+  mono_high_side: "B",
   purlin_spacing: 1200,
   girt_spacing_mm: 1500,
   use_truss: false,
@@ -170,10 +172,20 @@ export function inferShedParamsFromElements(
   }
 
   let roof_style: ShedRoofStyle = "duo_pitch";
-  if (memberHasType(members, "truss_chord") || members.some((m) => m.id.includes("shed-truss"))) {
-    // truss mode — roof style from geometry
+  const gableTc = members.filter(
+    (m) =>
+      m.element_type === "truss_chord" &&
+      /-truss-tc-1-/.test(m.id),
+  );
+  if (gableTc.length === 1) {
+    roof_style = "mono_pitch";
+  } else if (
+    memberHasType(members, "truss_chord") ||
+    members.some((m) => m.id.includes("-truss-"))
+  ) {
+    roof_style = "duo_pitch";
   }
-  if (leftRafters.length === 0) {
+  if (leftRafters.length === 0 && !memberHasType(members, "truss_chord")) {
     const singleRafter = flatRafters.find((r) => r.rotation_euler_deg?.every((v) => v === 0));
     if (singleRafter) {
       roof_style = "flat";
@@ -199,7 +211,8 @@ export function inferShedParamsFromElements(
     roof_style,
     use_truss:
       memberHasType(members, "truss_chord") ||
-      members.some((m) => m.id.startsWith("shed-truss")),
+      memberHasType(members, "truss_web") ||
+      members.some((m) => m.id.includes("-truss-")),
     use_bracing:
       memberHasType(members, "bracing") ||
       members.some((m) => m.id.startsWith("shed-brace")),
@@ -256,6 +269,7 @@ export function mergeShedParams(
     height: partial.height ?? current.height,
     roof_pitch_deg: partial.roof_pitch_deg ?? current.roof_pitch_deg,
     roof_style: partial.roof_style ?? current.roof_style,
+    mono_high_side: partial.mono_high_side ?? current.mono_high_side,
     purlin_spacing: partial.purlin_spacing ?? current.purlin_spacing,
     girt_spacing_mm: partial.girt_spacing_mm ?? current.girt_spacing_mm,
     use_truss: partial.use_truss ?? current.use_truss,

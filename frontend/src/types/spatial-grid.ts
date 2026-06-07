@@ -36,6 +36,7 @@ export interface GridDefinition {
   height_mm: number;
   roof_pitch_deg: number;
   roof_style: ShedRoofStyle | "flat";
+  mono_high_side?: "A" | "B";
   use_truss?: boolean;
   truss_type?: string;
   haunches?: boolean;

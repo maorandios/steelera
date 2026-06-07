@@ -168,6 +168,13 @@ export function inferWallGirtRollDeg(element: ProjectElementMm): number | null {
   return null;
 }
 
+/** Mirror Cee purlins on the right roof slope so lips face the ridge (face-to-face). */
+export function purlinGeometryFlipZ(element: ProjectElementMm): boolean {
+  if (element.element_type !== "purlin") return false;
+  const euler = element.rotation_euler_deg;
+  return Boolean(euler && euler.length >= 2 && Math.abs(euler[1]) > 90);
+}
+
 /** Z-flip on 90° rolls so lips point down (left side + back gable). */
 export function wallGirtGeometryFlipZ(element: ProjectElementMm): boolean {
   if (!isWallGirtElement(element)) return false;

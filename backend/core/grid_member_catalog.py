@@ -49,6 +49,64 @@ def _is_eave_line(grid: StructuralGridEngine, x_label: str) -> bool:
     return abs(_roof_elev_at(grid, x_mm) - grid.roof.eave_y) < 1.0
 
 
+def _all_frames_trussed(
+    grid: StructuralGridEngine, trussed_frames: set[str]
+) -> bool:
+    return bool(grid.z_labels) and len(trussed_frames) >= len(grid.z_labels)
+
+
+def _is_mono_gable_end_frame(grid: StructuralGridEngine, z_label: str) -> bool:
+    """First/last portal frame on a mono-pitch shed (the gable end wall)."""
+    if not grid.roof.is_mono or not grid.z_labels:
+        return False
+    return z_label in (grid.z_labels[0], grid.z_labels[-1])
+
+
+def _truss_fills_gable_triangle(
+    grid: StructuralGridEngine,
+    z_label: str,
+    trussed_frames: set[str],
+) -> bool:
+    """Truss in this frame plane replaces raking gable posts (duo apex or mono end)."""
+    if z_label not in trussed_frames:
+        return False
+    if grid.roof.is_mono:
+        return _is_mono_gable_end_frame(grid, z_label)
+    return True
+
+
+def _side_wall_girt_top_y(
+    grid: StructuralGridEngine,
+    x_label: str,
+    trussed_frames: set[str],
+) -> float:
+    """Side-wall girt bands cannot rise above the vertical supports on that wall."""
+    roof_top = _roof_elev_at(grid, grid.x_coords_mm[x_label])
+    if _all_frames_trussed(grid, trussed_frames):
+        return min(roof_top, grid.roof.eave_y)
+    return roof_top
+
+
+def _vertical_top_elev_at_x(grid: StructuralGridEngine, x_ref: str) -> str:
+    """Elevation token for a vertical that rises to the local roofline."""
+    x_mm = grid.resolve_x_mm(x_ref)
+    if abs(_roof_elev_at(grid, x_mm) - grid.roof.eave_y) < 1.0:
+        return "eave"
+    return "roof"
+
+
+def _gable_post_top_elev(
+    grid: StructuralGridEngine,
+    x_label: str,
+    z_label: str,
+    trussed_frames: set[str],
+) -> str:
+    """Gable post height: mono gables step with the slope even when trussed."""
+    if _truss_fills_gable_triangle(grid, z_label, trussed_frames):
+        return "eave"
+    return _vertical_top_elev_at_x(grid, x_label)
+
+
 def _ridge_label(grid: StructuralGridEngine) -> str | None:
     """X reference at the ridge — a real grid line if one lands there, else a sub-node."""
     if grid.roof.is_flat:
@@ -66,7 +124,7 @@ def _ridge_label(grid: StructuralGridEngine) -> str | None:
 
 
 def _roof_x_positions(grid: StructuralGridEngine, spacing_mm: float) -> list[str]:
-    """X references across the full width at ~spacing, following the roof slope."""
+    """X references across the full width at ~horizontal spacing (girts, gable posts)."""
     labels = grid.x_labels
     positions: list[str] = []
     for li in range(len(labels) - 1):
@@ -78,6 +136,60 @@ def _roof_x_positions(grid: StructuralGridEngine, spacing_mm: float) -> list[str
     positions.append(labels[-1])
     seen: set[str] = set()
     return [p for p in positions if not (p in seen or seen.add(p))]
+
+
+def _x_ref_with_offset(
+    grid: StructuralGridEngine, x_mm: float
+) -> tuple[str, dict[str, float]]:
+    """Grid line + mm offset so resolved X matches ``x_mm`` without rounding drift."""
+    labels = grid.x_labels
+    coords = grid.x_coords_mm
+    for lab in labels:
+        if abs(coords[lab] - x_mm) < 0.01:
+            return lab, {}
+    for li in range(len(labels) - 1):
+        x0 = coords[labels[li]]
+        x1 = coords[labels[li + 1]]
+        if x0 - 0.01 <= x_mm <= x1 + 0.01 and x1 - x0 > 1e-6:
+            return labels[li], {"x": round(x_mm - x0, 3)}
+    if x_mm <= coords[labels[0]]:
+        return labels[0], {"x": round(x_mm - coords[labels[0]], 3)}
+    return labels[-1], {"x": round(x_mm - coords[labels[-1]], 3)}
+
+
+def _resolved_purlin_x(
+    grid: StructuralGridEngine, x_axis: str, offset: dict[str, float]
+) -> float:
+    return grid.resolve_x_mm(x_axis) + float(offset.get("x", 0))
+
+
+def _purlin_placement_refs(
+    grid: StructuralGridEngine, spacing_mm: float
+) -> list[tuple[str, dict[str, float]]]:
+    """Exact X grid refs for roof purlins — slope-spaced with mirrored duo-pitch layout."""
+    roof = grid.roof
+    w = grid.total_width_mm
+
+    if roof.is_flat or spacing_mm <= 0:
+        xs = engineering_rules._roof_flat_x_mm(w, spacing_mm)
+    elif roof.is_mono:
+        xs = engineering_rules.mono_pitch_purlin_x_mm(
+            w, roof.pitch_rad, roof.mono_high_side, spacing_mm
+        )
+    else:
+        xs = engineering_rules.duo_pitch_purlin_x_mm(
+            w, roof.ridge_x, roof.pitch_rad, spacing_mm
+        )
+
+    seen: set[float] = set()
+    refs: list[tuple[str, dict[str, float]]] = []
+    for x in sorted(xs):
+        key = round(x, 3)
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append(_x_ref_with_offset(grid, x))
+    return refs
 
 
 def _column_top_elev(grid: StructuralGridEngine, x_label: str) -> str:
@@ -110,6 +222,19 @@ def _x_ref_at_mm(grid: StructuralGridEngine, x_mm: float, *, denom: int = 120) -
 # --------------------------------------------------------------------------- #
 
 
+def _column_top_for_frame(
+    grid: StructuralGridEngine,
+    x_label: str,
+    z_label: str,
+    trussed_frames: set[str],
+) -> str:
+    """Column height at one grid intersection."""
+    roofline_top = _column_top_elev(grid, x_label)
+    if z_label not in trussed_frames:
+        return roofline_top
+    return "eave"
+
+
 def _columns(
     grid: StructuralGridEngine,
     aid: str,
@@ -119,14 +244,13 @@ def _columns(
     """Columns to the level where their roof structure connects.
 
     Rafter frame: column rises to the roof line at its X (eave on eave walls, apex at
-    a ridge/interior line). Truss frame: the truss bottom chord sits at eave and spans
-    the full width, so EVERY column at that frame stops at eave (the truss bears on top).
+    a ridge/interior line). Truss frame: every column stops at eave — the truss bottom
+    chord bears on top (mono gable-end trusses carry the high side in the end-wall plane).
     """
     out: list[StructuralMember] = []
     for x_label in grid.x_labels:
-        roofline_top = _column_top_elev(grid, x_label)
         for z_label in grid.z_labels:
-            top = "eave" if z_label in trussed_frames else roofline_top
+            top = _column_top_for_frame(grid, x_label, z_label, trussed_frames)
             out.append(
                 StructuralMember(
                     id=f"{aid}-col-{x_label}-{z_label}",
@@ -256,6 +380,124 @@ def _truss_panel_layout(
     return xs, None, "flat"
 
 
+def _mono_gable_truss_frame(
+    grid: StructuralGridEngine,
+    aid: str,
+    z_label: str,
+    truss_type: str,
+) -> list[StructuralMember]:
+    """Mono gable-end truss — single-panel trapezoid (not a triangle fan).
+
+    One flat bottom chord at eave, one sloping top chord, a vertical at the high
+    end, and one Pratt diagonal in the panel. The low-side end post is the main
+    column at eave; the high-side vertical is a truss web.
+    """
+    left, right = grid.x_labels[0], grid.x_labels[-1]
+    left_top = "eave" if _is_eave_line(grid, left) else "roof"
+    right_top = "eave" if _is_eave_line(grid, right) else "roof"
+
+    top = [_ref(left, z_label, left_top), _ref(right, z_label, right_top)]
+    bottom = [_ref(left, z_label, "eave"), _ref(right, z_label, "eave")]
+    chord = {"top": top, "bottom": bottom}
+
+    web_type = truss_type
+    if web_type in engineering_rules.APEX_TRUSS_TYPES or web_type == "warren":
+        web_type = "pratt"
+
+    out: list[StructuralMember] = [
+        StructuralMember(
+            id=f"{aid}-truss-tc-{z_label}-0",
+            element_type="truss_chord",
+            profile="IPE200",
+            start_node=top[0],
+            end_node=top[1],
+        ),
+        StructuralMember(
+            id=f"{aid}-truss-bc-{z_label}-0",
+            element_type="truss_chord",
+            profile="IPE200",
+            start_node=bottom[0],
+            end_node=bottom[1],
+        ),
+    ]
+
+    plan = engineering_rules.mono_pitch_truss_web_plan(
+        1, high_side=grid.roof.mono_high_side
+    )
+    for k, ((sa, ia), (sb, ib)) in enumerate(plan):
+        out.append(
+            StructuralMember(
+                id=f"{aid}-truss-web-{z_label}-{k}",
+                element_type="truss_web",
+                profile="L50x50",
+                start_node=chord[sa][ia],
+                end_node=chord[sb][ib],
+            )
+        )
+    return out
+
+
+def _mono_pitch_truss_frame(
+    grid: StructuralGridEngine,
+    aid: str,
+    z_label: str,
+    truss_type: str,
+    ridge_label: str | None,
+) -> list[StructuralMember]:
+    """Mono-pitch portal truss — flat bottom chord, sloping top chord, panelled webs."""
+    xlabels, _ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
+    if case != "mono" or len(xlabels) < 2:
+        xlabels = [grid.x_labels[0], grid.x_labels[-1]]
+    n = len(xlabels) - 1
+
+    web_type = truss_type
+    if web_type in engineering_rules.APEX_TRUSS_TYPES or web_type == "warren":
+        web_type = "pratt"
+
+    top: list[GridNodeReference] = []
+    bottom: list[GridNodeReference] = []
+    for xl in xlabels:
+        x_mm = grid.resolve_x_mm(xl)
+        bottom.append(_ref(xl, z_label, "eave"))
+        if abs(_roof_elev_at(grid, x_mm) - grid.roof.eave_y) < 1.0:
+            top.append(_ref(xl, z_label, "eave"))
+        else:
+            top.append(_ref(xl, z_label, "roof"))
+
+    chord = {"top": top, "bottom": bottom}
+    out: list[StructuralMember] = []
+    for tag, nodes in (("tc", top), ("bc", bottom)):
+        for s in range(n):
+            out.append(
+                StructuralMember(
+                    id=f"{aid}-truss-{tag}-{z_label}-{s}",
+                    element_type="truss_chord",
+                    profile="IPE200",
+                    start_node=nodes[s],
+                    end_node=nodes[s + 1],
+                )
+            )
+
+    if web_type == "howe":
+        plan = engineering_rules.truss_web_plan("howe", n, n if grid.roof.mono_high_side == "B" else 0)
+    else:
+        plan = engineering_rules.mono_pitch_truss_web_plan(
+            n, high_side=grid.roof.mono_high_side
+        )
+
+    for k, ((sa, ia), (sb, ib)) in enumerate(plan):
+        out.append(
+            StructuralMember(
+                id=f"{aid}-truss-web-{z_label}-{k}",
+                element_type="truss_web",
+                profile="L50x50",
+                start_node=chord[sa][ia],
+                end_node=chord[sb][ib],
+            )
+        )
+    return out
+
+
 def _truss_frame(
     grid: StructuralGridEngine,
     aid: str,
@@ -332,6 +574,38 @@ def _truss_frame(
     return out
 
 
+def _truss_top_panel_refs(
+    grid: StructuralGridEngine,
+    z_label: str,
+    ridge_label: str | None,
+    truss_type: str,
+) -> list[GridNodeReference]:
+    """Top-chord panel nodes for one frame (same refs as the frame builder)."""
+    if grid.roof.is_mono:
+        xlabels, _, case = _truss_panel_layout(grid, ridge_label, truss_type)
+        if case != "mono" or len(xlabels) < 2:
+            xlabels = [grid.x_labels[0], grid.x_labels[-1]]
+        refs: list[GridNodeReference] = []
+        for xl in xlabels:
+            x_mm = grid.resolve_x_mm(xl)
+            if abs(_roof_elev_at(grid, x_mm) - grid.roof.eave_y) < 1.0:
+                refs.append(_ref(xl, z_label, "eave"))
+            else:
+                refs.append(_ref(xl, z_label, "roof"))
+        return refs
+
+    xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
+    refs: list[GridNodeReference] = []
+    for i, xl in enumerate(xlabels):
+        if case == "flat":
+            refs.append(_ref(xl, z_label, "eave"))
+        elif case == "symmetric" and i == ridge_i:
+            refs.append(_ref(xl, z_label, "apex"))
+        else:
+            refs.append(_ref(xl, z_label, "roof"))
+    return refs
+
+
 def _eave_ridge_ties(
     grid: StructuralGridEngine, aid: str, ridge_label: str | None
 ) -> list[StructuralMember]:
@@ -370,22 +644,17 @@ def _purlins(
     if spacing_mm <= 0 or len(grid.z_labels) < 2:
         return []
     z_first, z_last = grid.z_labels[0], grid.z_labels[-1]
-    # Spacing run + guaranteed ridge purlin. The eave purlins are the outer X lines,
-    # which _roof_x_positions always includes, so eave is covered automatically.
-    xrefs = list(_roof_x_positions(grid, spacing_mm))
-    ridge = _ridge_label(grid)
-    if ridge is not None and ridge not in xrefs:
-        xrefs.append(ridge)
-    xrefs = sorted(set(xrefs), key=lambda r: grid.resolve_x_mm(r))
+    # Slope-spaced from each eave; ridge-adjacent pair exactly off the apex.
+    placements = _purlin_placement_refs(grid, spacing_mm)
     out: list[StructuralMember] = []
-    for i, xr in enumerate(xrefs):
+    for i, (xr, off) in enumerate(placements):
         out.append(
             StructuralMember(
                 id=f"{aid}-purlin-{i}",
                 element_type="purlin",
                 profile=profile,
-                start_node=_ref(xr, z_first, "roof"),
-                end_node=_ref(xr, z_last, "roof"),
+                start_node=_ref(xr, z_first, "roof", off),
+                end_node=_ref(xr, z_last, "roof", off),
             )
         )
     return out
@@ -430,6 +699,8 @@ def _side_wall_girts(
     aid: str,
     levels: list[float],
     profile: str = DEFAULT_GIRT_PROFILE,
+    *,
+    trussed_frames: set[str] | None = None,
 ) -> list[StructuralMember]:
     """Horizontal rails on BOTH long side walls at the shared global girt levels."""
     if not levels:
@@ -437,9 +708,10 @@ def _side_wall_girts(
     z_first, z_last = grid.z_labels[0], grid.z_labels[-1]
     walls = (grid.x_labels[0], grid.x_labels[-1])
     eave_y = grid.roof.eave_y
+    trussed = trussed_frames or set()
     out: list[StructuralMember] = []
     for wall in walls:
-        top_y = _roof_elev_at(grid, grid.x_coords_mm[wall])
+        top_y = _side_wall_girt_top_y(grid, wall, trussed)
         for li, y_abs in enumerate(levels):
             if y_abs > top_y + 1.0:
                 continue
@@ -464,18 +736,17 @@ def _gable_posts(
 ) -> list[StructuralMember]:
     """End-wall posts between the main columns.
 
-    Same rule as columns: on a rafter gable they rise to the roofline (framing the
-    gable triangle); on a truss gable they stop at the bottom chord (the truss frames
-    the roof above), so they never poke up through the truss like interior columns.
+    When a truss fills the gable (duo apex or mono end frame), posts stop at the bottom
+    chord. Rafter gables and mono interior frames still use raking posts to the roofline.
     """
     xs = _roof_x_positions(grid, spacing_mm if spacing_mm > 0 else 3000.0)
     main = set(grid.x_labels)
     out: list[StructuralMember] = []
     for z_label in (grid.z_labels[0], grid.z_labels[-1]):
-        top = "eave" if z_label in trussed_frames else "roof"
         for i, xr in enumerate(xs):
             if xr in main:
                 continue  # main columns already stand on the grid lines
+            top = _gable_post_top_elev(grid, xr, z_label, trussed_frames)
             out.append(
                 StructuralMember(
                     id=f"{aid}-gablepost-{z_label}-{i}",
@@ -494,11 +765,13 @@ def _gable_girts(
     levels: list[float],
     post_spacing_mm: float,
     profile: str = DEFAULT_GIRT_PROFILE,
+    *,
+    trussed_frames: set[str] | None = None,
 ) -> list[StructuralMember]:
     """Fill END walls at the same global levels as the side walls.
 
-    Girts are never sloped. Each level is one continuous horizontal line across all
-    columns that qualify; it only shortens near the roof peak where the slope cuts in.
+    Girts are never sloped. Each level is split into horizontal bays between adjacent
+    end-wall posts so rails do not span the full truss width in one piece.
     """
     if not levels:
         return []
@@ -507,24 +780,31 @@ def _gable_girts(
         return []
     eave_y = grid.roof.eave_y
     roof_at = {x: _roof_elev_at(grid, grid.resolve_x_mm(x)) for x in xs}
+    trussed = trussed_frames or set()
     out: list[StructuralMember] = []
     ends = (grid.z_labels[0], grid.z_labels[-1])
 
     for z_label in ends:
-        for li, y_abs in enumerate(levels):
+        wall_levels = (
+            [y for y in levels if y <= eave_y + 1.0]
+            if _truss_fills_gable_triangle(grid, z_label, trussed)
+            else levels
+        )
+        for li, y_abs in enumerate(wall_levels):
             cols = [x for x in xs if roof_at[x] >= y_abs - 1.0]
             if len(cols) < 2:
                 continue
             elev, y_off = _girt_nodes_at_y(y_abs, eave_y)
-            out.append(
-                StructuralMember(
-                    id=f"{aid}-gablegirt-{z_label}-L{li}",
-                    element_type="wall_girt",
-                    profile=profile,
-                    start_node=_ref(cols[0], z_label, elev, y_off),
-                    end_node=_ref(cols[-1], z_label, elev, y_off),
+            for gi, (left, right) in enumerate(zip(cols, cols[1:])):
+                out.append(
+                    StructuralMember(
+                        id=f"{aid}-gablegirt-{z_label}-L{li}-{gi}",
+                        element_type="wall_girt",
+                        profile=profile,
+                        start_node=_ref(left, z_label, elev, y_off),
+                        end_node=_ref(right, z_label, elev, y_off),
+                    )
                 )
-            )
     return out
 
 
@@ -584,19 +864,27 @@ def _end_wall_bracing(
     aid: str,
     post_spacing_mm: float,
     profile: str = DEFAULT_BRACING_PROFILE,
+    *,
+    trussed_frames: set[str] | None = None,
 ) -> list[StructuralMember]:
     """Vertical cross in EACH gable END wall plane (fixed Z), in ONE corner bay.
 
     The X sits between two ADJACENT end-wall columns (corner column → first gable post),
     not stretched across the whole width, and runs ground→eave as a clean rectangular
     panel so it never collides with the sloped roof framing above the eave line.
+
+    Skipped on truss gable frames — the truss itself is the end-wall structure and
+    short eave-height X-panels would miss the sloped chords entirely.
     """
     xs = _roof_x_positions(grid, post_spacing_mm if post_spacing_mm > 0 else 3000.0)
     if len(xs) < 2:
         return []
     xa, xb = xs[0], xs[1]
+    trussed = trussed_frames or set()
     out: list[StructuralMember] = []
     for z_label in (grid.z_labels[0], grid.z_labels[-1]):
+        if z_label in trussed:
+            continue
         out.extend(
             _cross(
                 aid,
@@ -630,6 +918,24 @@ def _roof_slope_segments(
     ]
 
 
+def _roof_bracing_segments(
+    grid: StructuralGridEngine,
+    ridge_label: str | None,
+    *,
+    truss_type: str = "none",
+    use_truss: bool = False,
+) -> list[tuple[str, str, str, str]]:
+    """Roof-plane segments for X-bracing — follow truss top-chord panel lines when trussed."""
+    if use_truss and truss_type not in ("none", ""):
+        xlabels, _ridge_i, _case = _truss_panel_layout(grid, ridge_label, truss_type)
+        if len(xlabels) >= 2:
+            return [
+                (xlabels[i], "roof", xlabels[i + 1], "roof")
+                for i in range(len(xlabels) - 1)
+            ]
+    return _roof_slope_segments(grid, ridge_label)
+
+
 def _roof_bracing(
     grid: StructuralGridEngine,
     aid: str,
@@ -638,14 +944,38 @@ def _roof_bracing(
     z1: str,
     ridge_label: str | None,
     profile: str = DEFAULT_BRACING_PROFILE,
+    *,
+    truss_type: str = "none",
+    use_truss: bool = False,
 ) -> list[StructuralMember]:
-    """Cross bracing in the ROOF planes, tying adjacent rafters across one Z-bay.
+    """Cross bracing in the ROOF planes, tying adjacent frames across one Z-bay.
 
-    One X per roof slope (each slope gets its own diagonal pair), in the plane of the
-    rafters so the diagonals follow the pitch exactly.
+    Trussed roofs use the exact top-chord panel refs from each frame so diagonals
+    land on truss nodes. Rafter roofs follow slope segments in the roof plane.
     """
     out: list[StructuralMember] = []
-    for s_i, (xa, ea, xb, eb) in enumerate(_roof_slope_segments(grid, ridge_label)):
+    if use_truss and truss_type not in ("none", ""):
+        top0 = _truss_top_panel_refs(grid, z0, ridge_label, truss_type)
+        top1 = _truss_top_panel_refs(grid, z1, ridge_label, truss_type)
+        if len(top0) >= 2 and len(top0) == len(top1):
+            for s_i in range(len(top0) - 1):
+                out.extend(
+                    _cross(
+                        aid,
+                        f"roof-s{s_i}-b{bay_i}",
+                        top0[s_i],
+                        top1[s_i + 1],
+                        top1[s_i],
+                        top0[s_i + 1],
+                        profile=profile,
+                    )
+                )
+            return out
+
+    segments = _roof_bracing_segments(
+        grid, ridge_label, truss_type=truss_type, use_truss=use_truss
+    )
+    for s_i, (xa, ea, xb, eb) in enumerate(segments):
         out.extend(
             _cross(
                 aid,
@@ -684,19 +1014,23 @@ def _roof_sag_rods(
     Uses the same X lines as the purlins so the rods actually wire purlin-to-purlin.
     Wide bays (> 5.5 m) get two rows at 1/3 and 2/3; otherwise a single mid-span row.
     """
-    xs = _roof_x_positions(grid, purlin_spacing_mm if purlin_spacing_mm > 0 else 1200.0)
-    if len(xs) < 2:
+    placements = _purlin_placement_refs(
+        grid, purlin_spacing_mm if purlin_spacing_mm > 0 else 1200.0
+    )
+    if len(placements) < 2:
         return []
     out: list[StructuralMember] = []
     for r, zr in enumerate(_bay_sag_rows(grid, z0, z1)):
-        for k, (left, right) in enumerate(zip(xs, xs[1:])):
+        for k, (left, right) in enumerate(zip(placements, placements[1:])):
+            lx, loff = left
+            rx, roff = right
             out.append(
                 StructuralMember(
                     id=f"{aid}-sag-roof-b{bay_i}-r{r}-{k}",
                     element_type="sag_rod",
                     profile=profile,
-                    start_node=_ref(left, zr, "roof"),
-                    end_node=_ref(right, zr, "roof"),
+                    start_node=_ref(lx, zr, "roof", loff),
+                    end_node=_ref(rx, zr, "roof", roff),
                 )
             )
     return out
@@ -785,20 +1119,52 @@ def _gable_wall_sag_rods(
 
 
 def _bottom_chord_restraint(
-    grid: StructuralGridEngine, aid: str, trussed_frames: set[str]
+    grid: StructuralGridEngine,
+    aid: str,
+    trussed_frames: set[str],
+    *,
+    ridge_label: str | None = None,
+    truss_type: str = "none",
 ) -> list[StructuralMember]:
     """Longitudinal runners restraining truss bottom chords between frames.
 
-    Needs ≥2 trussed frames. Runs along Z at a few interior X lines at the bottom-chord
-    (eave) level, tying the chords so they cannot sway out of plane between trusses.
+    Needs ≥2 trussed frames. Runs along Z at interior panel lines on the actual
+    bottom-chord profile (raised for scissor trusses, eave level otherwise).
     """
     z_trussed = [z for z in grid.z_labels if z in trussed_frames]
     if len(z_trussed) < 2:
         return []
     z0, z1 = z_trussed[0], z_trussed[-1]
+    out: list[StructuralMember] = []
+
+    if truss_type == "scissor" and not grid.roof.is_flat and not grid.roof.is_mono:
+        xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
+        if case == "symmetric" and len(xlabels) >= 3:
+            eave_y = grid.roof.eave_y
+            total_rise = 0.0
+            if ridge_i is not None:
+                total_rise = (
+                    _roof_elev_at(grid, grid.resolve_x_mm(xlabels[ridge_i])) - eave_y
+                )
+            n = len(xlabels) - 1
+            for k, i in enumerate(range(1, len(xlabels) - 1)):
+                lift = engineering_rules.scissor_bottom_rise_mm(
+                    i, n, ridge_i or 0, total_rise
+                )
+                off = {"y": lift} if lift > 1.0 else {}
+                out.append(
+                    StructuralMember(
+                        id=f"{aid}-bctie-{k}",
+                        element_type="tie_beam",
+                        profile="L50x50",
+                        start_node=_ref(xlabels[i], z0, "eave", off),
+                        end_node=_ref(xlabels[i], z1, "eave", off),
+                    )
+                )
+            return out
+
     left_x = grid.x_coords_mm[grid.x_labels[0]]
     right_x = grid.x_coords_mm[grid.x_labels[-1]]
-    out: list[StructuralMember] = []
     for k, frac in enumerate((0.25, 0.5, 0.75)):
         xr = _x_ref_at_mm(grid, left_x + (right_x - left_x) * frac)
         out.append(
@@ -869,31 +1235,39 @@ def _fly_braces(
     ridge_label: str | None,
     purlin_spacing_mm: float,
     profile: str = DEFAULT_BRACING_PROFILE,
+    *,
+    trussed_frames: set[str] | None = None,
 ) -> list[StructuralMember]:
     """Flange braces at every purlin × portal-frame intersection.
 
     Two per spot form a V in the vertical plane perpendicular to the purlin:
     both legs share the rafter bottom flange at the crossing; each leg runs
     diagonally up along ±Z to the purlin bottom on that side of the web.
+
+    Omitted on trussed frames — there is no rafter flange to brace from.
     """
     _ = ridge_label
-    xs = _roof_x_positions(
+    trussed = trussed_frames or set()
+    placements = _purlin_placement_refs(
         grid, purlin_spacing_mm if purlin_spacing_mm > 0 else 1200.0
     )
-    if not xs:
+    if not placements:
         return []
     leg_mm = _FLY_BRACE_Z_LEG_MM
     out: list[StructuralMember] = []
     for z_label in grid.z_labels:
-        for xi, xr in enumerate(xs):
+        if z_label in trussed:
+            continue
+        for xi, (xr, off) in enumerate(placements):
+            fly_off = dict(off)
             for side, dz in (("L", -leg_mm), ("R", leg_mm)):
                 out.append(
                     StructuralMember(
                         id=f"{aid}-fly-{z_label}-x{xi}-{side}",
                         element_type="fly_brace",
                         profile=profile,
-                        start_node=_ref(xr, z_label, "roof"),
-                        end_node=_ref(xr, z_label, "roof", {"z": dz}),
+                        start_node=_ref(xr, z_label, "roof", fly_off),
+                        end_node=_ref(xr, z_label, "roof", {**fly_off, "z": dz}),
                     )
                 )
     return out
@@ -1040,12 +1414,24 @@ def members_from_shed_config(
             trussed_frames.add(z_label)
 
     rafter_frames = [z for z in grid.z_labels if z not in trussed_frames]
+    use_truss = bool(trussed_frames)
+    primary_truss_type = next(
+        (ttype for _z, uses, ttype in frame_truss if uses),
+        "none",
+    )
 
     # Primary frame: columns, then rafters or trusses per frame.
     members.extend(_columns(grid, aid, trussed_frames, column_profile))
     for z_label, uses_truss, ttype in frame_truss:
         if uses_truss:
-            members.extend(_truss_frame(grid, aid, z_label, ttype, ridge))
+            if grid.roof.is_mono and _is_mono_gable_end_frame(grid, z_label):
+                members.extend(_mono_gable_truss_frame(grid, aid, z_label, ttype))
+            elif grid.roof.is_mono:
+                members.extend(
+                    _mono_pitch_truss_frame(grid, aid, z_label, ttype, ridge)
+                )
+            else:
+                members.extend(_truss_frame(grid, aid, z_label, ttype, ridge))
         else:
             members.extend(_rafters(grid, aid, z_label, ridge))
 
@@ -1075,10 +1461,21 @@ def members_from_shed_config(
         cfg.girt_spacing_mm,
     )
     if has_wall_girts:
-        members.extend(_side_wall_girts(grid, aid, girt_levels, girt_profile))
+        members.extend(
+            _side_wall_girts(
+                grid, aid, girt_levels, girt_profile, trussed_frames=trussed_frames
+            )
+        )
         if generate_gable:
             members.extend(
-                _gable_girts(grid, aid, girt_levels, gable_post_spacing, girt_profile)
+                _gable_girts(
+                    grid,
+                    aid,
+                    girt_levels,
+                    gable_post_spacing,
+                    girt_profile,
+                    trussed_frames=trussed_frames,
+                )
             )
     if generate_gable:
         members.extend(_gable_posts(grid, aid, gable_post_spacing, trussed_frames))
@@ -1091,22 +1488,31 @@ def members_from_shed_config(
     for bay_i in range(n_bays):
         bay = cfg.bay_at(bay_i)
         z0, z1 = grid.z_labels[bay_i], grid.z_labels[bay_i + 1]
-        if bay.x_bracing_left_wall:
+        truss_bay = use_truss and z0 in trussed_frames and z1 in trussed_frames
+        if bay.x_bracing_left_wall and not truss_bay:
             members.extend(
                 _x_bracing(
                     grid, aid, grid.x_labels[0], bay_i, z0, z1, bracing_profile
                 )
             )
-        if bay.x_bracing_right_wall:
+        if bay.x_bracing_right_wall and not truss_bay:
             members.extend(
                 _x_bracing(
                     grid, aid, grid.x_labels[-1], bay_i, z0, z1, bracing_profile
                 )
             )
-        if roof_bracing and bay_i in roof_brace_bays:
+        if roof_bracing and bay_i in roof_brace_bays and not truss_bay:
             members.extend(
                 _roof_bracing(
-                    grid, aid, bay_i, z0, z1, ridge, bracing_profile
+                    grid,
+                    aid,
+                    bay_i,
+                    z0,
+                    z1,
+                    ridge,
+                    bracing_profile,
+                    truss_type=primary_truss_type,
+                    use_truss=use_truss,
                 )
             )
         if bay.sag_rods:
@@ -1141,16 +1547,33 @@ def members_from_shed_config(
     # adjacent end-wall columns (aligned to the gable post lines).
     if bool(getattr(cfg, "gable_bracing", False)):
         members.extend(
-            _end_wall_bracing(grid, aid, gable_post_spacing, bracing_profile)
+            _end_wall_bracing(
+                grid, aid, gable_post_spacing, bracing_profile, trussed_frames=trussed_frames
+            )
         )
 
     # Restraint / detailing members.
     if bool(getattr(cfg, "fly_braces", False)):
         members.extend(
-            _fly_braces(grid, aid, ridge, cfg.purlin_spacing_mm, bracing_profile)
+            _fly_braces(
+                grid,
+                aid,
+                ridge,
+                cfg.purlin_spacing_mm,
+                bracing_profile,
+                trussed_frames=trussed_frames,
+            )
         )
     if bool(getattr(cfg, "bottom_chord_restraint", False)):
-        members.extend(_bottom_chord_restraint(grid, aid, trussed_frames))
+        members.extend(
+            _bottom_chord_restraint(
+                grid,
+                aid,
+                trussed_frames,
+                ridge_label=ridge,
+                truss_type=primary_truss_type,
+            )
+        )
     if bool(getattr(cfg, "base_plates", False)):
         members.extend(
             _base_plates(
@@ -1158,4 +1581,23 @@ def members_from_shed_config(
             )
         )
 
-    return members
+    return _strip_truss_secondary_bracing(
+        members, trussed_frames=trussed_frames, z_labels=grid.z_labels
+    )
+
+
+def _strip_truss_secondary_bracing(
+    members: list[StructuralMember],
+    *,
+    trussed_frames: set[str],
+    z_labels: list[str],
+) -> list[StructuralMember]:
+    """Drop fly braces and X-bracing when every frame is a truss (webs provide stability)."""
+    if len(trussed_frames) < len(z_labels):
+        return members
+    out: list[StructuralMember] = []
+    for m in members:
+        if m.element_type in ("bracing", "fly_brace"):
+            continue
+        out.append(m)
+    return out

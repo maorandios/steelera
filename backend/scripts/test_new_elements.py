@@ -1,8 +1,9 @@
-"""Coverage for haunches, fly braces, base plates, bottom-chord restraint, ridge purlin.
+"""Coverage for haunches, fly braces, base plates, bottom-chord restraint, purlin layout.
 
 Run: python scripts/test_new_elements.py
 """
 
+import math
 import sys
 from pathlib import Path
 
@@ -45,18 +46,41 @@ def _by_type(macro, et):
     return [m for m in macro if m.get("element_type") == et]
 
 
-# --- Ridge purlin guarantee (duo pitch, ridge between grid lines) ---------- #
+# --- Duo-pitch purlins: mirrored slopes, apex clearance, no ridge seat ------- #
 _, macro, _ = _build()
 purlins = _by_type(macro, "purlin")
 assert purlins, "no purlins"
-# A purlin must sit at the apex X (ridge) — its X equals the ridge x within tol.
-ridge_x = max(m["nodes"]["start"][0] for m in purlins)  # any
 xs = sorted({round(m["nodes"]["start"][0], 1) for m in purlins})
 mid = 6000.0  # 12 m span → ridge at 6 m
-assert any(abs(x - mid) < 50.0 for x in xs), f"no ridge purlin near {mid}: {xs}"
+pitch = math.radians(15.0)
+cos_p = math.cos(pitch)
 # Eave purlins at both outer X lines (0 and 12000).
 assert any(abs(x - 0.0) < 50.0 for x in xs), f"no left eave purlin: {xs}"
 assert any(abs(x - 12000.0) < 50.0 for x in xs), f"no right eave purlin: {xs}"
+# No purlin on the ridge itself.
+assert all(abs(x - mid) > 50.0 for x in xs), f"purlin on ridge: {xs}"
+eave_l, eave_r = min(xs), max(xs)
+left = [x for x in xs if x < mid - 1.0]
+right = [x for x in xs if x > mid + 1.0]
+assert len(left) == len(right), f"unequal purlin count per slope: {left} vs {right}"
+left_d = [round((x - eave_l) / cos_p, 1) for x in left]
+right_d = [round((eave_r - x) / cos_p, 1) for x in reversed(right)]
+assert left_d == right_d, f"purlins not mirrored: {left_d} vs {right_d}"
+# Last bay < 300 mm to apex — no extra ridge purlin; innermost stays on spacing grid.
+inner_left = max(left)
+inner_right = min(right)
+gap_left = (mid - inner_left) / cos_p
+assert 200.0 < gap_left < 280.0, gap_left
+assert abs(gap_left - (inner_right - mid) / cos_p) < 2.0
+# Right-slope purlins carry a mirror flag (Y-Euler) for face-to-face C-profile rendering.
+left_p = next(m for m in purlins if abs(m["nodes"]["start"][0] - inner_left) < 5.0)
+right_p = next(m for m in purlins if abs(m["nodes"]["start"][0] - inner_right) < 5.0)
+assert left_p["rotation"][1] == 0.0, left_p["rotation"]
+assert right_p["rotation"][1] == 180.0, right_p["rotation"]
+assert abs(left_p["nodes"]["start"][1] - right_p["nodes"]["start"][1]) < 5.0
+# Face-to-face mirror about the ridge (resolved seating may shift eaves slightly).
+for lx, rx in zip(left, reversed(right)):
+    assert abs((mid - lx) - (rx - mid)) < 2.0, (lx, rx)
 
 # --- Haunches (rafter scheme) ---------------------------------------------- #
 _, macro, elements = _build(haunches=True)

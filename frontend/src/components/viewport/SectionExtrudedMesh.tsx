@@ -5,7 +5,7 @@ import * as THREE from "three";
 
 import { memberLengthM } from "@/lib/coordinates";
 import { isFiniteNumber } from "@/lib/elementValidation";
-import { wallGirtGeometryFlipZ } from "@/lib/memberFrame";
+import { purlinGeometryFlipZ, wallGirtGeometryFlipZ } from "@/lib/memberFrame";
 import {
   createAngleShape,
   createCeeShape,
@@ -59,7 +59,7 @@ export function SectionExtrudedMesh({
         return extrudeSection(createTeeShape(h, b, tw, tf), lengthM);
       case "C-channel": {
         const geometry = extrudeSection(createCeeShape(h, b, t, lip), lengthM);
-        if (wallGirtGeometryFlipZ(element)) {
+        if (wallGirtGeometryFlipZ(element) || purlinGeometryFlipZ(element)) {
           geometry.scale(1, 1, -1);
         }
         return geometry;

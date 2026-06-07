@@ -9,10 +9,18 @@ from schemas.spatial_grid import StructuralGridLayout
 
 def ensure_layout_members(layout: StructuralGridLayout) -> StructuralGridLayout:
     layout = normalize_layout(layout)
-    if layout.structural_members:
-        return layout
-    generated = members_from_grid_definition(
-        layout.grid_definition,
-        assembly_id=layout.assembly_id,
-    )
-    return layout.model_copy(update={"structural_members": generated})
+    gd = layout.grid_definition
+    # Trussed / mono-pitch sheds must always come from the catalog — stale AI/hand
+    # members (especially roof/side X-bracing or old multi-panel mono trusses) must
+    # not bypass Python-owned geometry.
+    if (
+        getattr(gd, "use_truss", False)
+        or not layout.structural_members
+        or gd.roof_style == "mono_pitch"
+    ):
+        generated = members_from_grid_definition(
+            gd,
+            assembly_id=layout.assembly_id,
+        )
+        return layout.model_copy(update={"structural_members": generated})
+    return layout

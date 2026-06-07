@@ -49,6 +49,7 @@ export function shedConfigToAssemblyParams(
     height: gp.height_mm,
     roof_pitch_deg: gp.roof_style === "flat" ? 0 : gp.roof_pitch_deg,
     roof_style: gp.roof_style,
+    mono_high_side: config.mono_high_side ?? "B",
     purlin_spacing: config.purlin_spacing_mm,
     girt_spacing_mm: config.girt_spacing_mm,
     use_truss: anyTruss,
@@ -108,6 +109,7 @@ export function assemblyParamsToShedConfig(
     fly_braces: params.use_fly_braces,
     base_plates: params.use_base_plates,
     bottom_chord_restraint: params.use_bottom_chord_restraint,
+    mono_high_side: params.mono_high_side,
   };
 }
 

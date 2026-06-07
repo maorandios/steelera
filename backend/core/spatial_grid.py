@@ -292,6 +292,9 @@ class StructuralGridEngine:
     def resolve_node(self, ref: GridNodeReference) -> tuple[float, float, float]:
         x_mm = self.resolve_x_mm(ref.x_axis)
         z_mm = self.resolve_z_mm(ref.z_axis)
+        off = ref.offset_mm or {}
+        x_eff = x_mm + float(off.get("x", 0))
+        z_eff = z_mm + float(off.get("z", 0))
         from core.grid_normalize import normalize_elevation
 
         elev_text = normalize_elevation(ref.elevation)
@@ -302,23 +305,22 @@ class StructuralGridEngine:
             frac = parts[1]
             m = re.match(r"^(\d+)/(\d+)$", frac)
             if m:
-                y0 = self._elevation_mm(base, x_mm)
+                y0 = self._elevation_mm(base, x_eff)
                 y1 = self._elevation_mm(
                     "roof" if base == "eave" else "apex",
-                    x_mm,
+                    x_eff,
                 )
                 return (
-                    x_mm,
+                    round(x_eff, 3),
                     round(y0 + (y1 - y0) * int(m.group(1)) / int(m.group(2)), 3),
-                    z_mm,
+                    round(z_eff, 3),
                 )
 
-        y_mm = self._elevation_mm(elev_text, x_mm)
-        off = ref.offset_mm or {}
+        y_mm = self._elevation_mm(elev_text, x_eff)
         return (
-            round(x_mm + float(off.get("x", 0)), 3),
+            round(x_eff, 3),
             round(y_mm + float(off.get("y", 0)), 3),
-            round(z_mm + float(off.get("z", 0)), 3),
+            round(z_eff, 3),
         )
 
     def grid_summary(self) -> dict:

@@ -3,7 +3,7 @@
 import { create } from "zustand";
 
 import { postChat, postGenerateShed, type GenerateShedBody } from "@/lib/api";
-import { gridLayoutToShedParams } from "@/lib/grid-layout";
+import { gridLayoutToShedParams, isStructuralGridLayout } from "@/lib/grid-layout";
 import { extractProfilesFromMessages } from "@/lib/profile-overrides";
 import {
   DEFAULT_SHED_PARAMS,
@@ -142,7 +142,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (get().isMacroLoading) return;
 
     const selectedId = get().selectedElementId;
-    const isGridLayout = "structural_members" in body && "grid_definition" in body;
+    const isGridLayout = isStructuralGridLayout(body);
     const fromBody = isGridLayout
       ? gridLayoutToShedParams(body as StructuralGridLayout)
       : shedConfigToAssemblyParams(body as ShedAssemblyConfig);
@@ -162,18 +162,44 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({ isMacroLoading: true, error: null });
 
     try {
-      const apiPayload = assemblyParamsToShedConfig(
-        params,
-        body.assembly_id ?? SHED_ASSEMBLY_ID,
-      );
-      apiPayload.replace_existing = body.replace_existing ?? true;
+      let apiPayload: GenerateShedBody;
+      if (isGridLayout) {
+        const layout = body as StructuralGridLayout;
+        const gd = layout.grid_definition;
+        apiPayload = {
+          ...layout,
+          replace_existing: layout.replace_existing ?? true,
+          structural_members: [],
+          grid_definition: {
+            ...gd,
+            use_truss: gd.use_truss ?? params.use_truss,
+            truss_type: (gd.truss_type ?? params.truss_type) as typeof gd.truss_type,
+            mono_high_side: gd.mono_high_side ?? params.mono_high_side,
+            roof_style: gd.roof_style ?? params.roof_style,
+            column_profile: params.column_profile ?? gd.column_profile,
+            bracing_profile: params.bracing_profile ?? gd.bracing_profile,
+            purlin_profile: params.purlin_profile ?? gd.purlin_profile,
+            girt_profile: params.girt_profile ?? gd.girt_profile,
+            sag_rod_profile: params.sag_rod_profile ?? gd.sag_rod_profile,
+            base_plate_profile: params.base_plate_profile ?? gd.base_plate_profile,
+          },
+        };
+      } else {
+        apiPayload = assemblyParamsToShedConfig(
+          params,
+          body.assembly_id ?? SHED_ASSEMBLY_ID,
+        );
+        apiPayload.replace_existing = body.replace_existing ?? true;
+      }
       const response = await postGenerateShed(apiPayload);
       const elements = (response.projectElements ?? []).map((element) =>
         normalizeElement(element),
       );
       const fromElements = inferShedParamsFromElements(elements);
+      // User/grid/checklist params must win over geometry inference (infer defaults
+      // to duo_pitch and would undo mono-pitch truss on the next sidebar regen).
       const finalParams = fromElements
-        ? mergeShedParams(params, fromElements)
+        ? mergeShedParams(fromElements, params)
         : params;
       const selectedStillExists = elements.some(
         (element) => element.id === selectedId,

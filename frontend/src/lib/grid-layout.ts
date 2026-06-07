@@ -25,6 +25,9 @@ export function gridLayoutToShedParams(
 ): ShedAssemblyParams {
   const gd = layout.grid_definition;
   const members = layout.structural_members;
+  const isTruss =
+    Boolean(gd.use_truss) ||
+    members.some((m) => m.element_type === "truss_web");
   const x = gd.x_spans;
   const z = gd.z_spans;
   return {
@@ -37,22 +40,27 @@ export function gridLayoutToShedParams(
     height: gd.height_mm,
     roof_pitch_deg: gd.roof_style === "flat" ? 0 : gd.roof_pitch_deg,
     roof_style: gd.roof_style,
+    mono_high_side: gd.mono_high_side === "A" ? "A" : "B",
     purlin_spacing: 1200,
     girt_spacing_mm: 1500,
-    use_truss: layout.structural_members.some((m) => m.element_type === "truss_web"),
+    use_truss: isTruss,
     truss_type: (gd.truss_type && SELECTABLE_TRUSS_TYPES.has(gd.truss_type)
       ? gd.truss_type
       : "pratt") as Exclude<TrussType, "none">,
-    use_bracing: layout.structural_members.some((m) => m.element_type === "bracing"),
-    use_gable_bracing: layout.structural_members.some((m) =>
-      m.id.includes("-brace-end-"),
-    ),
-    use_roof_bracing: layout.structural_members.some((m) =>
-      m.id.includes("-brace-roof-"),
-    ),
+    use_bracing: isTruss
+      ? false
+      : members.some((m) => m.element_type === "bracing"),
+    use_gable_bracing: isTruss
+      ? false
+      : members.some((m) => m.id.includes("-brace-end-")),
+    use_roof_bracing: isTruss
+      ? false
+      : members.some((m) => m.id.includes("-brace-roof-")),
     use_sag_rods: layout.structural_members.some((m) => m.element_type === "sag_rod"),
     use_haunches: layout.structural_members.some((m) => m.element_type === "haunch"),
-    use_fly_braces: layout.structural_members.some((m) => m.element_type === "fly_brace"),
+    use_fly_braces: isTruss
+      ? false
+      : members.some((m) => m.element_type === "fly_brace"),
     use_base_plates: layout.structural_members.some(
       (m) => m.element_type === "base_plate",
     ),

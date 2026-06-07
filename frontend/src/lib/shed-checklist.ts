@@ -55,6 +55,7 @@ export function checklistPayloadToShedParams(
     height,
     roof_pitch_deg,
     roof_style,
+    mono_high_side: DEFAULT_SHED_PARAMS.mono_high_side,
     purlin_spacing: DEFAULT_SHED_PARAMS.purlin_spacing,
     girt_spacing_mm: DEFAULT_SHED_PARAMS.girt_spacing_mm,
     use_truss: selections.use_truss,

@@ -33,6 +33,15 @@ mid = grid.resolve_node(GridNodeReference(x_axis="A+1/2", z_axis="2", elevation=
 assert 4000 < mid[1] < 6000
 subs = grid.subdivide_x("A", "B", 4)
 assert subs == ["A+1/4", "A+2/4", "A+3/4"]
+# Sloped-roof elevation must follow the effective X (grid line + offset).
+roof_at = grid.resolve_node(
+    GridNodeReference(x_axis="A", z_axis="1", elevation="roof", offset_mm={"x": 3000.0})
+)
+roof_ref = grid.resolve_node(
+    GridNodeReference(x_axis="A+3/10", z_axis="1", elevation="roof")
+)
+assert abs(roof_at[0] - 3000.0) < 1.0
+assert abs(roof_at[1] - roof_ref[1]) < 1.0, (roof_at[1], roof_ref[1])
 print("PASS: grid engine")
 
 # --- Resolver ---

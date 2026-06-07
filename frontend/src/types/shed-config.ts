@@ -63,4 +63,5 @@ export interface ShedAssemblyConfig {
   fly_braces?: boolean;
   base_plates?: boolean;
   bottom_chord_restraint?: boolean;
+  mono_high_side?: "A" | "B";
 }

@@ -208,6 +208,175 @@ def purlin_roll_deg(pitch_rad: float, pitch_sign: float) -> float:
     return math.degrees(pitch_rad) * pitch_sign
 
 
+def purlin_ridge_mirror_flag(
+    x_mm: float,
+    *,
+    ridge_x_mm: float,
+    is_flat: bool,
+    is_mono: bool,
+) -> float:
+    """Non-zero Y-Euler sentinel so the renderer mirrors the C-profile across the ridge."""
+    if is_flat or is_mono:
+        return 0.0
+    return 180.0 if x_mm > ridge_x_mm + 1e-6 else 0.0
+
+
+# Ridge-adjacent purlin sits this far from the apex along the slope (when added).
+PURLIN_APEX_CLEARANCE_MM = 100.0
+# Only add that purlin when the last spaced bay to the apex exceeds this (mm).
+PURLIN_APEX_MIN_GAP_MM = 300.0
+# Matches member_resolver seating (IPE200 top flange).
+PURLIN_SEAT_RAFTER_PROFILE = "IPE200"
+
+
+def purlin_seat_slope_offset_mm(
+    pitch_rad: float,
+    rafter_profile: str = PURLIN_SEAT_RAFTER_PROFILE,
+) -> float:
+    """Centerline-to-seated-bottom offset measured along the rafter (mm)."""
+    if pitch_rad < 1e-9:
+        return 0.0
+    return profile_half_depth_mm(rafter_profile) * math.tan(pitch_rad)
+
+
+def purlin_distances_along_slope_mm(
+    slope_length_mm: float,
+    spacing_mm: float,
+    *,
+    apex_clearance_mm: float = PURLIN_APEX_CLEARANCE_MM,
+    apex_min_gap_mm: float = PURLIN_APEX_MIN_GAP_MM,
+    pitch_rad: float = 0.0,
+    rafter_profile: str = PURLIN_SEAT_RAFTER_PROFILE,
+) -> list[float]:
+    """Distances along a rafter from the eave, including the eave at 0.
+
+    Spacing is measured along the rafter. When the gap from the last spaced
+    purlin to the apex exceeds ``apex_min_gap_mm``, an extra purlin is added
+    with its seated bottom ``apex_clearance_mm`` from the apex.
+    """
+    if slope_length_mm <= 0 or spacing_mm <= 0:
+        return [0.0] if slope_length_mm > 0 else []
+    # Seated bottom sits h·tan(p) toward the eave from centerline along the slope.
+    seat_offset = purlin_seat_slope_offset_mm(pitch_rad, rafter_profile)
+    apex_dist = slope_length_mm - apex_clearance_mm + seat_offset
+    if apex_dist <= 1e-6:
+        return [0.0]
+    distances = [0.0]
+    d = spacing_mm
+    while d < apex_dist - 1e-6:
+        distances.append(d)
+        d += spacing_mm
+    gap_to_apex = slope_length_mm - distances[-1]
+    if gap_to_apex > apex_min_gap_mm + 1e-6 and abs(distances[-1] - apex_dist) > 1e-6:
+        distances.append(apex_dist)
+    return distances
+
+
+def _slope_distances_to_x_mm(
+    eave_x_mm: float,
+    toward_ridge: bool,
+    distances_mm: list[float],
+    pitch_rad: float,
+) -> list[float]:
+    """Map slope distances from an eave to absolute X coordinates."""
+    if not distances_mm:
+        return []
+    cos_p = math.cos(pitch_rad)
+    step = cos_p if toward_ridge else -cos_p
+    return [eave_x_mm + d * step for d in distances_mm]
+
+
+def duo_pitch_purlin_x_mm(
+    total_width_mm: float,
+    ridge_x_mm: float,
+    pitch_rad: float,
+    spacing_mm: float,
+    *,
+    apex_clearance_mm: float = PURLIN_APEX_CLEARANCE_MM,
+) -> list[float]:
+    """Mirror purlin X positions for a double-sloped roof.
+
+    Equal-length slopes share one slope-distance schedule mirrored about the
+    ridge so each face lines up. The ridge-adjacent pair sits exactly
+    ``apex_clearance_mm`` from the apex along each rafter.
+    """
+    if pitch_rad < 1e-9 or spacing_mm <= 0 or total_width_mm <= 0:
+        return _roof_flat_x_mm(total_width_mm, spacing_mm)
+
+    left_run = ridge_x_mm
+    right_run = total_width_mm - ridge_x_mm
+    cos_p = math.cos(pitch_rad)
+    left_slope = left_run / cos_p if cos_p > 1e-9 else left_run
+    right_slope = right_run / cos_p if cos_p > 1e-9 else right_run
+
+    seat_kw = {
+        "apex_clearance_mm": apex_clearance_mm,
+        "pitch_rad": pitch_rad,
+    }
+    if abs(left_run - right_run) <= 1.0:
+        distances = purlin_distances_along_slope_mm(
+            left_slope, spacing_mm, **seat_kw
+        )
+        left_xs = [d * cos_p for d in distances]
+        right_xs = [total_width_mm - d * cos_p for d in distances]
+    else:
+        left_dist = purlin_distances_along_slope_mm(
+            left_slope, spacing_mm, **seat_kw
+        )
+        right_dist = purlin_distances_along_slope_mm(
+            right_slope, spacing_mm, **seat_kw
+        )
+        left_xs = _slope_distances_to_x_mm(0.0, True, left_dist, pitch_rad)
+        right_xs = _slope_distances_to_x_mm(
+            total_width_mm, False, right_dist, pitch_rad
+        )
+
+    seen: set[float] = set()
+    unique: list[float] = []
+    for x in sorted(left_xs + right_xs):
+        key = round(x, 6)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(x)
+    return unique
+
+
+def mono_pitch_purlin_x_mm(
+    total_width_mm: float,
+    pitch_rad: float,
+    high_side: str,
+    spacing_mm: float,
+    *,
+    apex_clearance_mm: float = PURLIN_APEX_CLEARANCE_MM,
+) -> list[float]:
+    """Purlin X positions for a mono-pitch roof (single slope)."""
+    if pitch_rad < 1e-9 or spacing_mm <= 0 or total_width_mm <= 0:
+        return _roof_flat_x_mm(total_width_mm, spacing_mm)
+
+    cos_p = math.cos(pitch_rad)
+    slope_len = total_width_mm / cos_p if cos_p > 1e-9 else total_width_mm
+    distances = purlin_distances_along_slope_mm(
+        slope_len,
+        spacing_mm,
+        apex_clearance_mm=apex_clearance_mm,
+        pitch_rad=pitch_rad,
+    )
+    high_is_b = str(high_side).strip().upper() != "A"
+    if high_is_b:
+        return _slope_distances_to_x_mm(0.0, True, distances, pitch_rad)
+    return _slope_distances_to_x_mm(total_width_mm, False, distances, pitch_rad)
+
+
+def _roof_flat_x_mm(total_width_mm: float, spacing_mm: float) -> list[float]:
+    """Even horizontal spacing for flat roofs (eave-to-eave)."""
+    if spacing_mm <= 0 or total_width_mm <= 0:
+        return [0.0, total_width_mm] if total_width_mm > 0 else []
+    n = max(1, round(total_width_mm / spacing_mm))
+    step = total_width_mm / n
+    return [round(i * step, 3) for i in range(n + 1)]
+
+
 def wall_girt_center_outside_x(
     x_column: float,
     total_width: float,
@@ -523,6 +692,26 @@ def scissor_bottom_rise_mm(
         return 0.0
     frac = min(node_i, n - node_i) / ridge_i
     return frac * SCISSOR_BOTTOM_RISE_FRACTION * float(total_rise_mm)
+
+
+def mono_pitch_truss_web_plan(n: int, *, high_side: str = "B") -> list[WebPair]:
+    """Webs for a mono-pitch portal truss (flat bottom chord, sloping top chord).
+
+    Vertical at every panel node; each panel gets one diagonal rising toward the
+    high end (Pratt toward the high side). Degenerate verticals at the low eave drop
+    during resolution.
+    """
+    high_at_right = str(high_side).strip().upper() != "A"
+    plan: list[WebPair] = []
+    for i in range(n + 1):
+        plan.append((("top", i), ("bottom", i)))
+    if high_at_right:
+        for i in range(n):
+            plan.append((("bottom", i), ("top", i + 1)))
+    else:
+        for i in range(n):
+            plan.append((("bottom", i + 1), ("top", i)))
+    return plan
 
 
 def truss_web_plan(truss_type: str, n: int, ridge_i: int | None) -> list[WebPair]:

@@ -18,7 +18,7 @@ if (process.platform === "win32") {
         ),
       ];
       for (const pid of pids) {
-        execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
+        execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore" });
         console.log(`Stopped PID ${pid} (port ${port})`);
       }
     } catch {
