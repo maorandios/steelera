@@ -689,14 +689,18 @@ ALL_TRUSS_TYPES = PARAMETRIC_TRUSS_TYPES | APEX_TRUSS_TYPES
 
 # Panel count across the FULL span for fixed-pattern apex trusses.
 _FIXED_TRUSS_PANELS: dict[str, int] = {
-    "king_post": 2,
-    "queen_post": 4,
-    "fink": 4,
+    "king_post": 4,
+    "queen_post": 6,
+    "fink": 6,
     "scissor": 4,
 }
 
-# Scissor: bottom chord lifts toward the centre by this fraction of the top rise.
-SCISSOR_BOTTOM_RISE_FRACTION = 0.5
+# Scissor: interior ceiling pitch = half exterior roof pitch (2-to-1 rule).
+SCISSOR_CEILING_PITCH_RATIO = 0.5
+SCISSOR_MIN_ROOF_PITCH_DEG = 14.0
+SCISSOR_MAX_CEILING_PITCH_DEG = 26.5
+SCISSOR_MIN_SPAN_MM = 7300.0
+SCISSOR_MAX_SPAN_MM = 18300.0
 
 # A web end: which chord ("top" | "bottom") and which panel-node index.
 WebEnd = tuple[str, int]
@@ -715,14 +719,42 @@ def truss_fixed_panels(truss_type: str) -> int | None:
     return _FIXED_TRUSS_PANELS.get(truss_type)
 
 
+def scissor_ceiling_pitch_rad(roof_pitch_rad: float) -> float:
+    """Interior ceiling pitch angle — half the exterior roof pitch (2-to-1 rule)."""
+    return roof_pitch_rad * SCISSOR_CEILING_PITCH_RATIO
+
+
 def scissor_bottom_rise_mm(
     node_i: int, n: int, ridge_i: int, total_rise_mm: float
 ) -> float:
-    """Vertical lift of a scissor bottom-chord node above the eave datum."""
+    """Legacy offset helper — prefer ``scissor_bottom_chord_y_mm`` in the catalog."""
     if ridge_i <= 0:
         return 0.0
     frac = min(node_i, n - node_i) / ridge_i
-    return frac * SCISSOR_BOTTOM_RISE_FRACTION * float(total_rise_mm)
+    return frac * SCISSOR_CEILING_PITCH_RATIO * float(total_rise_mm)
+
+
+def scissor_truss_web_plan(n: int, ridge_i: int | None) -> list[WebPair]:
+    """Scissor truss — four diagonals triangulating the crossing apex (n=4, ridge at 2).
+
+    Inner bottom-chord nodes tie to the top apex; crossing diagonals brace the vault.
+    No central vertical — top and bottom chords meet at different elevations at mid-span.
+    """
+    if n != 4 or ridge_i != 2:
+        raise ValueError(
+            f"Scissor truss requires n=4 and ridge_i=2, got n={n} ridge_i={ridge_i}"
+        )
+
+    def d(a: str, ai: int, b: str, bi: int) -> WebPair:
+        return ((a, ai), (b, bi))
+
+    apex = ridge_i
+    return [
+        d("bottom", 1, "top", apex),  # left ceiling → apex
+        d("bottom", 3, "top", apex),  # right ceiling → apex
+        d("bottom", 1, "top", 3),  # crossing brace
+        d("bottom", 3, "top", 1),  # crossing brace
+    ]
 
 
 def mono_pitch_truss_web_plan(n: int, *, high_side: str = "B") -> list[WebPair]:
@@ -742,6 +774,150 @@ def mono_pitch_truss_web_plan(n: int, *, high_side: str = "B") -> list[WebPair]:
         for i in range(n):
             plan.append((("bottom", i + 1), ("top", i)))
     return plan
+
+
+# King-post truss: max practical span before switching to queen/pratt/fink patterns.
+KING_POST_MAX_SPAN_MM = 8000.0
+KING_POST_STRUT_ANGLE_DEG = 45.0
+KING_POST_STRUT_ANGLE_MIN_DEG = 30.0
+KING_POST_STRUT_ANGLE_MAX_DEG = 60.0
+
+
+def king_post_strut_x_mm(
+    grid: "StructuralGridEngine",
+    *,
+    target_deg: float = KING_POST_STRUT_ANGLE_DEG,
+) -> float:
+    """X (from datum) where a strut from BC centre at ``target_deg`` meets the left TC.
+
+    Solves the intersection of the sloped top-chord heel→apex line with a ray from
+    the bottom-chord centre at the target strut angle (45°–60° band per EC3 practice).
+    """
+    from core.spatial_grid import StructuralGridEngine
+
+    _ = StructuralGridEngine  # type hint anchor for quoted name above
+    left_x = grid.resolve_x_mm(grid.x_labels[0])
+    right_x = grid.resolve_x_mm(grid.x_labels[-1])
+    span = right_x - left_x
+    half = span * 0.5
+    x_c = left_x + half
+    eave = grid.roof.eave_y
+
+    heel_rise = min(450.0, max(250.0, span * 0.035))
+    y_tc_heel = eave + heel_rise
+    y_apex = grid.roof.ridge_y if grid.roof.ridge_y > eave else _roof_elev_at_kp(
+        grid, x_c
+    )
+
+    if half < 1.0 or y_apex <= y_tc_heel + 1.0:
+        return left_x + half * 0.35
+
+    tan_a = math.tan(
+        math.radians(
+            max(
+                KING_POST_STRUT_ANGLE_MIN_DEG,
+                min(target_deg, KING_POST_STRUT_ANGLE_MAX_DEG),
+            )
+        )
+    )
+    dy_tc = y_apex - y_tc_heel
+    heel_rise = y_tc_heel - eave
+    # BC centre (x_c, eave); left strut: y = eave + tan_a * (x_c - x)
+    # Left TC: y = y_tc_heel + dy_tc * (x - left_x) / half
+    denom = tan_a + dy_tc / half
+    if abs(denom) < 1e-9:
+        return left_x + half * 0.35
+    x = (tan_a * x_c - heel_rise + dy_tc * left_x / half) / denom
+    x = max(left_x + half * 0.12, min(x_c - half * 0.04, x))
+    return x
+
+
+def _roof_elev_at_kp(grid, x_mm: float) -> float:
+    from core.grid_member_catalog import _roof_elev_at
+
+    return _roof_elev_at(grid, x_mm)
+
+
+def king_post_truss_web_plan(n: int, ridge_i: int | None) -> list[WebPair]:
+    """King-post truss — vertical post at apex + two struts (n=4, ridge at 2).
+
+    All three are web members (not chord profile). Strut panel lines are placed so
+    diagonals from the BC centre land near 45° on the left/right top-chord segments.
+    """
+    if n != 4 or ridge_i != 2:
+        raise ValueError(
+            f"King-post truss requires n=4 and ridge_i=2, got n={n} ridge_i={ridge_i}"
+        )
+
+    def d(a: str, ai: int, b: str, bi: int) -> WebPair:
+        return ((a, ai), (b, bi))
+
+    centre = ridge_i
+    return [
+        d("bottom", centre, "top", centre),  # king post (vertical)
+        d("bottom", centre, "top", centre - 1),  # left strut → rafter mid
+        d("bottom", centre, "top", centre + 1),  # right strut → rafter mid
+    ]
+
+
+# Queen-post truss: medium-span symmetric layout with central rectangular opening.
+QUEEN_POST_MIN_SPAN_MM = 8000.0
+QUEEN_POST_MAX_SPAN_MM = 14000.0
+# Panel-node indices for n=6, ridge_i=3 (0 heel … 6 heel).
+QUEEN_POST_LEFT_I = 2
+QUEEN_POST_RIGHT_I = 4
+QUEEN_RAFTER_MID_LEFT_I = 1
+QUEEN_RAFTER_MID_RIGHT_I = 5
+
+
+def queen_post_truss_web_plan(n: int, ridge_i: int | None) -> list[WebPair]:
+    """Queen-post truss — two verticals, straining beam, two wing struts (n=6, ridge at 3).
+
+    Panel lines at 0, 1/4, 1/3, 1/2, 2/3, 3/4, 1. Queen posts sit at 1/3 & 2/3;
+    rafter mids at 1/4 & 3/4; wing struts run from each queen-post base to the adjacent
+    rafter midpoint; the straining beam ties the queen-post heads horizontally.
+    """
+    if n != 6 or ridge_i != 3:
+        raise ValueError(
+            f"Queen-post truss requires n=6 and ridge_i=3, got n={n} ridge_i={ridge_i}"
+        )
+
+    def d(a: str, ai: int, b: str, bi: int) -> WebPair:
+        return ((a, ai), (b, bi))
+
+    ql, qr = QUEEN_POST_LEFT_I, QUEEN_POST_RIGHT_I
+    rml, rmr = QUEEN_RAFTER_MID_LEFT_I, QUEEN_RAFTER_MID_RIGHT_I
+    return [
+        d("bottom", ql, "top", ql),  # left queen post (90° to tie beam)
+        d("bottom", qr, "top", qr),  # right queen post
+        d("top", ql, "top", qr),  # straining beam
+        d("bottom", ql, "top", rml),  # left wing strut → rafter mid
+        d("bottom", qr, "top", rmr),  # right wing strut → rafter mid
+    ]
+
+
+def fink_truss_web_plan(n: int, ridge_i: int | None) -> list[WebPair]:
+    """Classic Fink W — four inner diagonals (symmetric duo), no heel struts.
+
+    Panel lines at 0, 1/4, 1/3, 1/2, 2/3, 3/4, 1. The inner ``W`` only (no
+    outer heel→rafter-mid legs shown on standard Fink sketches):
+
+    left rafter mid → BC@1/3 → apex → BC@2/3 → right rafter mid.
+    """
+    if n != 6 or ridge_i != 3:
+        raise ValueError(
+            f"Fink truss requires n=6 and ridge_i=3, got n={n} ridge_i={ridge_i}"
+        )
+
+    def d(a: str, ai: int, b: str, bi: int) -> WebPair:
+        return ((a, ai), (b, bi))
+
+    return [
+        d("top", 1, "bottom", 2),
+        d("bottom", 2, "top", 3),
+        d("top", 3, "bottom", 4),
+        d("bottom", 4, "top", 5),
+    ]
 
 
 def truss_web_plan(truss_type: str, n: int, ridge_i: int | None) -> list[WebPair]:
@@ -782,31 +958,16 @@ def truss_web_plan(truss_type: str, n: int, ridge_i: int | None) -> list[WebPair
         return plan
 
     if truss_type == "king_post":
-        # n == 2: single central post under the apex.
-        plan.append(v(m))
-        return plan
+        return king_post_truss_web_plan(n, ridge_i)
 
     if truss_type == "queen_post":
-        # n == 4: two posts + struts up to the apex.
-        plan.append(v(1))
-        plan.append(v(3))
-        plan.append(d("bottom", 1, "top", 2))
-        plan.append(d("bottom", 3, "top", 2))
-        return plan
+        return queen_post_truss_web_plan(n, ridge_i)
 
     if truss_type == "fink":
-        # n == 4: central post + struts up to the mid-rafters (classic "W").
-        plan.append(v(2))
-        plan.append(d("bottom", 2, "top", 1))
-        plan.append(d("bottom", 2, "top", 3))
-        return plan
+        return fink_truss_web_plan(n, ridge_i)
 
     if truss_type == "scissor":
-        # n == 4: crossing diagonals over a raised bottom chord + central post.
-        plan.append(v(2))
-        plan.append(d("bottom", 1, "top", 3))
-        plan.append(d("bottom", 3, "top", 1))
-        return plan
+        return scissor_truss_web_plan(n, ridge_i)
 
     # default: pratt — verticals + diagonals rising toward the apex/centre.
     for i in range(n + 1):

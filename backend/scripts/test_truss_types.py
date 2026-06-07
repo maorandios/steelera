@@ -61,6 +61,34 @@ fink_chords = [m for m in _build("duo_pitch", 15.0, "fink")[0] if m.element_type
 scissor_chords = [m for m in _build("duo_pitch", 15.0, "scissor")[0] if m.element_type == "truss_chord"]
 assert len(scissor_chords) > len(fink_chords), (len(scissor_chords), len(fink_chords))
 
+# Fink: inner W only — 4 diagonals (no outer heel→rafter-mid struts).
+from core.engineering_rules import fink_truss_web_plan, truss_web_plan
+
+_fink_plan = fink_truss_web_plan(6, 3)
+assert len(_fink_plan) == 4, len(_fink_plan)
+assert fink_truss_web_plan(6, 3) == truss_web_plan("fink", 6, 3)
+assert (("bottom", 0), ("top", 1)) not in _fink_plan
+assert (("top", 5), ("bottom", 6)) not in _fink_plan
+assert (("top", 1), ("bottom", 2)) in _fink_plan
+assert (("bottom", 2), ("top", 3)) in _fink_plan
+assert (("top", 3), ("bottom", 4)) in _fink_plan
+assert (("bottom", 4), ("top", 5)) in _fink_plan
+_, _fink_macro = _build("duo_pitch", 12.0, "fink")
+_fink_webs = [
+    m
+    for m in _fink_macro
+    if m.get("element_type") == "truss_web"
+    and m["id"].startswith("shed_1-truss-web-1-")
+]
+assert len(_fink_webs) == 4, ("fink should have 4 inner web diagonals", len(_fink_webs))
+_fink_posts = [m for m in _fink_macro if "truss-post-1-" in m["id"]]
+assert len(_fink_posts) >= 2, "fink still needs portal end posts"
+for w in _fink_webs:
+    x0, y0 = w["nodes"]["start"][0], w["nodes"]["start"][1]
+    x1, y1 = w["nodes"]["end"][0], w["nodes"]["end"][1]
+    angle = math.degrees(math.atan2(abs(y1 - y0), abs(x1 - x0)))
+    assert 8.0 <= angle <= 70.0, (w["id"], angle)
+
 # Apex-only patterns gracefully fall back to Pratt on mono/flat roofs.
 for style, pitch in (("mono_pitch", 12.0), ("flat", 0.0)):
     for t in ("fink", "scissor", "pratt", "warren"):
@@ -381,8 +409,48 @@ assert abs(_duo_p0["nodes"]["start"][1] - _seated) < 2.0, (
     _seated,
 )
 
-# King-post: TC must follow roof pitch (not flat when n=2 apex panels).
+# King-post: central vertical + two struts from BC centre (all web profile).
+from core.engineering_rules import (
+    KING_POST_STRUT_ANGLE_MAX_DEG,
+    KING_POST_STRUT_ANGLE_MIN_DEG,
+    king_post_truss_web_plan,
+)
+
+_king_plan = king_post_truss_web_plan(4, 2)
+assert len(_king_plan) == 3, len(_king_plan)
+assert king_post_truss_web_plan(4, 2) == truss_web_plan("king_post", 4, 2)
+assert (("bottom", 2), ("top", 2)) in _king_plan
+assert (("bottom", 2), ("top", 1)) in _king_plan
+assert (("bottom", 2), ("top", 3)) in _king_plan
+
 _, king_macro = _build("duo_pitch", 12.0, "king_post")
+_king_webs = [
+    m
+    for m in king_macro
+    if m.get("element_type") == "truss_web"
+    and m["id"].startswith("shed_1-truss-web-1-")
+]
+assert len(_king_webs) == 3, ("king-post needs 3 web members", len(_king_webs))
+for w in _king_webs:
+    assert w["profile"] == "L50x50", w
+assert not any(m["id"].startswith("shed_1-truss-king-") for m in king_macro)
+_king_vertical = next(
+    w
+    for w in _king_webs
+    if abs(w["nodes"]["start"][0] - w["nodes"]["end"][0]) < 1.0
+)
+assert abs(_king_vertical["nodes"]["start"][1] - _king_vertical["nodes"]["end"][1]) > 200
+for w in _king_webs:
+    if w is _king_vertical:
+        continue
+    dx = abs(w["nodes"]["end"][0] - w["nodes"]["start"][0])
+    dy = abs(w["nodes"]["end"][1] - w["nodes"]["start"][1])
+    if dx > 1.0:
+        strut_deg = math.degrees(math.atan2(dy, dx))
+        assert KING_POST_STRUT_ANGLE_MIN_DEG <= strut_deg <= KING_POST_STRUT_ANGLE_MAX_DEG, (
+            w["id"],
+            strut_deg,
+        )
 king_tc = [m for m in king_macro if m["id"].startswith("shed_1-truss-tc-1-")]
 assert king_tc, "king-post TC missing"
 for seg in king_tc:
@@ -392,8 +460,105 @@ for seg in king_tc:
         pitch = math.degrees(math.atan2(abs(y1 - y0), abs(x1 - x0)))
         assert pitch > 5.0, (seg["id"], pitch)
 
+# Queen-post: central box (two verticals + straining beam) + wing struts (n=6).
+from core.engineering_rules import queen_post_truss_web_plan
+
+_queen_plan = queen_post_truss_web_plan(6, 3)
+assert len(_queen_plan) == 5, len(_queen_plan)
+assert queen_post_truss_web_plan(6, 3) == truss_web_plan("queen_post", 6, 3)
+assert (("bottom", 2), ("top", 2)) in _queen_plan
+assert (("bottom", 4), ("top", 4)) in _queen_plan
+assert (("top", 2), ("top", 4)) in _queen_plan
+assert (("bottom", 2), ("top", 1)) in _queen_plan
+assert (("bottom", 4), ("top", 5)) in _queen_plan
+_, _queen_macro = _build("duo_pitch", 12.0, "queen_post")
+_queen_webs = [
+    m
+    for m in _queen_macro
+    if m.get("element_type") == "truss_web"
+    and m["id"].startswith("shed_1-truss-web-1-")
+]
+assert len(_queen_webs) == 5, ("queen-post needs 5 web members", len(_queen_webs))
+for w in _queen_webs:
+    assert w["profile"] == "L50x50", w
+_queen_verticals = [
+    w
+    for w in _queen_webs
+    if abs(w["nodes"]["start"][0] - w["nodes"]["end"][0]) < 1.0
+]
+assert len(_queen_verticals) == 2, len(_queen_verticals)
+for w in _queen_verticals:
+    assert abs(w["nodes"]["start"][1] - w["nodes"]["end"][1]) > 200, w["id"]
+_straining = [
+    w
+    for w in _queen_webs
+    if abs(w["nodes"]["start"][1] - w["nodes"]["end"][1]) < 2.0
+    and abs(w["nodes"]["start"][0] - w["nodes"]["end"][0]) > 500
+]
+assert len(_straining) == 1, len(_straining)
+_wing_struts = [w for w in _queen_webs if w not in _queen_verticals and w not in _straining]
+assert len(_wing_struts) == 2, len(_wing_struts)
+for w in _wing_struts:
+    dx = abs(w["nodes"]["end"][0] - w["nodes"]["start"][0])
+    dy = abs(w["nodes"]["end"][1] - w["nodes"]["start"][1])
+    if dx > 1.0:
+        wing_deg = math.degrees(math.atan2(dy, dx))
+        assert 20.0 <= wing_deg <= 70.0, (w["id"], wing_deg)
+
 # Scissor (and all apex types) must get the same explicit portal end posts as Pratt.
+from core.engineering_rules import scissor_truss_web_plan
+
+_scissor_plan = scissor_truss_web_plan(4, 2)
+assert len(_scissor_plan) == 4, len(_scissor_plan)
+assert scissor_truss_web_plan(4, 2) == truss_web_plan("scissor", 4, 2)
+assert (("bottom", 1), ("top", 2)) in _scissor_plan
+assert (("bottom", 3), ("top", 2)) in _scissor_plan
+assert (("bottom", 1), ("top", 3)) in _scissor_plan
+assert (("bottom", 3), ("top", 1)) in _scissor_plan
 _, scissor_macro = _build("duo_pitch", 18.0, "scissor")
+_scissor_webs = [
+    m
+    for m in scissor_macro
+    if m.get("element_type") == "truss_web"
+    and m["id"].startswith("shed_1-truss-web-1-")
+]
+assert len(_scissor_webs) == 4, ("scissor needs 4 triangulation webs", len(_scissor_webs))
+for w in _scissor_webs:
+    assert w["profile"] == "L50x50", w
+_scissor_tc = [m for m in scissor_macro if m["id"].startswith("shed_1-truss-tc-1-")]
+_scissor_bc = [m for m in scissor_macro if m["id"].startswith("shed_1-truss-bc-1-")]
+assert len(_scissor_tc) == 2 and len(_scissor_bc) == 2, (
+    "scissor needs split TC/BC at apex",
+    len(_scissor_tc),
+    len(_scissor_bc),
+)
+for seg in _scissor_tc:
+    x0, y0 = seg["nodes"]["start"][0], seg["nodes"]["start"][1]
+    x1, y1 = seg["nodes"]["end"][0], seg["nodes"]["end"][1]
+    if abs(x1 - x0) > 500:
+        tc_pitch = math.degrees(math.atan2(abs(y1 - y0), abs(x1 - x0)))
+        break
+else:
+    tc_pitch = 0.0
+for seg in _scissor_bc:
+    x0, y0 = seg["nodes"]["start"][0], seg["nodes"]["start"][1]
+    x1, y1 = seg["nodes"]["end"][0], seg["nodes"]["end"][1]
+    if abs(x1 - x0) > 500:
+        bc_pitch = math.degrees(math.atan2(abs(y1 - y0), abs(x1 - x0)))
+        break
+else:
+    bc_pitch = 0.0
+assert tc_pitch > 5.0, tc_pitch
+assert bc_pitch > 2.0, bc_pitch
+assert abs(bc_pitch - tc_pitch * 0.5) < 3.0, (bc_pitch, tc_pitch)
+_bc_center_y = next(m for m in scissor_macro if m["id"] == "shed_1-truss-bc-1-0")[
+    "nodes"
+]["end"][1]
+_bc_heel_y = next(m for m in scissor_macro if m["id"] == "shed_1-truss-bc-1-0")[
+    "nodes"
+]["start"][1]
+assert _bc_center_y > _bc_heel_y + 200, (_bc_center_y, _bc_heel_y)
+
 scissor_posts = _portal_end_posts(scissor_macro, "shed_1-truss-web-1-")
 assert len(scissor_posts) >= 2, ("scissor end posts", len(scissor_posts))
 assert next(m for m in scissor_macro if m["id"] == "shed_1-truss-post-1-0")[

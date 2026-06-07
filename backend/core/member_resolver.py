@@ -444,12 +444,13 @@ def member_from_grid_nodes(
     rotation_euler = [0.0, 0.0, 0.0]
     alignment = member.alignment
     if grid is not None and use_truss and member.element_type == "truss_web":
-        start, end = _place_truss_web(
-            start,
-            end,
-            grid=grid,
-            truss_chord_profile=truss_chord_profile,
-        )
+        if _truss_type_from_grid(grid) not in ("king_post", "queen_post", "scissor"):
+            start, end = _place_truss_web(
+                start,
+                end,
+                grid=grid,
+                truss_chord_profile=truss_chord_profile,
+            )
     if grid is not None and member.element_type in (
         "purlin",
         "sag_rod",

@@ -326,6 +326,14 @@ def _truss_panel_layout(
     )
 
     if symmetric:
+        if truss_type == "fink":
+            return _fink_panel_layout(grid)
+        if truss_type == "king_post":
+            return _king_post_panel_layout(grid)
+        if truss_type == "queen_post":
+            return _queen_post_panel_layout(grid)
+        if truss_type == "scissor":
+            return _scissor_panel_layout(grid)
         ridge_x = grid.resolve_x_mm(ridge_label)
         rise = _roof_elev_at(grid, ridge_x) - eave_y
         fixed = engineering_rules.truss_fixed_panels(truss_type)
@@ -380,6 +388,66 @@ def _truss_panel_layout(
         + [right]
     )
     return xs, None, "flat"
+
+
+def _king_post_panel_layout(
+    grid: StructuralGridEngine,
+) -> tuple[list[str], int, str]:
+    """King-post panel lines: apex at mid-span, strut nodes from 45° BC-centre geometry."""
+    left, right = grid.x_labels[0], grid.x_labels[-1]
+    left_x = grid.resolve_x_mm(left)
+    right_x = grid.resolve_x_mm(right)
+    span = right_x - left_x
+    x_strut_l = engineering_rules.king_post_strut_x_mm(grid)
+    x_c = left_x + span * 0.5
+    x_strut_r = left_x + span - (x_strut_l - left_x)
+    xlabels = [
+        _x_ref_at_mm(grid, left_x),
+        _x_ref_at_mm(grid, x_strut_l),
+        _x_ref_at_mm(grid, x_c),
+        _x_ref_at_mm(grid, x_strut_r),
+        _x_ref_at_mm(grid, right_x),
+    ]
+    return xlabels, 2, "king_post"
+
+
+def _queen_post_panel_layout(
+    grid: StructuralGridEngine,
+) -> tuple[list[str], int, str]:
+    """Queen-post panel lines: rafter mids at 1/4 & 3/4, queen posts at 1/3 & 2/3."""
+    left, right = grid.x_labels[0], grid.x_labels[-1]
+    left_x = grid.resolve_x_mm(left)
+    right_x = grid.resolve_x_mm(right)
+    span = right_x - left_x
+    fracs = (0.0, 0.25, 1.0 / 3.0, 0.5, 2.0 / 3.0, 0.75, 1.0)
+    xlabels = [_x_ref_at_mm(grid, left_x + span * frac) for frac in fracs]
+    return xlabels, 3, "queen_post"
+
+
+def _scissor_panel_layout(
+    grid: StructuralGridEngine,
+) -> tuple[list[str], int, str]:
+    """Scissor panel lines: quarter points + apex for crossing-chord triangulation."""
+    left, right = grid.x_labels[0], grid.x_labels[-1]
+    left_x = grid.resolve_x_mm(left)
+    right_x = grid.resolve_x_mm(right)
+    span = right_x - left_x
+    fracs = (0.0, 0.25, 0.5, 0.75, 1.0)
+    xlabels = [_x_ref_at_mm(grid, left_x + span * frac) for frac in fracs]
+    return xlabels, 2, "scissor"
+
+
+def _fink_panel_layout(
+    grid: StructuralGridEngine,
+) -> tuple[list[str], int, str]:
+    """Fink-specific panel lines: TC mids at 1/4 & 3/4 span, BC nodes at 1/3 & 2/3."""
+    left, right = grid.x_labels[0], grid.x_labels[-1]
+    left_x = grid.resolve_x_mm(left)
+    right_x = grid.resolve_x_mm(right)
+    span = right_x - left_x
+    fracs = (0.0, 0.25, 1.0 / 3.0, 0.5, 2.0 / 3.0, 0.75, 1.0)
+    xlabels = [_x_ref_at_mm(grid, left_x + span * frac) for frac in fracs]
+    return xlabels, 3, "fink"
 
 
 def _full_mono_rise_mm(grid: StructuralGridEngine) -> float:
@@ -442,6 +510,35 @@ def _symmetric_top_chord_y_mm(
     return y_ridge + frac * (y_heel - y_ridge)
 
 
+def _scissor_bottom_chord_y_mm(
+    grid: StructuralGridEngine,
+    xlabels: list[str],
+    i: int,
+    ridge_i: int,
+) -> float:
+    """Absolute Y of a scissor bottom-chord node — ceiling pitch is half the roof pitch."""
+    n = len(xlabels) - 1
+    x_mm = grid.resolve_x_mm(xlabels[i])
+    x_left = grid.resolve_x_mm(xlabels[0])
+    x_ridge = grid.resolve_x_mm(xlabels[ridge_i])
+    x_right = grid.resolve_x_mm(xlabels[n])
+    y_eave = grid.roof.eave_y
+    y_top_heel = y_eave + _truss_end_heel_rise_mm(grid, xlabels, 0)
+    y_top_ridge = _roof_elev_at(grid, x_ridge)
+
+    half_left = x_ridge - x_left
+    half_right = x_right - x_ridge
+    if half_left < 1.0 or half_right < 1.0:
+        return y_eave
+
+    roof_pitch = math.atan2(y_top_ridge - y_top_heel, half_left)
+    ceiling_pitch = engineering_rules.scissor_ceiling_pitch_rad(roof_pitch)
+
+    if i <= ridge_i:
+        return y_eave + (x_mm - x_left) * math.tan(ceiling_pitch)
+    return y_eave + (x_right - x_mm) * math.tan(ceiling_pitch)
+
+
 def _mono_top_chord_y_mm(
     grid: StructuralGridEngine,
     xlabels: list[str],
@@ -480,7 +577,7 @@ def _truss_top_node(
     xl = xlabels[i]
     if case == "flat":
         return _ref(xl, z_label, "eave")
-    if case == "symmetric" and ridge_i is not None:
+    if case in ("symmetric", "fink", "king_post", "queen_post", "scissor") and ridge_i is not None:
         if i == ridge_i:
             return _ref(xl, z_label, "apex")
         y_mm = _symmetric_top_chord_y_mm(grid, xlabels, i, ridge_i)
@@ -804,13 +901,10 @@ def _truss_frame(
 
     # Apex web patterns require a central node; otherwise fall back to Pratt.
     web_type = truss_type
-    if case != "symmetric" and truss_type in engineering_rules.APEX_TRUSS_TYPES:
+    if case not in ("symmetric", "fink", "king_post", "queen_post", "scissor") and truss_type in engineering_rules.APEX_TRUSS_TYPES:
         web_type = "pratt"
 
     flat_depth = max(600.0, grid.total_width_mm / 20.0) if case == "flat" else 0.0
-    total_rise = 0.0
-    if case == "symmetric" and truss_type == "scissor" and ridge_i:
-        total_rise = _roof_elev_at(grid, grid.resolve_x_mm(xlabels[ridge_i])) - eave_y
 
     # Panel-node references — portal ends: TC above BC (explicit end posts).
     top: list[GridNodeReference] = []
@@ -827,9 +921,10 @@ def _truss_frame(
 
         if case == "flat":
             bottom.append(_ref(xl, z_label, "eave", {"y": -flat_depth}))
-        elif truss_type == "scissor" and case == "symmetric":
-            lift = engineering_rules.scissor_bottom_rise_mm(i, n, ridge_i or 0, total_rise)
-            bottom.append(_ref(xl, z_label, "eave", {"y": lift} if lift > 1.0 else None))
+        elif case == "scissor":
+            y_bc = _scissor_bottom_chord_y_mm(grid, xlabels, i, ridge_i or 0)
+            off = y_bc - eave_y
+            bottom.append(_ref(xl, z_label, "eave", {"y": off} if off > 1.0 else None))
         else:
             bottom.append(_ref(xl, z_label, "eave"))
 
@@ -837,10 +932,8 @@ def _truss_frame(
     chord = {"top": top, "bottom": bottom}
 
     # Chords: split at the apex (top) and at the raised centre (scissor bottom).
-    top_breaks = [0, ridge_i, n] if case == "symmetric" else [0, n]
-    bottom_breaks = (
-        [0, ridge_i, n] if (case == "symmetric" and truss_type == "scissor") else [0, n]
-    )
+    top_breaks = [0, ridge_i, n] if case in ("symmetric", "fink", "king_post", "queen_post", "scissor") else [0, n]
+    bottom_breaks = [0, ridge_i, n] if case == "scissor" else [0, n]
     for tag, nodes, breaks in (("tc", top, top_breaks), ("bc", bottom, bottom_breaks)):
         for s in range(len(breaks) - 1):
             a, b = breaks[s], breaks[s + 1]
@@ -1442,19 +1535,11 @@ def _bottom_chord_restraint(
 
     if truss_type == "scissor" and not grid.roof.is_flat and not grid.roof.is_mono:
         xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
-        if case == "symmetric" and len(xlabels) >= 3:
+        if case == "scissor" and len(xlabels) >= 3:
             eave_y = grid.roof.eave_y
-            total_rise = 0.0
-            if ridge_i is not None:
-                total_rise = (
-                    _roof_elev_at(grid, grid.resolve_x_mm(xlabels[ridge_i])) - eave_y
-                )
-            n = len(xlabels) - 1
             for k, i in enumerate(range(1, len(xlabels) - 1)):
-                lift = engineering_rules.scissor_bottom_rise_mm(
-                    i, n, ridge_i or 0, total_rise
-                )
-                off = {"y": lift} if lift > 1.0 else {}
+                y_bc = _scissor_bottom_chord_y_mm(grid, xlabels, i, ridge_i or 0)
+                off = {"y": y_bc - eave_y} if y_bc - eave_y > 1.0 else {}
                 out.append(
                     StructuralMember(
                         id=f"{aid}-bctie-{k}",
