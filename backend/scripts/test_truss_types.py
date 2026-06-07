@@ -271,12 +271,19 @@ assert abs(_purlin_y - _natural_roof_y) > 50.0, (
 )
 
 tc0 = next(m for m in mono_macro if m["id"] == "shed_1-truss-tc-1-0")
+bc0 = next(m for m in mono_macro if m["id"] == "shed_1-truss-bc-1-0")
 low_post = next(m for m in mono_macro if m["id"] == "shed_1-truss-post-1-low")
 assert abs(tc0["nodes"]["start"][1] - low_post["nodes"]["start"][1]) < 1.0, (
-    "low TC must start at the top of the end post",
+    "end post top must share TC centerline node",
     tc0["nodes"]["start"][1],
     low_post["nodes"]["start"][1],
 )
+assert abs(bc0["nodes"]["start"][1] - low_post["nodes"]["end"][1]) < 1.0, (
+    "end post bottom must share BC centerline node",
+    bc0["nodes"]["start"][1],
+    low_post["nodes"]["end"][1],
+)
+assert abs(low_post["nodes"]["start"][0] - tc0["nodes"]["start"][0]) < 1.0
 assert tc0["nodes"]["end"][1] > tc0["nodes"]["start"][1], (
     "mono TC must slope up toward the high side",
     tc0["nodes"],
@@ -298,6 +305,81 @@ assert duo_left_post["element_type"] == "truss_chord", duo_left_post
 assert duo_right_post["element_type"] == "truss_chord", duo_right_post
 assert duo_left_post["length"] >= 200.0, duo_left_post["length"]
 assert duo_right_post["length"] >= 200.0, duo_right_post["length"]
+duo_tc_left = next(m for m in duo_macro if m["id"] == "shed_1-truss-tc-1-0")
+duo_bc = next(m for m in duo_macro if m["id"] == "shed_1-truss-bc-1-0")
+assert abs(duo_left_post["nodes"]["start"][1] - duo_tc_left["nodes"]["start"][1]) < 1.0
+assert abs(duo_left_post["nodes"]["end"][1] - duo_bc["nodes"]["start"][1]) < 1.0
+assert abs(duo_left_post["nodes"]["start"][0] - duo_tc_left["nodes"]["start"][0]) < 1.0
+
+# Duo TC panel nodes must follow the straight heel→ridge chord (never dip below the heel).
+from core.grid_member_catalog import (
+    _truss_top_chord_panel_xy,
+    truss_pitch_at_x,
+    truss_top_chord_y_at_x,
+)
+from core.engineering_rules import (
+    profile_half_depth_mm,
+    seat_purlin_bottom_on_rafter,
+    seat_web_on_top_chord_bottom,
+)
+from core.spatial_grid import StructuralGridEngine
+
+_duo_gd = GridDefinition(
+    x_spans=[12000],
+    z_spans=[5000, 5000, 5000],
+    height_mm=4000,
+    roof_pitch_deg=10,
+    roof_style="duo_pitch",
+    use_truss=True,
+    truss_type="pratt",
+)
+_duo_grid = StructuralGridEngine.from_definition(_duo_gd)
+_duo_xs, _duo_ys = _truss_top_chord_panel_xy(_duo_grid)
+assert _duo_ys[1] >= _duo_ys[0] - 1.0, ("TC dips below heel", _duo_ys[0], _duo_ys[1])
+assert truss_pitch_at_x(_duo_grid, 0.0)[1] > 0, truss_pitch_at_x(_duo_grid, 0.0)
+
+_half = profile_half_depth_mm("IPE200")
+_duo_webs = [
+    m
+    for m in duo_macro
+    if m.get("element_type") == "truss_web"
+    and m["id"].startswith("shed_1-truss-web-1-")
+]
+assert _duo_webs, "duo webs missing"
+for w in _duo_webs:
+    sy = w["nodes"]["start"][1]
+    ey = w["nodes"]["end"][1]
+    top_x = w["nodes"]["start"][0] if sy > ey else w["nodes"]["end"][0]
+    top_y = max(sy, ey)
+    tc_y = truss_top_chord_y_at_x(_duo_grid, top_x)
+    pitch = truss_pitch_at_x(_duo_grid, top_x)
+    tc_bottom = seat_web_on_top_chord_bottom(
+        top_x,
+        tc_y,
+        0.0,
+        chord_profile="IPE200",
+        pitch_rad=pitch[0],
+        pitch_sign=pitch[1],
+    )[1]
+    assert abs(top_y - tc_bottom) < 2.0, (w["id"], top_y, tc_bottom)
+
+_duo_p0 = next(m for m in duo_macro if m["id"] == "shed_1-purlin-0")
+_px = _duo_p0["nodes"]["start"][0]
+_tc_y = truss_top_chord_y_at_x(_duo_grid, _px)
+_pp = truss_pitch_at_x(_duo_grid, _px)
+_seated = seat_purlin_bottom_on_rafter(
+    _px,
+    _tc_y,
+    0.0,
+    rafter_profile="IPE200",
+    pitch_rad=_pp[0],
+    pitch_sign=_pp[1],
+)[1]
+assert abs(_duo_p0["nodes"]["start"][1] - _seated) < 2.0, (
+    "eave purlin must sit on TC top flange",
+    _duo_p0["nodes"]["start"][1],
+    _seated,
+)
 
 # King-post: TC must follow roof pitch (not flat when n=2 apex panels).
 _, king_macro = _build("duo_pitch", 12.0, "king_post")

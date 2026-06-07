@@ -169,6 +169,37 @@ def seat_purlin_bottom_on_rafter(
     )
 
 
+def seat_web_on_top_chord_bottom(
+    x: float,
+    y_centerline: float,
+    z: float,
+    *,
+    chord_profile: str,
+    pitch_rad: float,
+    pitch_sign: float = 1.0,
+) -> tuple[float, float, float]:
+    """Web endpoint on the underside of a sloping top chord (bottom flange)."""
+    half = profile_half_depth_mm(chord_profile)
+    nx, ny = _rafter_outward_normal(pitch_rad, pitch_sign)
+    return (
+        x - half * nx,
+        y_centerline - half * ny,
+        z,
+    )
+
+
+def seat_web_on_bottom_chord_top(
+    x: float,
+    y_centerline: float,
+    z: float,
+    *,
+    chord_profile: str,
+) -> tuple[float, float, float]:
+    """Web endpoint on the top face of a flat bottom chord at the eave datum."""
+    half = profile_half_depth_mm(chord_profile)
+    return (x, y_centerline + half, z)
+
+
 def seat_haunch_top_on_rafter_bottom(
     x: float,
     y_centerline: float,

@@ -17,6 +17,8 @@ from core.engineering_rules import (
     rafter_pitch_at_x,
     seat_haunch_top_on_rafter_bottom,
     seat_purlin_bottom_on_rafter,
+    seat_web_on_bottom_chord_top,
+    seat_web_on_top_chord_bottom,
     wall_girt_center_outside_x,
     wall_girt_roll_deg,
 )
@@ -154,6 +156,45 @@ def _column_outside_half_on_z_wall(
         return profile_column_outside_half_mm(fallback_profile)
 
 
+def _truss_type_from_grid(grid: StructuralGridEngine) -> str:
+    truss_type = getattr(grid.definition, "truss_type", "pratt") or "pratt"
+    if str(truss_type).strip().lower() == "none":
+        return "pratt"
+    return str(truss_type).strip().lower()
+
+
+def _place_truss_web(
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+    *,
+    grid: StructuralGridEngine,
+    truss_chord_profile: str,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """Seat panel-web ends on chord flanges for rendering (analysis nodes stay in catalog)."""
+    from core.grid_member_catalog import truss_pitch_at_x, truss_top_chord_y_at_x
+
+    truss_type = _truss_type_from_grid(grid)
+    eave_y = grid.roof.eave_y
+
+    def seat(x: float, y: float, z: float) -> tuple[float, float, float]:
+        tc_y = truss_top_chord_y_at_x(grid, x, truss_type=truss_type)
+        if y > eave_y + (tc_y - eave_y) * 0.45:
+            pitch = truss_pitch_at_x(grid, x, truss_type=truss_type)
+            return seat_web_on_top_chord_bottom(
+                x,
+                tc_y,
+                z,
+                chord_profile=truss_chord_profile,
+                pitch_rad=pitch[0],
+                pitch_sign=pitch[1],
+            )
+        return seat_web_on_bottom_chord_top(
+            x, y, z, chord_profile=truss_chord_profile
+        )
+
+    return seat(*start), seat(*end)
+
+
 def _place_secondary_steel(
     member: StructuralMember,
     start: tuple[float, float, float],
@@ -213,10 +254,7 @@ def _place_secondary_steel(
         if use_truss and et == "purlin":
             from core.grid_member_catalog import truss_pitch_at_x, truss_top_chord_y_at_x
 
-            truss_type = getattr(grid.definition, "truss_type", "pratt") or "pratt"
-            if str(truss_type).strip().lower() == "none":
-                truss_type = "pratt"
-            truss_type = str(truss_type).strip().lower()
+            truss_type = _truss_type_from_grid(grid)
 
             start = (
                 start[0],
@@ -405,6 +443,13 @@ def member_from_grid_nodes(
 
     rotation_euler = [0.0, 0.0, 0.0]
     alignment = member.alignment
+    if grid is not None and use_truss and member.element_type == "truss_web":
+        start, end = _place_truss_web(
+            start,
+            end,
+            grid=grid,
+            truss_chord_profile=truss_chord_profile,
+        )
     if grid is not None and member.element_type in (
         "purlin",
         "sag_rod",

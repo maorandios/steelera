@@ -417,6 +417,31 @@ def _truss_end_heel_rise_mm(
     return min(450.0, max(250.0, span * 0.035))
 
 
+def _symmetric_top_chord_y_mm(
+    grid: StructuralGridEngine,
+    xlabels: list[str],
+    i: int,
+    ridge_i: int,
+) -> float:
+    """Absolute Y of a duo-pitch TC panel node on straight heel→ridge→heel lines."""
+    n = len(xlabels) - 1
+    x_mm = grid.resolve_x_mm(xlabels[i])
+    x_left = grid.resolve_x_mm(xlabels[0])
+    x_ridge = grid.resolve_x_mm(xlabels[ridge_i])
+    x_right = grid.resolve_x_mm(xlabels[n])
+    y_heel = grid.roof.eave_y + _truss_end_heel_rise_mm(grid, xlabels, 0)
+    y_ridge = _roof_elev_at(grid, x_ridge)
+    if ridge_i <= 0 or abs(x_ridge - x_left) < 1.0:
+        return y_heel
+    if i <= ridge_i:
+        frac = (x_mm - x_left) / (x_ridge - x_left)
+        return y_heel + frac * (y_ridge - y_heel)
+    if abs(x_right - x_ridge) < 1.0:
+        return y_ridge
+    frac = (x_mm - x_ridge) / (x_right - x_ridge)
+    return y_ridge + frac * (y_heel - y_ridge)
+
+
 def _mono_top_chord_y_mm(
     grid: StructuralGridEngine,
     xlabels: list[str],
@@ -455,8 +480,11 @@ def _truss_top_node(
     xl = xlabels[i]
     if case == "flat":
         return _ref(xl, z_label, "eave")
-    if case == "symmetric" and ridge_i is not None and i == ridge_i:
-        return _ref(xl, z_label, "apex")
+    if case == "symmetric" and ridge_i is not None:
+        if i == ridge_i:
+            return _ref(xl, z_label, "apex")
+        y_mm = _symmetric_top_chord_y_mm(grid, xlabels, i, ridge_i)
+        return _ref(xl, z_label, "eave", {"y": y_mm - grid.roof.eave_y})
 
     if case == "mono":
         y_mm = _mono_top_chord_y_mm(grid, xlabels, i)
