@@ -59,6 +59,7 @@ def legacy_request_to_config(request: GenerateShedRequest) -> ShedAssemblyConfig
         fly_braces=request.use_fly_braces,
         base_plates=request.use_base_plates,
         bottom_chord_restraint=request.use_bottom_chord_restraint,
+        mono_high_side=getattr(request, "mono_high_side", "B"),
     )
 
 

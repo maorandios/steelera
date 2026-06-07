@@ -41,16 +41,10 @@ def generate_shed_from_grid_layout(layout: StructuralGridLayout) -> list[dict[st
 
 def generate_shed_from_assembly_config(config: ShedAssemblyConfig) -> list[dict[str, Any]]:
     """Legacy config → grid catalog members → resolver (no custom truss/purlin math)."""
+    from core.shed_grid_bridge import grid_definition_from_shed_config
+
     cfg = config.with_default_bays()
-    gp = cfg.global_parameters
-    grid_def = GridDefinition(
-        x_spans=list(cfg.grid_layout.x_spans),
-        z_spans=list(cfg.grid_layout.z_spans),
-        height_mm=gp.height_mm,
-        roof_pitch_deg=0.0 if gp.roof_style == "flat" else gp.roof_pitch_deg,
-        roof_style=gp.roof_style,
-        mono_high_side=getattr(cfg, "mono_high_side", "B"),
-    )
+    grid_def = grid_definition_from_shed_config(cfg)
     members = members_from_shed_config(cfg)
     layout = StructuralGridLayout(
         assembly_id=cfg.assembly_id,

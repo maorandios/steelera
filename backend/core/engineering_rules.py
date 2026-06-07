@@ -698,8 +698,7 @@ def mono_pitch_truss_web_plan(n: int, *, high_side: str = "B") -> list[WebPair]:
     """Webs for a mono-pitch portal truss (flat bottom chord, sloping top chord).
 
     Vertical at every panel node; each panel gets one diagonal rising toward the
-    high end (Pratt toward the high side). Degenerate verticals at the low eave drop
-    during resolution.
+    high end (Pratt toward the high side). Low eave end posts use full mono rise.
     """
     high_at_right = str(high_side).strip().upper() != "A"
     plan: list[WebPair] = []

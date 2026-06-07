@@ -27,6 +27,8 @@ _FLY_BRACE_Z_LEG_MM = 200.0
 
 # Default secondary-steel profiles (overridable per-generation via the config).
 DEFAULT_COLUMN_PROFILE = "HEA200"
+DEFAULT_TRUSS_CHORD_PROFILE = "IPE200"
+DEFAULT_TRUSS_WEB_PROFILE = "L50x50"
 DEFAULT_BRACING_PROFILE = "L50x50"
 DEFAULT_PURLIN_PROFILE = "C150x2"
 DEFAULT_GIRT_PROFILE = "C150x2"
@@ -380,61 +382,291 @@ def _truss_panel_layout(
     return xs, None, "flat"
 
 
-def _mono_gable_truss_frame(
+def _full_mono_rise_mm(grid: StructuralGridEngine) -> float:
+    """Total roof rise across a mono-pitch span (high eave minus datum)."""
+    left_x = grid.resolve_x_mm(grid.x_labels[0])
+    right_x = grid.resolve_x_mm(grid.x_labels[-1])
+    return max(
+        _roof_elev_at(grid, left_x),
+        _roof_elev_at(grid, right_x),
+    ) - grid.roof.eave_y
+
+
+def _mono_portal_indices(n: int, mono_high_side: str) -> tuple[int, int]:
+    """Return (low_eave_panel_index, high_eave_panel_index) for mono portal ends."""
+    if str(mono_high_side).strip().upper() == "A":
+        return n, 0
+    return 0, n
+
+
+def _truss_end_heel_rise_mm(
     grid: StructuralGridEngine,
+    xlabels: list[str],
+    i: int,
+) -> float:
+    """Portal end-post height: TC above BC at the eave bearing (fixed, not a panel sample).
+
+    Sampling one panel inward breaks apex trusses (king-post n=2) by lifting the
+    eave TC node to ridge height, which flattens the top chord. Use a capped heel
+    rise so end posts stay visible without killing roof pitch.
+    """
+    _ = i
+    span = grid.resolve_x_mm(xlabels[-1]) - grid.resolve_x_mm(xlabels[0])
+    if span < 1.0:
+        return 250.0
+    return min(450.0, max(250.0, span * 0.035))
+
+
+def _mono_top_chord_y_mm(
+    grid: StructuralGridEngine,
+    xlabels: list[str],
+    i: int,
+) -> float:
+    """Absolute Y of a mono top-chord panel node on one straight sloped line.
+
+    Low portal: eave + fixed heel rise (same rule as duo end posts). High portal:
+    natural roof elevation. Interior nodes interpolate linearly so the TC never
+    dips below the first panel (which broke the low end post visually).
+    """
+    n = len(xlabels) - 1
+    low_i, high_i = _mono_portal_indices(n, grid.roof.mono_high_side)
+    x_low = grid.resolve_x_mm(xlabels[low_i])
+    x_high = grid.resolve_x_mm(xlabels[high_i])
+    y_low = grid.roof.eave_y + _truss_end_heel_rise_mm(grid, xlabels, low_i)
+    y_high = _roof_elev_at(grid, x_high)
+    x_mm = grid.resolve_x_mm(xlabels[i])
+    if abs(x_high - x_low) < 1.0:
+        return y_low
+    frac = (x_mm - x_low) / (x_high - x_low)
+    return y_low + frac * (y_high - y_low)
+
+
+def _truss_top_node(
+    grid: StructuralGridEngine,
+    z_label: str,
+    xlabels: list[str],
+    i: int,
+    *,
+    case: str,
+    ridge_i: int | None,
+) -> GridNodeReference:
+    """Top-chord panel node; portal ends always sit above the bottom chord."""
+    n = len(xlabels) - 1
+    xl = xlabels[i]
+    if case == "flat":
+        return _ref(xl, z_label, "eave")
+    if case == "symmetric" and ridge_i is not None and i == ridge_i:
+        return _ref(xl, z_label, "apex")
+
+    if case == "mono":
+        y_mm = _mono_top_chord_y_mm(grid, xlabels, i)
+        return _ref(xl, z_label, "eave", {"y": y_mm - grid.roof.eave_y})
+
+    x_mm = grid.resolve_x_mm(xl)
+    if abs(_roof_elev_at(grid, x_mm) - grid.roof.eave_y) > 1.0:
+        return _ref(xl, z_label, "roof")
+
+    if i in (0, n):
+        rise = _truss_end_heel_rise_mm(grid, xlabels, i)
+        if rise > 1.0:
+            return _ref(xl, z_label, "eave", {"y": rise})
+    return _ref(xl, z_label, "roof")
+
+
+def _truss_top_chord_panel_xy(
+    grid: StructuralGridEngine,
+    *,
+    truss_type: str = "pratt",
+) -> tuple[list[float], list[float]]:
+    """Resolved top-chord panel node coordinates for one portal frame."""
+    ridge = _ridge_label(grid)
+    z_label = grid.z_labels[0] if grid.z_labels else "1"
+    if grid.roof.is_mono:
+        xlabels, ridge_i, case = _truss_panel_layout(grid, ridge, truss_type)
+        if case != "mono" or len(xlabels) < 2:
+            xlabels = [grid.x_labels[0], grid.x_labels[-1]]
+        ridge_i = (len(xlabels) - 1) if grid.roof.mono_high_side == "B" else 0
+    else:
+        xlabels, ridge_i, case = _truss_panel_layout(grid, ridge, truss_type)
+
+    xs: list[float] = []
+    ys: list[float] = []
+    for i, _xl in enumerate(xlabels):
+        ref = _truss_top_node(
+            grid, z_label, xlabels, i, case=case, ridge_i=ridge_i
+        )
+        px, py, _pz = grid.resolve_node(ref)
+        xs.append(px)
+        ys.append(py)
+    return xs, ys
+
+
+def truss_top_chord_y_at_x(
+    grid: StructuralGridEngine,
+    x_mm: float,
+    *,
+    truss_type: str = "pratt",
+) -> float:
+    """Top-chord centerline elevation at ``x_mm`` (matches truss frame panel nodes)."""
+    xs, ys = _truss_top_chord_panel_xy(grid, truss_type=truss_type)
+    if not xs:
+        return _roof_elev_at(grid, x_mm)
+
+    if x_mm <= xs[0]:
+        return ys[0]
+    if x_mm >= xs[-1]:
+        return ys[-1]
+    for j in range(len(xs) - 1):
+        x0, x1 = xs[j], xs[j + 1]
+        if x0 <= x_mm <= x1 and abs(x1 - x0) > 1e-6:
+            t = (x_mm - x0) / (x1 - x0)
+            return ys[j] + t * (ys[j + 1] - ys[j])
+    return _roof_elev_at(grid, x_mm)
+
+
+def truss_pitch_at_x(
+    grid: StructuralGridEngine,
+    x_mm: float,
+    *,
+    truss_type: str = "pratt",
+) -> tuple[float, float]:
+    """Local TC segment (pitch_rad, pitch_sign) at ``x_mm`` for purlin seating."""
+    xs, ys = _truss_top_chord_panel_xy(grid, truss_type=truss_type)
+    if len(xs) < 2:
+        return 0.0, 1.0
+
+    seg = len(xs) - 2
+    if x_mm <= xs[0]:
+        seg = 0
+    elif x_mm >= xs[-1]:
+        seg = len(xs) - 2
+    else:
+        for j in range(len(xs) - 1):
+            if xs[j] <= x_mm <= xs[j + 1]:
+                seg = j
+                break
+
+    dx = xs[seg + 1] - xs[seg]
+    dy = ys[seg + 1] - ys[seg]
+    if abs(dx) < 1e-6:
+        return 0.0, 1.0
+    pitch_rad = math.atan2(abs(dy), abs(dx))
+    pitch_sign = 1.0 if dy >= 0.0 else -1.0
+    return pitch_rad, pitch_sign
+
+
+def _is_portal_end_vertical_web(
+    pair: tuple[tuple[str, int], tuple[str, int]],
+    n: int,
+    *,
+    low_i: int | None = None,
+    high_i: int | None = None,
+) -> bool:
+    """Vertical strut at a portal end connecting TC directly above BC."""
+    (sa, ia), (sb, ib) = pair
+    if sa != "top" or sb != "bottom" or ia != ib:
+        return False
+    if low_i is not None and ia == low_i:
+        return True
+    if high_i is not None and ia == high_i:
+        return True
+    return ia in (0, n)
+
+
+def _truss_web_member(
+    *,
     aid: str,
     z_label: str,
-    truss_type: str,
-) -> list[StructuralMember]:
-    """Mono gable-end truss — single-panel trapezoid (not a triangle fan).
-
-    One flat bottom chord at eave, one sloping top chord, a vertical at the high
-    end, and one Pratt diagonal in the panel. The low-side end post is the main
-    column at eave; the high-side vertical is a truss web.
-    """
-    left, right = grid.x_labels[0], grid.x_labels[-1]
-    left_top = "eave" if _is_eave_line(grid, left) else "roof"
-    right_top = "eave" if _is_eave_line(grid, right) else "roof"
-
-    top = [_ref(left, z_label, left_top), _ref(right, z_label, right_top)]
-    bottom = [_ref(left, z_label, "eave"), _ref(right, z_label, "eave")]
-    chord = {"top": top, "bottom": bottom}
-
-    web_type = truss_type
-    if web_type in engineering_rules.APEX_TRUSS_TYPES or web_type == "warren":
-        web_type = "pratt"
-
-    out: list[StructuralMember] = [
-        StructuralMember(
-            id=f"{aid}-truss-tc-{z_label}-0",
-            element_type="truss_chord",
-            profile="IPE200",
-            start_node=top[0],
-            end_node=top[1],
-        ),
-        StructuralMember(
-            id=f"{aid}-truss-bc-{z_label}-0",
-            element_type="truss_chord",
-            profile="IPE200",
-            start_node=bottom[0],
-            end_node=bottom[1],
-        ),
-    ]
-
-    plan = engineering_rules.mono_pitch_truss_web_plan(
-        1, high_side=grid.roof.mono_high_side
+    pair: tuple[tuple[str, int], tuple[str, int]],
+    n: int,
+    chord: dict[str, list[GridNodeReference]],
+    chord_profile: str,
+    web_profile: str,
+    member_id: str,
+    low_i: int | None = None,
+    high_i: int | None = None,
+) -> StructuralMember:
+    """Panel web; portal-end verticals match bottom-chord profile (not angle webs)."""
+    (sa, ia), (sb, ib) = pair
+    end_post = _is_portal_end_vertical_web(pair, n, low_i=low_i, high_i=high_i)
+    return StructuralMember(
+        id=member_id,
+        element_type="truss_chord" if end_post else "truss_web",
+        profile=chord_profile if end_post else web_profile,
+        start_node=chord[sa][ia],
+        end_node=chord[sb][ib],
     )
-    for k, ((sa, ia), (sb, ib)) in enumerate(plan):
+
+
+def _append_truss_end_posts(
+    out: list[StructuralMember],
+    *,
+    aid: str,
+    z_label: str,
+    chord: dict[str, list[GridNodeReference]],
+    n: int,
+    chord_profile: str,
+) -> None:
+    """Ensure both portal ends have an explicit vertical between TC and BC."""
+    for end_i in (0, n):
+        pair: tuple[tuple[str, int], tuple[str, int]] = (
+            ("top", end_i),
+            ("bottom", end_i),
+        )
         out.append(
-            StructuralMember(
-                id=f"{aid}-truss-web-{z_label}-{k}",
-                element_type="truss_web",
-                profile="L50x50",
-                start_node=chord[sa][ia],
-                end_node=chord[sb][ib],
+            _truss_web_member(
+                aid=aid,
+                z_label=z_label,
+                pair=pair,
+                n=n,
+                chord=chord,
+                chord_profile=chord_profile,
+                web_profile=DEFAULT_TRUSS_WEB_PROFILE,
+                member_id=f"{aid}-truss-post-{z_label}-{end_i}",
             )
         )
-    return out
+
+
+def _append_mono_portal_end_posts(
+    out: list[StructuralMember],
+    *,
+    aid: str,
+    z_label: str,
+    chord: dict[str, list[GridNodeReference]],
+    low_i: int,
+    high_i: int,
+    chord_profile: str,
+) -> None:
+    """Explicit I-beam end posts at both mono portal ends (TC node → BC node)."""
+    for tag, end_i in (("low", low_i), ("high", high_i)):
+        out.append(
+            StructuralMember(
+                id=f"{aid}-truss-post-{z_label}-{tag}",
+                element_type="truss_chord",
+                profile=chord_profile,
+                start_node=chord["top"][end_i],
+                end_node=chord["bottom"][end_i],
+            )
+        )
+
+
+def _is_mono_portal_end_vertical(
+    pair: tuple[tuple[str, int], tuple[str, int]],
+    *,
+    low_i: int,
+    high_i: int,
+) -> bool:
+    (sa, ia), (sb, ib) = pair
+    return sa == "top" and sb == "bottom" and ia == ib and ia in (low_i, high_i)
+
+
+def _is_eave_portal_end_vertical(
+    pair: tuple[tuple[str, int], tuple[str, int]],
+    n: int,
+) -> bool:
+    """Vertical web at a duo/flat portal end (handled by explicit end posts)."""
+    (sa, ia), (sb, ib) = pair
+    return sa == "top" and sb == "bottom" and ia == ib and ia in (0, n)
 
 
 def _mono_pitch_truss_frame(
@@ -443,6 +675,9 @@ def _mono_pitch_truss_frame(
     z_label: str,
     truss_type: str,
     ridge_label: str | None,
+    *,
+    chord_profile: str = DEFAULT_TRUSS_CHORD_PROFILE,
+    web_profile: str = DEFAULT_TRUSS_WEB_PROFILE,
 ) -> list[StructuralMember]:
     """Mono-pitch portal truss — flat bottom chord, sloping top chord, panelled webs."""
     xlabels, _ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
@@ -454,46 +689,73 @@ def _mono_pitch_truss_frame(
     if web_type in engineering_rules.APEX_TRUSS_TYPES or web_type == "warren":
         web_type = "pratt"
 
+    ridge_i = n if grid.roof.mono_high_side == "B" else 0
+    low_i, high_i = _mono_portal_indices(n, grid.roof.mono_high_side)
     top: list[GridNodeReference] = []
     bottom: list[GridNodeReference] = []
-    for xl in xlabels:
-        x_mm = grid.resolve_x_mm(xl)
+    for i, xl in enumerate(xlabels):
         bottom.append(_ref(xl, z_label, "eave"))
-        if abs(_roof_elev_at(grid, x_mm) - grid.roof.eave_y) < 1.0:
-            top.append(_ref(xl, z_label, "eave"))
-        else:
-            top.append(_ref(xl, z_label, "roof"))
+        top.append(
+            _truss_top_node(
+                grid, z_label, xlabels, i, case="mono", ridge_i=ridge_i
+            )
+        )
 
     chord = {"top": top, "bottom": bottom}
     out: list[StructuralMember] = []
+    # One continuous top/bottom chord per frame (panel nodes drive webs only).
     for tag, nodes in (("tc", top), ("bc", bottom)):
-        for s in range(n):
-            out.append(
-                StructuralMember(
-                    id=f"{aid}-truss-{tag}-{z_label}-{s}",
-                    element_type="truss_chord",
-                    profile="IPE200",
-                    start_node=nodes[s],
-                    end_node=nodes[s + 1],
-                )
+        out.append(
+            StructuralMember(
+                id=f"{aid}-truss-{tag}-{z_label}-0",
+                element_type="truss_chord",
+                profile=chord_profile,
+                start_node=nodes[0],
+                end_node=nodes[n],
             )
+        )
 
     if web_type == "howe":
-        plan = engineering_rules.truss_web_plan("howe", n, n if grid.roof.mono_high_side == "B" else 0)
+        plan = engineering_rules.truss_web_plan("howe", n, ridge_i)
     else:
         plan = engineering_rules.mono_pitch_truss_web_plan(
             n, high_side=grid.roof.mono_high_side
         )
 
-    for k, ((sa, ia), (sb, ib)) in enumerate(plan):
+    for k, pair in enumerate(plan):
+        if _is_mono_portal_end_vertical(pair, low_i=low_i, high_i=high_i):
+            continue
         out.append(
-            StructuralMember(
-                id=f"{aid}-truss-web-{z_label}-{k}",
-                element_type="truss_web",
-                profile="L50x50",
-                start_node=chord[sa][ia],
-                end_node=chord[sb][ib],
+            _truss_web_member(
+                aid=aid,
+                z_label=z_label,
+                pair=pair,
+                n=n,
+                chord=chord,
+                chord_profile=chord_profile,
+                web_profile=web_profile,
+                member_id=f"{aid}-truss-web-{z_label}-{k}",
+                low_i=low_i,
+                high_i=high_i,
             )
+        )
+    _append_mono_portal_end_posts(
+        out,
+        aid=aid,
+        z_label=z_label,
+        chord=chord,
+        low_i=low_i,
+        high_i=high_i,
+        chord_profile=chord_profile,
+    )
+    if web_type == "warren":
+        _append_truss_end_posts(
+            out,
+            aid=aid,
+            z_label=z_label,
+            chord=chord,
+            n=n,
+            chord_profile=chord_profile,
         )
     return out
 
@@ -504,6 +766,9 @@ def _truss_frame(
     z_label: str,
     truss_type: str,
     ridge_label: str | None,
+    *,
+    chord_profile: str = DEFAULT_TRUSS_CHORD_PROFILE,
+    web_profile: str = DEFAULT_TRUSS_WEB_PROFILE,
 ) -> list[StructuralMember]:
     xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
     n = len(xlabels) - 1
@@ -519,16 +784,18 @@ def _truss_frame(
     if case == "symmetric" and truss_type == "scissor" and ridge_i:
         total_rise = _roof_elev_at(grid, grid.resolve_x_mm(xlabels[ridge_i])) - eave_y
 
-    # Panel-node references — top[i] sits directly above bottom[i].
+    # Panel-node references — portal ends: TC above BC (explicit end posts).
     top: list[GridNodeReference] = []
     bottom: list[GridNodeReference] = []
     for i, xl in enumerate(xlabels):
         if case == "flat":
             top.append(_ref(xl, z_label, "eave"))
-        elif case == "symmetric" and i == ridge_i:
-            top.append(_ref(xl, z_label, "apex"))
         else:
-            top.append(_ref(xl, z_label, "roof"))
+            top.append(
+                _truss_top_node(
+                    grid, z_label, xlabels, i, case=case, ridge_i=ridge_i
+                )
+            )
 
         if case == "flat":
             bottom.append(_ref(xl, z_label, "eave", {"y": -flat_depth}))
@@ -553,24 +820,36 @@ def _truss_frame(
                 StructuralMember(
                     id=f"{aid}-truss-{tag}-{z_label}-{s}",
                     element_type="truss_chord",
-                    profile="IPE200",
+                    profile=chord_profile,
                     start_node=nodes[a],
                     end_node=nodes[b],
                 )
             )
 
-    # Webs from the registry — degenerate (eave-coincident) members drop later.
     plan = engineering_rules.truss_web_plan(web_type, n, ridge_i)
-    for k, ((sa, ia), (sb, ib)) in enumerate(plan):
+    for k, pair in enumerate(plan):
+        if web_type != "warren" and _is_eave_portal_end_vertical(pair, n):
+            continue
         out.append(
-            StructuralMember(
-                id=f"{aid}-truss-web-{z_label}-{k}",
-                element_type="truss_web",
-                profile="L50x50",
-                start_node=chord[sa][ia],
-                end_node=chord[sb][ib],
+            _truss_web_member(
+                aid=aid,
+                z_label=z_label,
+                pair=pair,
+                n=n,
+                chord=chord,
+                chord_profile=chord_profile,
+                web_profile=web_profile,
+                member_id=f"{aid}-truss-web-{z_label}-{k}",
             )
         )
+    _append_truss_end_posts(
+        out,
+        aid=aid,
+        z_label=z_label,
+        chord=chord,
+        n=n,
+        chord_profile=chord_profile,
+    )
     return out
 
 
@@ -582,28 +861,24 @@ def _truss_top_panel_refs(
 ) -> list[GridNodeReference]:
     """Top-chord panel nodes for one frame (same refs as the frame builder)."""
     if grid.roof.is_mono:
-        xlabels, _, case = _truss_panel_layout(grid, ridge_label, truss_type)
+        xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
         if case != "mono" or len(xlabels) < 2:
             xlabels = [grid.x_labels[0], grid.x_labels[-1]]
-        refs: list[GridNodeReference] = []
-        for xl in xlabels:
-            x_mm = grid.resolve_x_mm(xl)
-            if abs(_roof_elev_at(grid, x_mm) - grid.roof.eave_y) < 1.0:
-                refs.append(_ref(xl, z_label, "eave"))
-            else:
-                refs.append(_ref(xl, z_label, "roof"))
-        return refs
+            ridge_i = 1 if grid.roof.mono_high_side == "B" else 0
+        return [
+            _truss_top_node(
+                grid, z_label, xlabels, i, case="mono", ridge_i=ridge_i
+            )
+            for i in range(len(xlabels))
+        ]
 
     xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
-    refs: list[GridNodeReference] = []
-    for i, xl in enumerate(xlabels):
-        if case == "flat":
-            refs.append(_ref(xl, z_label, "eave"))
-        elif case == "symmetric" and i == ridge_i:
-            refs.append(_ref(xl, z_label, "apex"))
-        else:
-            refs.append(_ref(xl, z_label, "roof"))
-    return refs
+    return [
+        _truss_top_node(
+            grid, z_label, xlabels, i, case=case, ridge_i=ridge_i
+        )
+        for i in range(len(xlabels))
+    ]
 
 
 def _eave_ridge_ties(
@@ -1421,17 +1696,25 @@ def members_from_shed_config(
     )
 
     # Primary frame: columns, then rafters or trusses per frame.
+    chord_profile = DEFAULT_TRUSS_CHORD_PROFILE
+    web_profile = DEFAULT_TRUSS_WEB_PROFILE
     members.extend(_columns(grid, aid, trussed_frames, column_profile))
     for z_label, uses_truss, ttype in frame_truss:
         if uses_truss:
-            if grid.roof.is_mono and _is_mono_gable_end_frame(grid, z_label):
-                members.extend(_mono_gable_truss_frame(grid, aid, z_label, ttype))
-            elif grid.roof.is_mono:
+            truss_kw = {
+                "chord_profile": chord_profile,
+                "web_profile": web_profile,
+            }
+            if grid.roof.is_mono:
                 members.extend(
-                    _mono_pitch_truss_frame(grid, aid, z_label, ttype, ridge)
+                    _mono_pitch_truss_frame(
+                        grid, aid, z_label, ttype, ridge, **truss_kw
+                    )
                 )
             else:
-                members.extend(_truss_frame(grid, aid, z_label, ttype, ridge))
+                members.extend(
+                    _truss_frame(grid, aid, z_label, ttype, ridge, **truss_kw)
+                )
         else:
             members.extend(_rafters(grid, aid, z_label, ridge))
 

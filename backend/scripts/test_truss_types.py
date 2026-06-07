@@ -1,5 +1,6 @@
 """Truss web-pattern registry coverage. Run: python scripts/test_truss_types.py"""
 
+import math
 import sys
 from pathlib import Path
 
@@ -80,7 +81,6 @@ gd = GridDefinition(
 assert gd.truss_type == "king_post", gd.truss_type
 
 # Scissor: bottom-chord ties follow the raised bottom chord (not eave level).
-_, macro = _build("duo_pitch", 18.0, "scissor")
 gd_scissor = GridDefinition(
     x_spans=[14000],
     z_spans=[5000, 5000, 5000],
@@ -152,8 +152,41 @@ layout_stale = StructuralGridLayout(
 fresh = ensure_layout_members(layout_stale)
 assert not any(m.element_type == "bracing" for m in fresh.structural_members), "stale truss bracing"
 
-# Mono-pitch truss: gable ends = single-panel trapezoid; interior = panelled webs.
+# Mono-pitch truss: every frame uses the same panelled Pratt webs (no gable shortcut).
 import math
+
+
+def _is_vertical_web(member: dict) -> bool:
+    nodes = member.get("nodes") or {}
+    start = nodes.get("start") or [0, 0, 0]
+    end = nodes.get("end") or [0, 0, 0]
+    dx = abs(start[0] - end[0])
+    dy = abs(start[1] - end[1])
+    dz = abs(start[2] - end[2])
+    return dy > 50.0 and dx < 50.0 and dz < 50.0
+
+
+def _end_vertical_webs(macro: list[dict], frame_prefix: str) -> list[dict]:
+    return [
+        m
+        for m in macro
+        if str(m.get("id", "")).startswith(frame_prefix)
+        and ("truss-web" in str(m.get("id", "")) or "truss-post" in str(m.get("id", "")))
+        and _is_vertical_web(m)
+    ]
+
+
+def _portal_end_posts(macro: list[dict], frame_prefix: str) -> list[dict]:
+    """End verticals between TC and BC — must match bottom-chord section."""
+    posts = _end_vertical_webs(macro, frame_prefix)
+    frame_z = frame_prefix.split("-")[-2]
+    posts.extend(
+        m
+        for m in macro
+        if str(m.get("id", "")).startswith(f"shed_1-truss-post-{frame_z}-")
+        and _is_vertical_web(m)
+    )
+    return [m for m in posts if m.get("element_type") == "truss_chord"]
 
 gd_mono_truss = GridDefinition(
     x_spans=[12000],
@@ -173,21 +206,117 @@ mono_macro = layout_to_macro_members(
         structural_members=mono_members,
     )
 )
-# Gable end: one BC + one TC + panel webs (trapezoid, not triangle fan).
-gable_tc = [m for m in mono_members if m.id == "shed_1-truss-tc-1-0"]
-assert len(gable_tc) == 1, "gable end needs single top chord"
-assert not any(m.id == "shed_1-truss-tc-1-1" for m in mono_members), "gable end over-panelled"
-gable_webs = [m for m in mono_macro if m["id"].startswith("shed_1-truss-web-1-")]
-assert 2 <= len(gable_webs) <= 3, len(gable_webs)
-assert any(
-    m["nodes"]["start"][1] < 4100 and m["nodes"]["end"][1] > 5000
-    for m in gable_webs
-), "gable trapezoid missing high-side vertical or diagonal"
-# Interior frame: multi-panel filaments.
-interior_webs = [m for m in mono_macro if m["id"].startswith("shed_1-truss-web-2-")]
-assert len(interior_webs) >= 5, len(interior_webs)
+# Every portal frame gets the same multi-panel web layout.
+frame1_webs = [m for m in mono_members if m.id.startswith("shed_1-truss-web-1-")]
+frame2_webs = [m for m in mono_members if m.id.startswith("shed_1-truss-web-2-")]
+frame3_webs = [m for m in mono_members if m.id.startswith("shed_1-truss-web-3-")]
+assert len(frame1_webs) == len(frame2_webs) == len(frame3_webs), (
+    len(frame1_webs),
+    len(frame2_webs),
+    len(frame3_webs),
+)
+assert len(frame1_webs) >= 5, len(frame1_webs)
+diagonal_webs = [
+    m
+    for m in mono_macro
+    if m["id"].startswith("shed_1-truss-web-1-")
+    and m.get("element_type") == "truss_web"
+    and not _is_vertical_web(m)
+]
+assert diagonal_webs, "mono truss frame missing interior panel diagonals"
 high_gable_col = next(m for m in mono_macro if m["id"] == "shed_1-col-B-1")
 assert abs(high_gable_col["length"] - 4000.0) < 2.0, high_gable_col["length"]
+
+mono_bc_profile = next(
+    m["profile"] for m in mono_macro if m["id"] == "shed_1-truss-bc-1-0"
+)
+mono_end_posts = _portal_end_posts(mono_macro, "shed_1-truss-web-1-")
+assert len(mono_end_posts) >= 2, len(mono_end_posts)
+low_post = next(m for m in mono_macro if m["id"] == "shed_1-truss-post-1-low")
+high_post = next(m for m in mono_macro if m["id"] == "shed_1-truss-post-1-high")
+assert low_post["length"] < high_post["length"], (
+    low_post["length"],
+    high_post["length"],
+)
+for post in mono_end_posts:
+    assert post["profile"] == mono_bc_profile, (post["id"], post["profile"])
+assert low_post["length"] >= 250.0, (low_post["id"], low_post["length"])
+assert high_post["length"] >= 1500.0, (high_post["id"], high_post["length"])
+
+mono_tc_frame1 = [m for m in mono_macro if m["id"].startswith("shed_1-truss-tc-1-")]
+mono_bc_frame1 = [m for m in mono_macro if m["id"].startswith("shed_1-truss-bc-1-")]
+assert len(mono_tc_frame1) == 1, ("mono TC should be one continuous beam", len(mono_tc_frame1))
+assert len(mono_bc_frame1) == 1, ("mono BC should be one continuous beam", len(mono_bc_frame1))
+
+# Purlins seat on truss TC (local segment pitch), not floating at natural roof height.
+from core.grid_member_catalog import truss_top_chord_y_at_x
+from core.spatial_grid import StructuralGridEngine
+
+_mono_grid = StructuralGridEngine.from_definition(gd_mono_truss)
+_purlins = [m for m in mono_macro if m.get("element_type") == "purlin"]
+assert _purlins, "no purlins on mono truss shed"
+_p0 = max(_purlins, key=lambda m: m["nodes"]["start"][0])
+_sample_x = _p0["nodes"]["start"][0]
+_tc_y = truss_top_chord_y_at_x(_mono_grid, _sample_x)
+_purlin_y = min(_p0["nodes"]["start"][1], _p0["nodes"]["end"][1])
+_natural_roof_y = _mono_grid.roof.eave_y + _sample_x * math.tan(
+    _mono_grid.roof.pitch_rad
+)
+assert _purlin_y > _tc_y - 5.0, ("purlin below TC", _purlin_y, _tc_y)
+assert _purlin_y - _tc_y < 220.0, ("purlin too far above TC", _purlin_y, _tc_y)
+assert abs(_purlin_y - _natural_roof_y) > 50.0, (
+    "purlin still at natural roof not TC",
+    _purlin_y,
+    _natural_roof_y,
+)
+
+tc0 = next(m for m in mono_macro if m["id"] == "shed_1-truss-tc-1-0")
+low_post = next(m for m in mono_macro if m["id"] == "shed_1-truss-post-1-low")
+assert abs(tc0["nodes"]["start"][1] - low_post["nodes"]["start"][1]) < 1.0, (
+    "low TC must start at the top of the end post",
+    tc0["nodes"]["start"][1],
+    low_post["nodes"]["start"][1],
+)
+assert tc0["nodes"]["end"][1] > tc0["nodes"]["start"][1], (
+    "mono TC must slope up toward the high side",
+    tc0["nodes"],
+)
+assert tc0["length"] > 11000.0, ("mono TC should span the full frame", tc0["length"])
+
+# Duo-pitch Pratt: both eave ends need resolved vertical end posts (TC above BC).
+_, duo_macro = _build("duo_pitch", 10.0, "pratt")
+duo_end_verticals = _end_vertical_webs(duo_macro, "shed_1-truss-web-1-")
+duo_end_posts = _portal_end_posts(duo_macro, "shed_1-truss-web-1-")
+assert len(duo_end_posts) >= 2, len(duo_end_posts)
+duo_left_post = next(
+    m for m in duo_macro if m["id"] == "shed_1-truss-post-1-0"
+)
+duo_right_post = next(
+    m for m in duo_macro if m["id"].startswith("shed_1-truss-post-1-") and m["id"] != "shed_1-truss-post-1-0"
+)
+assert duo_left_post["element_type"] == "truss_chord", duo_left_post
+assert duo_right_post["element_type"] == "truss_chord", duo_right_post
+assert duo_left_post["length"] >= 200.0, duo_left_post["length"]
+assert duo_right_post["length"] >= 200.0, duo_right_post["length"]
+
+# King-post: TC must follow roof pitch (not flat when n=2 apex panels).
+_, king_macro = _build("duo_pitch", 12.0, "king_post")
+king_tc = [m for m in king_macro if m["id"].startswith("shed_1-truss-tc-1-")]
+assert king_tc, "king-post TC missing"
+for seg in king_tc:
+    y0, y1 = seg["nodes"]["start"][1], seg["nodes"]["end"][1]
+    x0, x1 = seg["nodes"]["start"][0], seg["nodes"]["end"][0]
+    if abs(x1 - x0) > 100:
+        pitch = math.degrees(math.atan2(abs(y1 - y0), abs(x1 - x0)))
+        assert pitch > 5.0, (seg["id"], pitch)
+
+# Scissor (and all apex types) must get the same explicit portal end posts as Pratt.
+_, scissor_macro = _build("duo_pitch", 18.0, "scissor")
+scissor_posts = _portal_end_posts(scissor_macro, "shed_1-truss-web-1-")
+assert len(scissor_posts) >= 2, ("scissor end posts", len(scissor_posts))
+assert next(m for m in scissor_macro if m["id"] == "shed_1-truss-post-1-0")[
+    "element_type"
+] == "truss_chord"
 
 print("PASS: truss types")
 print(f"  duo types verified: {', '.join(DUO_TYPES)}")

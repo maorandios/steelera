@@ -162,6 +162,8 @@ def _place_secondary_steel(
     grid: StructuralGridEngine,
     column_profile: str,
     column_profiles: dict[tuple[str, str], str],
+    truss_chord_profile: str = _RAFTER_PROFILE,
+    use_truss: bool = False,
 ) -> tuple[tuple[float, float, float], tuple[float, float, float], list[float], str]:
     """Seat girts/purlins outside primary steel, perpendicular to the support."""
     roof = grid.roof
@@ -207,6 +209,48 @@ def _place_secondary_steel(
             )
 
     if et in ("purlin", "sag_rod"):
+        support_profile = truss_chord_profile if use_truss else _RAFTER_PROFILE
+        if use_truss and et == "purlin":
+            from core.grid_member_catalog import truss_pitch_at_x, truss_top_chord_y_at_x
+
+            truss_type = getattr(grid.definition, "truss_type", "pratt") or "pratt"
+            if str(truss_type).strip().lower() == "none":
+                truss_type = "pratt"
+            truss_type = str(truss_type).strip().lower()
+
+            start = (
+                start[0],
+                truss_top_chord_y_at_x(grid, start[0], truss_type=truss_type),
+                start[2],
+            )
+            end = (
+                end[0],
+                truss_top_chord_y_at_x(grid, end[0], truss_type=truss_type),
+                end[2],
+            )
+            pitch_start = truss_pitch_at_x(grid, start[0], truss_type=truss_type)
+            pitch_end = truss_pitch_at_x(grid, end[0], truss_type=truss_type)
+            new_start = seat_purlin_bottom_on_rafter(
+                *start,
+                rafter_profile=support_profile,
+                pitch_rad=pitch_start[0],
+                pitch_sign=pitch_start[1],
+            )
+            new_end = seat_purlin_bottom_on_rafter(
+                *end,
+                rafter_profile=support_profile,
+                pitch_rad=pitch_end[0],
+                pitch_sign=pitch_end[1],
+            )
+            roll = purlin_roll_deg(pitch_start[0], pitch_start[1])
+            mirror = purlin_ridge_mirror_flag(
+                start[0],
+                ridge_x_mm=roof.ridge_x,
+                is_flat=roof.is_flat,
+                is_mono=roof.is_mono,
+            )
+            return new_start, new_end, [roll, mirror, 0.0], "bottom"
+
         pitch_rad, pitch_sign = rafter_pitch_at_x(
             start[0],
             style=roof.style,
@@ -218,13 +262,13 @@ def _place_secondary_steel(
         )
         new_start = seat_purlin_bottom_on_rafter(
             *start,
-            rafter_profile=_RAFTER_PROFILE,
+            rafter_profile=support_profile,
             pitch_rad=pitch_rad,
             pitch_sign=pitch_sign,
         )
         new_end = seat_purlin_bottom_on_rafter(
             *end,
-            rafter_profile=_RAFTER_PROFILE,
+            rafter_profile=support_profile,
             pitch_rad=pitch_rad,
             pitch_sign=pitch_sign,
         )
@@ -353,6 +397,8 @@ def member_from_grid_nodes(
     grid: StructuralGridEngine | None = None,
     column_profile: str = _COLUMN_PROFILE,
     column_profiles: dict[tuple[str, str], str] | None = None,
+    truss_chord_profile: str = _RAFTER_PROFILE,
+    use_truss: bool = False,
 ) -> dict[str, Any] | None:
     profile = member.profile
     shape = _shape_for_member(member.element_type, profile)
@@ -373,6 +419,8 @@ def member_from_grid_nodes(
             grid=grid,
             column_profile=column_profile,
             column_profiles=column_profiles or {},
+            truss_chord_profile=truss_chord_profile,
+            use_truss=use_truss,
         )
 
     start_l = list(start)
@@ -418,6 +466,7 @@ def resolve_structural_members(
     *,
     assembly_id: str,
     column_profile: str | None = None,
+    truss_chord_profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Iterate uniform BOM; resolve grid references → absolute mm macro members.
 
@@ -428,6 +477,11 @@ def resolve_structural_members(
         (m.profile for m in members if m.element_type == "column"),
         _COLUMN_PROFILE,
     )
+    resolved_truss_chord = truss_chord_profile or next(
+        (m.profile for m in members if m.element_type == "truss_chord"),
+        _RAFTER_PROFILE,
+    )
+    use_truss = any(m.element_type == "truss_chord" for m in members)
     column_profiles = _column_profile_index(members)
     macro: list[dict[str, Any]] = []
     seen: set[tuple] = set()
@@ -442,6 +496,8 @@ def resolve_structural_members(
             grid=grid,
             column_profile=resolved_column,
             column_profiles=column_profiles,
+            truss_chord_profile=resolved_truss_chord,
+            use_truss=use_truss,
         )
         if built is None:
             continue

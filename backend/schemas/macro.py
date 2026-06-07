@@ -32,6 +32,10 @@ class GenerateShedRequest(BaseModel):
         "duo_pitch",
         description="duo_pitch (ridge at center), mono_pitch (single slope 0→width), flat (0°)",
     )
+    mono_high_side: Literal["A", "B"] = Field(
+        "B",
+        description="Mono-pitch high side: A = x0, B = xmax",
+    )
     purlin_spacing: float = Field(1200.0, gt=0, description="Purlin spacing along roof slope (mm)")
     girt_spacing_mm: float = Field(
         1500.0,

@@ -13,6 +13,7 @@ from core.spatial_context import format_project_context
 from core.grid_layout_utils import ensure_layout_members
 from core.member_resolver import layout_to_macro_members
 from core.operation_expander import expand_design
+from core.grid_intent import extract_grid_intent_from_text, merge_grid_intent_into_definition
 from core.profile_overrides import apply_profile_overrides_to_layout
 from core.structural_renderer import layout_to_api_dict
 from core.structural_validator import validate_macro_members
@@ -177,7 +178,11 @@ def _parse_grid_layout(arguments: str, *, user_text: str = "") -> StructuralGrid
     layout = StructuralGridLayout.model_validate(raw)
     # Python OWNS the geometry: ignore any AI-authored members and always rebuild
     # the complete, correct shed from the parametric grid_definition + toggles.
-    layout = layout.model_copy(update={"structural_members": []})
+    intent = extract_grid_intent_from_text(user_text)
+    gd = merge_grid_intent_into_definition(layout.grid_definition, intent)
+    layout = layout.model_copy(
+        update={"grid_definition": gd, "structural_members": []},
+    )
     layout = ensure_layout_members(layout)
     return apply_profile_overrides_to_layout(layout, user_text=user_text)
 

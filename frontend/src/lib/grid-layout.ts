@@ -47,32 +47,16 @@ export function gridLayoutToShedParams(
     truss_type: (gd.truss_type && SELECTABLE_TRUSS_TYPES.has(gd.truss_type)
       ? gd.truss_type
       : "pratt") as Exclude<TrussType, "none">,
-    use_bracing: isTruss
-      ? false
-      : members.some((m) => m.element_type === "bracing"),
-    use_gable_bracing: isTruss
-      ? false
-      : members.some((m) => m.id.includes("-brace-end-")),
-    use_roof_bracing: isTruss
-      ? false
-      : members.some((m) => m.id.includes("-brace-roof-")),
-    use_sag_rods: layout.structural_members.some((m) => m.element_type === "sag_rod"),
-    use_haunches: layout.structural_members.some((m) => m.element_type === "haunch"),
-    use_fly_braces: isTruss
-      ? false
-      : members.some((m) => m.element_type === "fly_brace"),
-    use_base_plates: layout.structural_members.some(
-      (m) => m.element_type === "base_plate",
-    ),
-    use_bottom_chord_restraint: layout.structural_members.some((m) =>
-      m.id.includes("-bctie-"),
-    ),
-    generate_wall_girts: layout.structural_members.some(
-      (m) => m.element_type === "wall_girt",
-    ),
-    generate_tie_beams: layout.structural_members.some(
-      (m) => m.element_type === "tie_beam",
-    ),
+    use_bracing: Boolean(gd.x_bracing),
+    use_gable_bracing: Boolean(gd.gable_bracing),
+    use_roof_bracing: Boolean(gd.roof_bracing),
+    use_sag_rods: Boolean(gd.sag_rods),
+    use_haunches: Boolean(gd.haunches),
+    use_fly_braces: Boolean(gd.fly_braces),
+    use_base_plates: Boolean(gd.base_plates),
+    use_bottom_chord_restraint: Boolean(gd.bottom_chord_restraint),
+    generate_wall_girts: gd.generate_wall_girts ?? true,
+    generate_tie_beams: gd.generate_tie_beams ?? true,
     column_profile: gd.column_profile ?? profileFromMembers(members, "column"),
     bracing_profile: gd.bracing_profile ?? profileFromMembers(members, "bracing"),
     purlin_profile: gd.purlin_profile ?? profileFromMembers(members, "purlin"),

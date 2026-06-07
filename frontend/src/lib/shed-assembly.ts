@@ -172,12 +172,15 @@ export function inferShedParamsFromElements(
   }
 
   let roof_style: ShedRoofStyle = "duo_pitch";
+  const hasMonoEndPosts = members.some((m) =>
+    /-truss-post-\d+-(low|high)$/.test(m.id),
+  );
   const gableTc = members.filter(
     (m) =>
       m.element_type === "truss_chord" &&
       /-truss-tc-1-/.test(m.id),
   );
-  if (gableTc.length === 1) {
+  if (hasMonoEndPosts || gableTc.length === 1) {
     roof_style = "mono_pitch";
   } else if (
     memberHasType(members, "truss_chord") ||
