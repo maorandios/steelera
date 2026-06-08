@@ -4,6 +4,7 @@ import { ArrowUpDown, Building2, Layers } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { AssemblyTreePanel } from "@/components/sidebar/AssemblyTreePanel";
+import { IfcExportPanel } from "@/components/sidebar/IfcExportPanel";
 import { ShedMacroFields, type ShedFormValues } from "@/components/sidebar/ShedMacroFields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,6 +97,8 @@ export function ProjectPresetsPanel() {
       />
 
       <AssemblyTreePanel />
+
+      <IfcExportPanel />
 
       {xSpans && zSpans ? (
         <p className="font-mono text-[10px] text-muted-foreground">

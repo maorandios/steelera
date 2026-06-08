@@ -30,6 +30,8 @@ export interface IFCEntity {
   structural_role: string;
   profile_family: string;
   local_rotation: number;
+  rotation_euler?: [number, number, number];
+  alignment?: "center" | "top" | "bottom";
   primary_assembly_id: string;
   assembly_ids: string[];
 }

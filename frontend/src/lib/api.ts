@@ -2,7 +2,10 @@ import type { ChatMessage, ChatResponse } from "@/types/chat";
 import type { GenerateShedResponse } from "@/types/macro";
 import type { ShedAssemblyConfig } from "@/types/shed-config";
 import type { StructuralGridLayout } from "@/types/spatial-grid";
+import type { StructuralTopology } from "@/types/ifc-topology";
 import type { ProjectState } from "@/types/project";
+
+export type IfcSchemaVersion = "IFC2X3" | "IFC4";
 
 /**
  * Browser: same-origin `/api/*` (Next.js rewrite → FastAPI on :8000).
@@ -110,4 +113,68 @@ export async function postGenerateShed(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+const EXPORT_TIMEOUT_MS = 90_000;
+
+export async function postExportIfc(
+  topology: StructuralTopology,
+  schemaVersion: IfcSchemaVersion = "IFC4",
+  filename?: string,
+): Promise<Blob> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXPORT_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/export/ifc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        structural_topology: topology,
+        schema_version: schemaVersion,
+        ...(filename ? { filename } : {}),
+      }),
+    });
+
+    if (!res.ok) {
+      const detail = await res.text();
+      let message = detail || `IFC export failed (${res.status})`;
+      try {
+        const parsed = JSON.parse(detail) as { detail?: unknown };
+        if (typeof parsed.detail === "string") {
+          message = parsed.detail;
+        }
+      } catch {
+        /* plain text */
+      }
+      throw new Error(message);
+    }
+
+    return res.blob();
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("IFC export timed out.");
+    }
+    if (err instanceof TypeError) {
+      throw new Error(
+        "Cannot reach Steelera backend. Start it with: cd backend && python -m uvicorn main:app --reload --port 8000",
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }

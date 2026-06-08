@@ -243,11 +243,12 @@ def _classify_assemblies(
     return single, [building, single]
 
 
-def _local_rotation_deg(macro: dict[str, Any]) -> float:
+def _rotation_euler_deg(macro: dict[str, Any]) -> list[float]:
     rotation = macro.get("rotation") or [0.0, 0.0, 0.0]
     if not rotation:
-        return 0.0
-    return float(rotation[0])
+        return [0.0, 0.0, 0.0]
+    out = [float(rotation[i]) if i < len(rotation) else 0.0 for i in range(3)]
+    return out
 
 
 def _is_vertical_member(start: list[float], end: list[float]) -> bool:
@@ -304,7 +305,9 @@ def build_ifc_topology(
             ifc_type=_ifc_type(element_type),  # type: ignore[arg-type]
             structural_role=role,
             profile_family=str(macro.get("profile") or ""),
-            local_rotation=_local_rotation_deg(macro),
+            local_rotation=_rotation_euler_deg(macro)[0],
+            rotation_euler=_rotation_euler_deg(macro),
+            alignment=str(macro.get("alignment") or "center"),
             primary_assembly_id=primary,
             assembly_ids=assembly_ids,
         )

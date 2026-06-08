@@ -38,6 +38,8 @@ class IFCEntity(BaseModel):
     structural_role: str
     profile_family: str
     local_rotation: float = 0.0
+    rotation_euler: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    alignment: str = "center"
     primary_assembly_id: str
     assembly_ids: list[str] = Field(default_factory=list)
 

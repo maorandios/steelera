@@ -8,11 +8,13 @@ from fastapi.responses import JSONResponse
 
 from catalog_loader import list_profiles
 from core.openai_client import build_system_prompt, run_chat_turn
+from routers.export import router as export_router
 from routers.macro import router as macro_router
 from schemas.chat import ChatRequest, ChatResponse, ChatResponseMessage
 
 app = FastAPI(title="Steelera API", version="0.3.0-spatial")
 app.include_router(macro_router)
+app.include_router(export_router)
 
 app.add_middleware(
     CORSMiddleware,
