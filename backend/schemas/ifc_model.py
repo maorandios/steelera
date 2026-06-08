@@ -8,13 +8,14 @@ IFCTypeLiteral = Literal["IfcColumn", "IfcBeam", "IfcMember", "IfcPlate"]
 
 AssemblyTypeLiteral = Literal[
     "BUILDING",
-    "FRAME",
+    "PORTAL",
     "TRUSS",
     "ROOF",
     "WALL_SIDE",
     "WALL_GABLE",
     "LONGITUDINAL",
     "BRACING",
+    "MEMBER",
 ]
 
 

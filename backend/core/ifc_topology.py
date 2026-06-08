@@ -116,7 +116,6 @@ def _structural_role(element_type: str, member_id: str) -> str:
     if element_type == "truss_web":
         if "-truss-post-" in member_id:
             return "VERTICAL"
-        dx = dy = dz = 0.0
         return "DIAGONAL"
     if element_type == "truss_chord":
         if "-truss-tc-" in member_id:
@@ -129,14 +128,19 @@ def _structural_role(element_type: str, member_id: str) -> str:
     return element_type.upper()
 
 
-def _frame_z_label(member_id: str) -> str | None:
-    for pattern in (
-        _COL_RE,
-        _RAFTER_RE,
-        _TRUSS_RE,
-        _HAUNCH_RE,
-        _FLY_RE,
-    ):
+def _is_truss_member(entity_id: str, element_type: str) -> bool:
+    return "-truss-" in entity_id or element_type in ("truss_chord", "truss_web")
+
+
+def _truss_z_label(member_id: str) -> str | None:
+    m = _TRUSS_RE.search(member_id)
+    return m.group(1) if m else None
+
+
+def _portal_z_label(member_id: str, element_type: str) -> str | None:
+    if _is_truss_member(member_id, element_type):
+        return None
+    for pattern in (_COL_RE, _RAFTER_RE, _HAUNCH_RE, _FLY_RE):
         m = pattern.search(member_id)
         if m:
             return m.group(1)
@@ -163,12 +167,16 @@ def _assembly_id_building(building_id: str) -> str:
     return f"ASM_{building_id.upper()}"
 
 
-def _assembly_id_frame(z_label: str) -> str:
-    return f"ASM_FRAME_Z{z_label}"
+def _assembly_id_portal(z_label: str) -> str:
+    return f"ASM_PORTAL_Z{z_label}"
 
 
 def _assembly_id_truss(z_label: str) -> str:
     return f"ASM_TRUSS_Z{z_label}"
+
+
+def _assembly_id_singleton(entity_id: str) -> str:
+    return f"ASM_SINGLE_{entity_id}"
 
 
 def _classify_assemblies(
@@ -177,9 +185,20 @@ def _classify_assemblies(
     *,
     building_id: str,
 ) -> tuple[str, list[str]]:
-    """Return (primary_assembly_id, all assembly_ids)."""
+    """Return (primary_assembly_id, all assembly_ids).
+
+  Physical sub-assemblies (truss, portal line, roof, walls) are mutually exclusive
+  for highlight — truss members never share a portal assembly bucket with columns.
+    """
     building = _assembly_id_building(building_id)
-    ids: list[str] = [building]
+
+    if _is_truss_member(entity_id, element_type):
+        z = _truss_z_label(entity_id)
+        if z:
+            truss = _assembly_id_truss(z)
+            return truss, [building, truss]
+        single = _assembly_id_singleton(entity_id)
+        return single, [building, single]
 
     if element_type == "purlin" or "-sag-roof-" in entity_id:
         roof = "ASM_ROOF"
@@ -190,47 +209,38 @@ def _classify_assemblies(
         gable = f"ASM_GABLE_Z{gable_z}"
         return gable, [building, gable]
 
-    if "-girt-A-" in entity_id:
+    if "-girt-A-" in entity_id or "-sag-wall-A-" in entity_id:
         wall = "ASM_WALL_A"
         return wall, [building, wall]
 
-    if "-girt-B-" in entity_id:
+    if "-girt-B-" in entity_id or "-sag-wall-B-" in entity_id:
         wall = "ASM_WALL_B"
         return wall, [building, wall]
+
+    if "-sag-gable-" in entity_id:
+        m = re.search(r"-sag-gable-(\d+)-", entity_id)
+        if m:
+            gable = f"ASM_GABLE_Z{m.group(1)}"
+            return gable, [building, gable]
 
     if element_type == "tie_beam" or "-tie-" in entity_id or "-bctie-" in entity_id:
         longi = "ASM_LONGITUDINAL"
         return longi, [building, longi]
 
+    portal_z = _portal_z_label(entity_id, element_type)
+    if portal_z is not None:
+        portal = _assembly_id_portal(portal_z)
+        return portal, [building, portal]
+
     if (
-        element_type in ("bracing", "x_brace", "fly_brace", "sag_rod")
+        element_type in ("bracing", "x_brace", "sag_rod")
         or "-brace-" in entity_id
-        or "-sag-wall-" in entity_id
-        or "-sag-gable-" in entity_id
     ):
         br = "ASM_BRACING"
-        frame_z = _frame_z_label(entity_id)
-        if frame_z and "-sag-wall-" in entity_id:
-            frame = _assembly_id_frame(frame_z)
-            return frame, [building, frame, br]
         return br, [building, br]
 
-    frame_z = _frame_z_label(entity_id)
-    if frame_z is not None:
-        frame = _assembly_id_frame(frame_z)
-        ids.append(frame)
-        if element_type in ("truss_chord", "truss_web") or "-truss-" in entity_id:
-            truss = _assembly_id_truss(frame_z)
-            ids.append(truss)
-            if element_type == "truss_web" or "-truss-web-" in entity_id:
-                return truss, ids
-            if "-truss-tc-" in entity_id or "-truss-bc-" in entity_id:
-                return truss, ids
-            if "-truss-post-" in entity_id:
-                return truss, ids
-        return frame, ids
-
-    return building, ids
+    single = _assembly_id_singleton(entity_id)
+    return single, [building, single]
 
 
 def _local_rotation_deg(macro: dict[str, Any]) -> float:
@@ -324,13 +334,11 @@ def _build_assembly_tree(
     buckets: dict[str, list[str]] = {building_asm_id: []}
 
     for entity in entities:
-        for asm_id in entity.assembly_ids:
-            buckets.setdefault(asm_id, [])
         buckets[building_asm_id].append(entity.id)
         for asm_id in entity.assembly_ids:
             if asm_id == building_asm_id:
                 continue
-            buckets[asm_id].append(entity.id)
+            buckets.setdefault(asm_id, []).append(entity.id)
 
     assemblies: dict[str, StructuralAssembly] = {
         building_asm_id: StructuralAssembly(
@@ -364,13 +372,12 @@ def _assembly_meta(
     asm_id: str,
     building_asm_id: str,
 ) -> tuple[str, str, str | None]:
-    if asm_id.startswith("ASM_FRAME_Z"):
-        z = asm_id.removeprefix("ASM_FRAME_Z")
-        return "FRAME", f"Portal frame {z}", building_asm_id
+    if asm_id.startswith("ASM_PORTAL_Z"):
+        z = asm_id.removeprefix("ASM_PORTAL_Z")
+        return "PORTAL", f"Portal line {z}", building_asm_id
     if asm_id.startswith("ASM_TRUSS_Z"):
         z = asm_id.removeprefix("ASM_TRUSS_Z")
-        frame_id = f"ASM_FRAME_Z{z}"
-        return "TRUSS", f"Truss frame {z}", frame_id
+        return "TRUSS", f"Truss {z}", building_asm_id
     if asm_id == "ASM_ROOF":
         return "ROOF", "Roof (purlins)", building_asm_id
     if asm_id == "ASM_WALL_A":
@@ -384,6 +391,8 @@ def _assembly_meta(
         return "LONGITUDINAL", "Longitudinal ties", building_asm_id
     if asm_id == "ASM_BRACING":
         return "BRACING", "Bracing", building_asm_id
+    if asm_id.startswith("ASM_SINGLE_"):
+        return "MEMBER", asm_id.removeprefix("ASM_SINGLE_"), building_asm_id
     return "BUILDING", asm_id, building_asm_id
 
 

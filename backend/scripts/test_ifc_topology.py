@@ -32,7 +32,7 @@ assert "ASM_SHED_1" in topology.assemblies
 
 col = next(e for e in topology.entities if e.structural_role == "COLUMN")
 assert col.ifc_type == "IfcColumn"
-assert col.primary_assembly_id.startswith("ASM_FRAME_Z")
+assert col.primary_assembly_id.startswith("ASM_PORTAL_Z")
 
 plate = next(
     (e for e in topology.entities if e.ifc_type == "IfcPlate"),
@@ -45,26 +45,51 @@ truss_web = next(
     (e for e in topology.entities if "truss-web" in e.id),
     None,
 )
-if truss_web:
-    assert truss_web.primary_assembly_id.startswith("ASM_TRUSS_Z")
-    truss_asm = topology.assemblies[truss_web.primary_assembly_id]
-    assert truss_web.id in truss_asm.entity_ids
+assert truss_web is not None
+assert truss_web.primary_assembly_id.startswith("ASM_TRUSS_Z")
+assert "ASM_PORTAL" not in truss_web.assembly_ids
+truss_asm = topology.assemblies[truss_web.primary_assembly_id]
+assert truss_web.id in truss_asm.entity_ids
+assert not any("col-" in eid for eid in truss_asm.entity_ids)
 
-frame_asm = topology.assemblies[col.primary_assembly_id]
-assert col.id in frame_asm.entity_ids
-assert len(frame_asm.entity_ids) > 1, "frame assembly should include multiple members"
+portal_asm = topology.assemblies[col.primary_assembly_id]
+assert col.id in portal_asm.entity_ids
+assert not any("truss-" in eid for eid in portal_asm.entity_ids), (
+    "portal assembly must not include truss members"
+)
 
-# Node dedup: column base at same coord shares one node
-node_ids = {e.start_node_id for e in topology.entities if e.structural_role == "COLUMN"}
-assert len(node_ids) >= 2
+highlight_col = topology.highlight_entity_ids(col.id)
+assert col.id in highlight_col
+assert not any("truss-" in eid for eid in highlight_col)
 
-highlight = topology.highlight_entity_ids(col.id)
-assert col.id in highlight
-assert len(highlight) >= 2
+highlight_truss = topology.highlight_entity_ids(truss_web.id)
+assert truss_web.id in highlight_truss
+assert not any("col-" in eid for eid in highlight_truss)
 
 purlin = next((e for e in topology.entities if e.structural_role == "PURLIN"), None)
 assert purlin is not None
 assert purlin.primary_assembly_id == "ASM_ROOF"
+roof_asm = topology.assemblies["ASM_ROOF"]
+assert len(roof_asm.entity_ids) > 1
+
+# Rafter portal frame groups columns + rafters together.
+layout_rafter = StructuralGridLayout(
+    assembly_id="shed_1",
+    replace_existing=True,
+    grid_definition=GridDefinition(
+        x_spans=[6000, 6000],
+        z_spans=[5000, 5000, 5000],
+        height_mm=4500,
+        roof_pitch_deg=10,
+        use_truss=False,
+    ),
+    structural_members=[],
+)
+topo_rafter = build_topology_from_layout(layout_rafter)
+raf = next(e for e in topo_rafter.entities if e.structural_role == "RAFTER")
+portal = topo_rafter.assemblies[raf.primary_assembly_id]
+assert any(e.structural_role == "COLUMN" for e in topo_rafter.entities if e.id in portal.entity_ids)
+assert raf.id in portal.entity_ids
 
 print(
     "PASS: ifc_topology",

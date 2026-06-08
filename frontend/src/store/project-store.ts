@@ -28,7 +28,6 @@ import {
   structuralGridFromShedParams,
   type StructuralGridState,
 } from "@/lib/structural-grid";
-import { highlightedElementIds } from "@/lib/assembly-highlight";
 import { checklistPayloadToShedParams } from "@/lib/shed-checklist";
 import type { StructuralTopology } from "@/types/ifc-topology";
 import type {
@@ -89,7 +88,6 @@ interface ProjectStore {
   shedAssemblyParams: ShedAssemblyParams | null;
   structuralGrid: StructuralGridState;
   selectedElementId: string | null;
-  highlightedElementIds: string[];
   structuralTopology: StructuralTopology | null;
   statuses: string[];
   isLoading: boolean;
@@ -124,7 +122,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   shedAssemblyParams: null,
   structuralGrid: { ...DEFAULT_STRUCTURAL_GRID },
   selectedElementId: null,
-  highlightedElementIds: [],
   structuralTopology: null,
   statuses: [],
   isLoading: false,
@@ -135,7 +132,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({
       projectElements: elements.map((element) => normalizeElement(element)),
       selectedElementId: null,
-      highlightedElementIds: [],
     }),
 
   setStructuralGridFromSpans: (xSpacingInput, zSpacingInput) =>
@@ -268,11 +264,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         (element) => element.id === selectedId,
       );
       const topology = response.structural_topology ?? null;
-      const highlightForSelection = selectedStillExists && selectedId
-        ? Array.from(
-            highlightedElementIds(selectedId, topology, elements),
-          )
-        : [];
       set({
         projectElements: elements,
         shedAssemblyParams: finalParams,
@@ -280,7 +271,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         structuralTopology: topology,
         isMacroLoading: false,
         selectedElementId: selectedStillExists ? selectedId : null,
-        highlightedElementIds: highlightForSelection,
       });
     } catch (err) {
       const message =
@@ -302,15 +292,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     );
   },
 
-  selectElement: (id) => {
-    const { structuralTopology, projectElements } = get();
-    set({
-      selectedElementId: id,
-      highlightedElementIds: Array.from(
-        highlightedElementIds(id, structuralTopology, projectElements),
-      ),
-    });
-  },
+  selectElement: (id) => set({ selectedElementId: id }),
 
   selectAssembly: (assemblyId, focusElementId = null) => {
     const { structuralTopology, projectElements } = get();
@@ -324,14 +306,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       focusElementId && ids.includes(focusElementId)
         ? focusElementId
         : ids[0] ?? null;
-    set({
-      selectedElementId: focus,
-      highlightedElementIds: ids,
-    });
+    set({ selectedElementId: focus });
   },
 
-  clearSelection: () =>
-    set({ selectedElementId: null, highlightedElementIds: [] }),
+  clearSelection: () => set({ selectedElementId: null }),
 
   updateElementRotation: (id, rotation) =>
     set((state) => ({
@@ -426,16 +404,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         statuses: [],
         isLoading: false,
         selectedElementId: selectedStillExists ? selectedId : null,
-        highlightedElementIds:
-          selectedStillExists && selectedId
-            ? Array.from(
-                highlightedElementIds(
-                  selectedId,
-                  get().structuralTopology,
-                  elements,
-                ),
-              )
-            : [],
       });
     } catch (err) {
       const message =
@@ -464,10 +432,6 @@ export function useSelectedElement(): ProjectElementMm | null {
 }
 
 export function useIsElementHighlighted(elementId: string): boolean {
-  const highlighted = useProjectStore((state) => state.highlightedElementIds);
   const selected = useProjectStore((state) => state.selectedElementId);
-  if (highlighted.length > 0) {
-    return highlighted.includes(elementId);
-  }
   return selected === elementId;
 }

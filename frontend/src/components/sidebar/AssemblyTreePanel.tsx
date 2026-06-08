@@ -11,14 +11,20 @@ import type { StructuralAssembly } from "@/types/ifc-topology";
 
 const TYPE_ORDER: Record<string, number> = {
   BUILDING: 0,
-  FRAME: 1,
+  PORTAL: 1,
   TRUSS: 2,
   ROOF: 3,
   WALL_SIDE: 4,
   WALL_GABLE: 5,
   LONGITUDINAL: 6,
   BRACING: 7,
+  MEMBER: 99,
 };
+
+/** Hide per-member singleton buckets from the tree. */
+function isTreeAssembly(assembly: StructuralAssembly): boolean {
+  return assembly.assembly_type !== "MEMBER" && assembly.entity_ids.length > 1;
+}
 
 function sortAssemblies(
   assemblies: Record<string, StructuralAssembly>,
@@ -46,8 +52,11 @@ function AssemblyTreeNode({
 }) {
   const [open, setOpen] = useState(depth < 2);
   const children = Object.values(assemblies).filter(
-    (a) => a.parent_id === assembly.id,
+    (a) => a.parent_id === assembly.id && isTreeAssembly(a),
   );
+  if (!isTreeAssembly(assembly) && depth > 0) {
+    return null;
+  }
   const isSelected = selectedAssemblyId === assembly.id;
 
   return (
@@ -108,7 +117,9 @@ export function AssemblyTreePanel() {
 
   const roots = useMemo(() => {
     if (!topology) return [];
-    return sortAssemblies(topology.assemblies).filter((a) => !a.parent_id);
+    return sortAssemblies(topology.assemblies).filter(
+      (a) => !a.parent_id && isTreeAssembly(a),
+    );
   }, [topology]);
 
   const selectedAssemblyId = useMemo(() => {
@@ -128,7 +139,8 @@ export function AssemblyTreePanel() {
         <h3 className="text-sm font-semibold tracking-tight">Assemblies</h3>
       </header>
       <p className="mb-2 text-[11px] text-muted-foreground">
-        Click a group to highlight all connected members in the viewport.
+        Browse assembly groups. Selection in the viewport highlights one member at
+        a time; metadata is kept per element for IFC export.
       </p>
       <div className="max-h-48 overflow-y-auto rounded-md border border-border/50 bg-background/50">
         {roots.map((root) => (

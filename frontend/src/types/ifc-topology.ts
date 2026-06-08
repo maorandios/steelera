@@ -6,13 +6,14 @@ export type IFCType =
 
 export type AssemblyType =
   | "BUILDING"
-  | "FRAME"
+  | "PORTAL"
   | "TRUSS"
   | "ROOF"
   | "WALL_SIDE"
   | "WALL_GABLE"
   | "LONGITUDINAL"
-  | "BRACING";
+  | "BRACING"
+  | "MEMBER";
 
 export interface IFCNode {
   id: string;
