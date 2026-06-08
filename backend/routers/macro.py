@@ -12,6 +12,8 @@ from core.geometry_engine import cumulative_positions_from_spans, macro_members_
 
 from core.grid_member_catalog import members_from_shed_config
 
+from core.ifc_topology import build_topology_from_layout, stamp_elements_with_topology
+
 from core.member_resolver import layout_to_macro_members
 
 from core.profile_overrides import apply_profile_overrides_to_layout
@@ -63,11 +65,18 @@ def _run_grid_generate(layout: StructuralGridLayout) -> tuple[
 
     dict[str, float | list[float] | str | bool],
 
+    Any,
+
 ]:
 
     macro_members = layout_to_macro_members(layout)
 
-    project_elements = macro_members_to_project_elements(macro_members)
+    topology = build_topology_from_layout(layout)
+
+    project_elements = stamp_elements_with_topology(
+        macro_members_to_project_elements(macro_members),
+        topology,
+    )
 
     gd = layout.grid_definition
 
@@ -93,7 +102,7 @@ def _run_grid_generate(layout: StructuralGridLayout) -> tuple[
 
     }
 
-    return macro_members, project_elements, params
+    return macro_members, project_elements, params, topology
 
 
 
@@ -146,7 +155,7 @@ async def generate_shed(request: Request) -> GenerateShedResponse:
 
         layout = _parse_generate_shed_body(body)
 
-        macro_members, project_elements, stored_params = _run_grid_generate(layout)
+        macro_members, project_elements, stored_params, topology = _run_grid_generate(layout)
 
         all_elements = merge_assembly(
 
@@ -219,6 +228,8 @@ async def generate_shed(request: Request) -> GenerateShedResponse:
         projectState=state,
 
         counts=counts,
+
+        structural_topology=topology,
 
     )
 

@@ -15,7 +15,7 @@ import { isElementRenderable } from "@/lib/elementValidation";
 import { hasNodeDrivenFrame, memberNodeFrame } from "@/lib/memberFrame";
 import { VIEWPORT_PICK_ROLE } from "@/lib/viewport-pick";
 import { viewportTheme } from "@/lib/viewport-theme";
-import { useProjectStore } from "@/store/project-store";
+import { useIsElementHighlighted } from "@/store/project-store";
 import type { ProjectElementMm } from "@/types/project";
 
 interface ElementMeshGroupProps {
@@ -37,8 +37,7 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
     return null;
   }
 
-  const selectedElementId = useProjectStore((state) => state.selectedElementId);
-  const isSelected = selectedElementId === element.id;
+  const isSelected = useIsElementHighlighted(element.id);
 
   const nodeFrame = useMemo(
     () => (hasNodeDrivenFrame(element) ? memberNodeFrame(element) : null),

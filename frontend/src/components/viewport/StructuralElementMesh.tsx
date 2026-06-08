@@ -12,7 +12,7 @@ import { geometryExtentsM, memberLengthM } from "@/lib/coordinates";
 import { isElementRenderable } from "@/lib/elementValidation";
 import { hasNodeDrivenFrame } from "@/lib/memberFrame";
 import { viewportTheme } from "@/lib/viewport-theme";
-import { useProjectStore } from "@/store/project-store";
+import { useIsElementHighlighted } from "@/store/project-store";
 import { isExtrudedIBeam, type ProjectElementMm } from "@/types/project";
 
 interface StructuralElementMeshProps {
@@ -24,8 +24,7 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
     return null;
   }
 
-  const selectedElementId = useProjectStore((state) => state.selectedElementId);
-  const isSelected = selectedElementId === element.id;
+  const isSelected = useIsElementHighlighted(element.id);
   const baseColor =
     viewportTheme.steel.colors[element.shape_type] ?? viewportTheme.steel.default;
   const color = isSelected ? viewportTheme.steel.selected : baseColor;

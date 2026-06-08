@@ -9,6 +9,7 @@ from typing import Any
 
 from core.geometry_engine import macro_members_to_project_elements
 from core.grid_member_catalog import members_from_shed_config
+from core.ifc_topology import build_topology_from_layout, stamp_elements_with_topology
 from core.member_resolver import layout_to_macro_members
 from core.spatial_grid import StructuralGridEngine
 from schemas.elements import ProjectElementMm
@@ -29,7 +30,11 @@ def apply_structural_grid_layout(
 
     layout = StructuralGridLayout.model_validate(raw)
     macro_members = layout_to_macro_members(layout)
-    rendered = macro_members_to_project_elements(macro_members)
+    topology = build_topology_from_layout(layout)
+    rendered = stamp_elements_with_topology(
+        macro_members_to_project_elements(macro_members),
+        topology,
+    )
 
     if layout.replace_existing or replace_session:
         kept = [
@@ -48,6 +53,7 @@ def apply_structural_grid_layout(
         "member_count": len(rendered),
         "total_elements": len(result),
         "grid_summary": grid.grid_summary(),
+        "structural_topology": topology.model_dump(),
     }, layout
 
 

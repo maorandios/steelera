@@ -3,6 +3,7 @@
 import { ArrowUpDown, Building2, Layers } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AssemblyTreePanel } from "@/components/sidebar/AssemblyTreePanel";
 import { ShedMacroFields, type ShedFormValues } from "@/components/sidebar/ShedMacroFields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,6 +94,8 @@ export function ProjectPresetsPanel() {
         loading={isMacroLoading}
         error={shedError}
       />
+
+      <AssemblyTreePanel />
 
       {xSpans && zSpans ? (
         <p className="font-mono text-[10px] text-muted-foreground">

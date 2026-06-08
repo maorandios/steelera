@@ -56,6 +56,9 @@ export interface ProjectElementMm {
   nodes?: Record<string, [number, number, number]>;
   /** Macro role: column, rafter, wall_girt, bracing, truss_chord, … */
   element_type?: string | null;
+  /** Default sub-assembly for group selection highlight. */
+  primary_assembly_id?: string | null;
+  assembly_ids?: string[] | null;
   /** Macro / future use: Euler rotation in degrees [rx, ry, rz] */
   rotation_euler_deg?: [number, number, number] | null;
   /** Local display rotation around vertical (Y) axis in degrees */

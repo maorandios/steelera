@@ -165,3 +165,6 @@ class ProjectElementMm(BaseModel):
     nodes: dict[str, list[float]] = Field(default_factory=dict)
     # Macro / assembly role (column, rafter, wall_girt, bracing, truss_chord, …).
     element_type: str | None = None
+    # IFC assembly grouping for sub-assembly selection highlight.
+    primary_assembly_id: str | None = None
+    assembly_ids: list[str] | None = None

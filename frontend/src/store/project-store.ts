@@ -28,7 +28,9 @@ import {
   structuralGridFromShedParams,
   type StructuralGridState,
 } from "@/lib/structural-grid";
+import { highlightedElementIds } from "@/lib/assembly-highlight";
 import { checklistPayloadToShedParams } from "@/lib/shed-checklist";
+import type { StructuralTopology } from "@/types/ifc-topology";
 import type {
   ChatMessage,
   ShedChecklistPayload,
@@ -87,6 +89,8 @@ interface ProjectStore {
   shedAssemblyParams: ShedAssemblyParams | null;
   structuralGrid: StructuralGridState;
   selectedElementId: string | null;
+  highlightedElementIds: string[];
+  structuralTopology: StructuralTopology | null;
   statuses: string[];
   isLoading: boolean;
   isMacroLoading: boolean;
@@ -102,6 +106,7 @@ interface ProjectStore {
   setStructuralGridFromSpans: (xSpacingInput: string, zSpacingInput: string) => void;
   clearError: () => void;
   selectElement: (id: string) => void;
+  selectAssembly: (assemblyId: string, focusElementId?: string | null) => void;
   clearSelection: () => void;
   updateElementRotation: (id: string, rotation: ElementRotation) => void;
   updateElementAlignment: (id: string, alignment: ElementAlignment) => void;
@@ -119,6 +124,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   shedAssemblyParams: null,
   structuralGrid: { ...DEFAULT_STRUCTURAL_GRID },
   selectedElementId: null,
+  highlightedElementIds: [],
+  structuralTopology: null,
   statuses: [],
   isLoading: false,
   isMacroLoading: false,
@@ -128,6 +135,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({
       projectElements: elements.map((element) => normalizeElement(element)),
       selectedElementId: null,
+      highlightedElementIds: [],
     }),
 
   setStructuralGridFromSpans: (xSpacingInput, zSpacingInput) =>
@@ -259,12 +267,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const selectedStillExists = elements.some(
         (element) => element.id === selectedId,
       );
+      const topology = response.structural_topology ?? null;
+      const highlightForSelection = selectedStillExists && selectedId
+        ? Array.from(
+            highlightedElementIds(selectedId, topology, elements),
+          )
+        : [];
       set({
         projectElements: elements,
         shedAssemblyParams: finalParams,
         structuralGrid: structuralGridFromShedParams(finalParams),
+        structuralTopology: topology,
         isMacroLoading: false,
         selectedElementId: selectedStillExists ? selectedId : null,
+        highlightedElementIds: highlightForSelection,
       });
     } catch (err) {
       const message =
@@ -286,9 +302,36 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     );
   },
 
-  selectElement: (id) => set({ selectedElementId: id }),
+  selectElement: (id) => {
+    const { structuralTopology, projectElements } = get();
+    set({
+      selectedElementId: id,
+      highlightedElementIds: Array.from(
+        highlightedElementIds(id, structuralTopology, projectElements),
+      ),
+    });
+  },
 
-  clearSelection: () => set({ selectedElementId: null }),
+  selectAssembly: (assemblyId, focusElementId = null) => {
+    const { structuralTopology, projectElements } = get();
+    const fromTopology =
+      structuralTopology?.assemblies[assemblyId]?.entity_ids ?? [];
+    const fromElements = projectElements
+      .filter((e) => e.primary_assembly_id === assemblyId)
+      .map((e) => e.id);
+    const ids = fromTopology.length > 0 ? fromTopology : fromElements;
+    const focus =
+      focusElementId && ids.includes(focusElementId)
+        ? focusElementId
+        : ids[0] ?? null;
+    set({
+      selectedElementId: focus,
+      highlightedElementIds: ids,
+    });
+  },
+
+  clearSelection: () =>
+    set({ selectedElementId: null, highlightedElementIds: [] }),
 
   updateElementRotation: (id, rotation) =>
     set((state) => ({
@@ -383,6 +426,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         statuses: [],
         isLoading: false,
         selectedElementId: selectedStillExists ? selectedId : null,
+        highlightedElementIds:
+          selectedStillExists && selectedId
+            ? Array.from(
+                highlightedElementIds(
+                  selectedId,
+                  get().structuralTopology,
+                  elements,
+                ),
+              )
+            : [],
       });
     } catch (err) {
       const message =
@@ -408,4 +461,13 @@ export function useSelectedElement(): ProjectElementMm | null {
   const projectElements = useProjectStore((state) => state.projectElements);
   if (!selectedElementId) return null;
   return projectElements.find((element) => element.id === selectedElementId) ?? null;
+}
+
+export function useIsElementHighlighted(elementId: string): boolean {
+  const highlighted = useProjectStore((state) => state.highlightedElementIds);
+  const selected = useProjectStore((state) => state.selectedElementId);
+  if (highlighted.length > 0) {
+    return highlighted.includes(elementId);
+  }
+  return selected === elementId;
 }

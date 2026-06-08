@@ -1,3 +1,4 @@
+import type { StructuralTopology } from "@/types/ifc-topology";
 import type { ProjectElementMm, ProjectState } from "@/types/project";
 
 export type ShedRoofStyle = "duo_pitch" | "mono_pitch" | "flat";
@@ -44,4 +45,5 @@ export interface GenerateShedResponse {
     total_generated: number;
     total_in_session: number;
   };
+  structural_topology?: StructuralTopology | null;
 }

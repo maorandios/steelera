@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from schemas.elements import ProjectElementMm
+from schemas.ifc_model import IFCTopology
 from schemas.project import ProjectState
 
 
@@ -151,3 +152,4 @@ class GenerateShedResponse(BaseModel):
     projectElements: list[ProjectElementMm]
     projectState: ProjectState
     counts: dict[str, int]
+    structural_topology: IFCTopology | None = None

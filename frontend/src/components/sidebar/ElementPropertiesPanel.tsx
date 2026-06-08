@@ -27,6 +27,9 @@ const PROFILE_OPTIONS = [
 
 export function ElementPropertiesPanel() {
   const selected = useSelectedElement();
+  const highlightedCount = useProjectStore(
+    (s) => s.highlightedElementIds.length,
+  );
   const updateElementRotation = useProjectStore(
     (state) => state.updateElementRotation,
   );
@@ -61,6 +64,12 @@ export function ElementPropertiesPanel() {
           <Badge variant="secondary">{selected.shape_type}</Badge>
           {selected.assembly_id ? (
             <Badge variant="outline">{selected.assembly_id}</Badge>
+          ) : null}
+          {selected.primary_assembly_id ? (
+            <Badge variant="outline">{selected.primary_assembly_id}</Badge>
+          ) : null}
+          {highlightedCount > 1 ? (
+            <Badge variant="outline">{highlightedCount} highlighted</Badge>
           ) : null}
           <Badge variant="outline">axis {selected.axis ?? "y"}</Badge>
         </div>
