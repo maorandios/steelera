@@ -1195,6 +1195,18 @@ def _eave_ridge_ties(
     return out
 
 
+def _diaphragm_brace_bays(n_bays: int) -> frozenset[int]:
+    """First, middle, and last longitudinal bays (standard diaphragm bracing)."""
+    if n_bays <= 0:
+        return frozenset()
+    if n_bays == 1:
+        return frozenset({0})
+    bays = {0, n_bays - 1}
+    if n_bays >= 3:
+        bays.add(n_bays // 2)
+    return frozenset(bays)
+
+
 def _purlins(
     grid: StructuralGridEngine,
     aid: str,
@@ -1930,6 +1942,9 @@ def members_from_grid_definition(
         girt_profile=getattr(grid_def, "girt_profile", None),
         sag_rod_profile=getattr(grid_def, "sag_rod_profile", None),
         base_plate_profile=getattr(grid_def, "base_plate_profile", None),
+        truss_chord_profile=getattr(grid_def, "truss_chord_profile", None),
+        truss_web_profile=getattr(grid_def, "truss_web_profile", None),
+        generate_purlins=bool(getattr(grid_def, "generate_purlins", True)),
         generate_tie_beams=bool(getattr(grid_def, "generate_tie_beams", True)),
         gable_bracing=bool(getattr(grid_def, "gable_bracing", False)),
         roof_bracing=bool(getattr(grid_def, "roof_bracing", False)),
@@ -1989,8 +2004,10 @@ def members_from_shed_config(
     )
 
     # Primary frame: columns, then rafters or trusses per frame.
-    chord_profile = DEFAULT_TRUSS_CHORD_PROFILE
-    web_profile = DEFAULT_TRUSS_WEB_PROFILE
+    chord_profile = (
+        getattr(cfg, "truss_chord_profile", None) or DEFAULT_TRUSS_CHORD_PROFILE
+    )
+    web_profile = getattr(cfg, "truss_web_profile", None) or DEFAULT_TRUSS_WEB_PROFILE
     members.extend(_columns(grid, aid, trussed_frames, column_profile))
     for z_label, uses_truss, ttype in frame_truss:
         if uses_truss:
@@ -2020,7 +2037,8 @@ def members_from_shed_config(
         members.extend(_eave_ridge_ties(grid, aid, ridge))
 
     # Roof purlins (run along the length, seated on the rafters).
-    members.extend(_purlins(grid, aid, cfg.purlin_spacing_mm, purlin_profile))
+    if bool(getattr(cfg, "generate_purlins", True)):
+        members.extend(_purlins(grid, aid, cfg.purlin_spacing_mm, purlin_profile))
 
     # Gable post spacing: ~2x the girt spacing, but fine enough that each roof slope
     # gets at least one intermediate post so horizontal gable girts can step up the
@@ -2059,38 +2077,37 @@ def members_from_shed_config(
     # Per-bay side-wall bracing and sag rods.
     n_bays = len(grid.z_labels) - 1
     roof_bracing = bool(getattr(cfg, "roof_bracing", False))
-    # Standard practice braces only the END bays for the roof diaphragm.
-    roof_brace_bays = {0, n_bays - 1} if n_bays > 0 else set()
+    brace_bays = _diaphragm_brace_bays(n_bays)
     for bay_i in range(n_bays):
         bay = cfg.bay_at(bay_i)
         z0, z1 = grid.z_labels[bay_i], grid.z_labels[bay_i + 1]
-        truss_bay = use_truss and z0 in trussed_frames and z1 in trussed_frames
-        if bay.x_bracing_left_wall and not truss_bay:
-            members.extend(
-                _x_bracing(
-                    grid, aid, grid.x_labels[0], bay_i, z0, z1, bracing_profile
+        if bay_i in brace_bays:
+            if bay.x_bracing_left_wall:
+                members.extend(
+                    _x_bracing(
+                        grid, aid, grid.x_labels[0], bay_i, z0, z1, bracing_profile
+                    )
                 )
-            )
-        if bay.x_bracing_right_wall and not truss_bay:
-            members.extend(
-                _x_bracing(
-                    grid, aid, grid.x_labels[-1], bay_i, z0, z1, bracing_profile
+            if bay.x_bracing_right_wall:
+                members.extend(
+                    _x_bracing(
+                        grid, aid, grid.x_labels[-1], bay_i, z0, z1, bracing_profile
+                    )
                 )
-            )
-        if roof_bracing and bay_i in roof_brace_bays and not truss_bay:
-            members.extend(
-                _roof_bracing(
-                    grid,
-                    aid,
-                    bay_i,
-                    z0,
-                    z1,
-                    ridge,
-                    bracing_profile,
-                    truss_type=primary_truss_type,
-                    use_truss=use_truss,
+            if roof_bracing:
+                members.extend(
+                    _roof_bracing(
+                        grid,
+                        aid,
+                        bay_i,
+                        z0,
+                        z1,
+                        ridge,
+                        bracing_profile,
+                        truss_type=primary_truss_type,
+                        use_truss=use_truss,
+                    )
                 )
-            )
         if bay.sag_rods:
             # Roof rods between purlins; long-wall rods between girts per Z-bay.
             members.extend(
@@ -2157,8 +2174,20 @@ def members_from_shed_config(
             )
         )
 
+    preserve_bracing = (
+        roof_bracing
+        or bool(getattr(cfg, "gable_bracing", False))
+        or bool(getattr(cfg, "fly_braces", False))
+        or any(
+            cfg.bay_at(i).x_bracing_left_wall or cfg.bay_at(i).x_bracing_right_wall
+            for i in range(n_bays)
+        )
+    )
     return _strip_truss_secondary_bracing(
-        members, trussed_frames=trussed_frames, z_labels=grid.z_labels
+        members,
+        trussed_frames=trussed_frames,
+        z_labels=grid.z_labels,
+        preserve_bracing=preserve_bracing,
     )
 
 
@@ -2167,9 +2196,10 @@ def _strip_truss_secondary_bracing(
     *,
     trussed_frames: set[str],
     z_labels: list[str],
+    preserve_bracing: bool = False,
 ) -> list[StructuralMember]:
-    """Drop fly braces and X-bracing when every frame is a truss (webs provide stability)."""
-    if len(trussed_frames) < len(z_labels):
+    """Drop fly braces and X-bracing on all-truss sheds unless explicitly requested."""
+    if preserve_bracing or len(trussed_frames) < len(z_labels):
         return members
     out: list[StructuralMember] = []
     for m in members:

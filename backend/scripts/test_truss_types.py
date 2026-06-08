@@ -130,9 +130,9 @@ for m in bcties:
     y = m["nodes"]["start"][1]
     assert y > eave_y + 50.0, (m["id"], y)
 roof_braces = [m for m in macro if "brace-roof-s" in str(m.get("id", ""))]
-assert len(roof_braces) == 0, ("truss end bays should not get rafter-style roof X", len(roof_braces))
+assert len(roof_braces) > 0, "truss roof X-bracing should land on top-chord panel nodes"
 
-# Scissor shed: no fly braces / gable X-bracing on truss frames; gable girts full width.
+# Scissor shed with explicit bracing flags: roof X + fly braces; gable girts full width.
 gd_scissor_full = GridDefinition(
     x_spans=[12000],
     z_spans=[5000, 5000, 5000],
@@ -152,10 +152,10 @@ macro_full = layout_to_macro_members(
         structural_members=members_from_grid_definition(gd_scissor_full),
     )
 )
-assert not [m for m in macro_full if m.get("element_type") == "fly_brace"], "fly braces on truss frames"
-assert not [m for m in macro_full if m.get("id", "").endswith("end-1-a")], "gable X on truss"
-assert not [m for m in macro_full if "-brace-A-" in m.get("id", "")], "side-wall X on truss bays"
-assert not [m for m in macro_full if "brace-roof-s" in m.get("id", "")], "roof X on truss bays"
+assert not [m for m in macro_full if m.get("element_type") == "fly_brace"], "fly braces need rafter frames"
+assert not [m for m in macro_full if m.get("id", "").endswith("end-1-a")], "gable X skipped on truss frames"
+assert not [m for m in macro_full if "-brace-A-" in m.get("id", "")], "side-wall X without x_bracing flag"
+assert [m for m in macro_full if "brace-roof-s" in m.get("id", "")], "roof X when roof_bracing set"
 gable_girts = [m for m in macro_full if "gablegirt" in str(m.get("id", ""))]
 assert gable_girts, "no gable girts"
 span_x = float(gd_scissor_full.x_spans[0])
@@ -172,7 +172,7 @@ from core.grid_layout_utils import ensure_layout_members
 from schemas.spatial_grid import GridNodeReference, StructuralMember
 
 stale = StructuralMember(
-    id="shed_1-brace-roof-s0-b0-a",
+    id="stale-hand-brace-wrong-nodes",
     element_type="bracing",
     profile="L50x50",
     start_node=GridNodeReference(x_axis="A", z_axis="1", elevation="eave"),
@@ -183,7 +183,9 @@ layout_stale = StructuralGridLayout(
     structural_members=[stale],
 )
 fresh = ensure_layout_members(layout_stale)
-assert not any(m.element_type == "bracing" for m in fresh.structural_members), "stale truss bracing"
+assert not any(m.id == stale.id for m in fresh.structural_members), "stale hand bracing replaced"
+catalog_braces = [m for m in fresh.structural_members if m.element_type == "bracing"]
+assert catalog_braces, "catalog should emit truss-anchored bracing when roof_bracing is enabled"
 
 # Mono-pitch truss: every frame uses the same panelled Pratt webs (no gable shortcut).
 import math

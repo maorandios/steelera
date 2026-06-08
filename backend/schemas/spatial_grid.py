@@ -119,6 +119,7 @@ class GridDefinition(BaseModel):
     fly_braces: bool = False
     base_plates: bool = False
     bottom_chord_restraint: bool = False
+    generate_purlins: bool = True
     generate_wall_girts: bool = True
     generate_tie_beams: bool = True
     purlin_spacing_mm: float = Field(1200.0, gt=0)
@@ -141,6 +142,14 @@ class GridDefinition(BaseModel):
     base_plate_profile: str | None = Field(
         None, description="Catalog base plate thickness (e.g. PL12 / PL20)."
     )
+    truss_chord_profile: str | None = Field(
+        None,
+        description="Truss top + bottom chord section (e.g. SHS120x120x6 / IPE200).",
+    )
+    truss_web_profile: str | None = Field(
+        None,
+        description="Truss web diagonal section (e.g. L60x60x6 / L50x50).",
+    )
     custom_levels: dict[str, float] = Field(
         default_factory=dict,
         description="AI-defined named elevation levels in mm (e.g. {'mezzanine': 3500}). "
@@ -162,6 +171,8 @@ class GridDefinition(BaseModel):
         "girt_profile",
         "sag_rod_profile",
         "base_plate_profile",
+        "truss_chord_profile",
+        "truss_web_profile",
     )
     @classmethod
     def validate_profile(cls, value: str | None) -> str | None:

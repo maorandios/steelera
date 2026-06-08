@@ -40,10 +40,9 @@ coordinates, lengths, or angles, and never do trigonometry.
 
 HOW TO BUILD A SHED (mandatory):
 Call `submit_structural_grid_layout` with a `grid_definition` (parameters + capability toggles) and
-`structural_members: []` (ALWAYS EMPTY). Python then generates the COMPLETE, geometrically perfect
-shed for you: columns, rafters or trusses, eave/ridge tie beams, roof purlins (seated on rafters),
-wall girts on both side walls, gable posts + gable girts on the end walls, plus bracing and sag rods
-when toggled on. You only choose the parameters — do not list members yourself.
+`structural_members: []` (ALWAYS EMPTY). Python generates members from your toggles: columns,
+rafters/trusses, tie beams, purlins, wall/gable girts, and X-bracing only when the corresponding
+boolean flags are true. You only choose the parameters — do not list members yourself.
 
 grid_definition fields:
 - x_spans[]  = bay widths across the WIDTH (X), in mm. Sum = total width.
@@ -65,20 +64,23 @@ grid_definition fields:
 - fly_braces (bool): small fly/flange braces restraining rafter inner flanges (purlin stays).
 - base_plates (bool): steel base plates under every column / gable-post foot (clean IFC export).
 - bottom_chord_restraint (bool): longitudinal runners restraining truss bottom chords (trusses only).
-- generate_wall_girts (bool, default true), generate_tie_beams (bool, default true).
+- generate_purlins (bool, default true), generate_wall_girts (bool, default true), generate_tie_beams (bool, default true).
 - purlin_spacing_mm (default 1200), girt_spacing_mm (default 1500).
 - column_profile (e.g. HEA200 / SHS300x300x10; null = default), bracing_profile (e.g. L50x50; null = default).
 - purlin_profile / girt_profile (cold-formed Cee or Zed, e.g. C200x2.0 / Z200x2.0; null = default).
 - sag_rod_profile (plain rod, e.g. ROD12 / ROD16; null = default), base_plate_profile (e.g. PL12 / PL20; null = default).
+- truss_chord_profile (top + bottom chords, e.g. SHS120x120x6 / IPE200; null = default IPE200).
+- truss_web_profile (web diagonals, e.g. L60x60x6 / L50x50; null = default L50x50).
 
 Choosing spans:
 - A single clear-span width → one x_span. e.g. 12 m wide → x_spans:[12000].
 - "N bays" along the length → N z_spans. e.g. 25 m long in 5 bays → z_spans:[5000,5000,5000,5000,5000].
 - If the user gives only total length + bay count, divide evenly.
 
-Defaults when the user is silent: duo_pitch, 10° pitch, generate_wall_girts true, generate_tie_beams
-true, truss off, bracing off, sag rods off, haunches/fly_braces/base_plates/bottom_chord_restraint
-off. Always set EVERY field in the schema (it is strict).
+Defaults when the user is silent: duo_pitch, 10° pitch, generate_purlins true, generate_wall_girts true,
+generate_tie_beams true, truss off, bracing off, sag rods off, haunches/fly_braces/base_plates/
+bottom_chord_restraint off. Honor explicit DISABLED / "do not generate" requests by setting the
+matching boolean to false. Always set EVERY field in the schema (it is strict).
 
 MODIFICATIONS: to resize or toggle a feature (add bracing, more bays, change pitch, etc.), call
 `submit_structural_grid_layout` again with the FULL updated grid_definition and structural_members:[].
@@ -95,11 +97,12 @@ submit_structural_grid_layout({{
     "mono_high_side": "B", "use_truss": false, "truss_type": "none",
     "x_bracing": false, "gable_bracing": false, "roof_bracing": false, "sag_rods": false,
     "haunches": false, "fly_braces": false, "base_plates": false, "bottom_chord_restraint": false,
-    "generate_wall_girts": true, "generate_tie_beams": true,
+    "generate_purlins": true, "generate_wall_girts": true, "generate_tie_beams": true,
     "purlin_spacing_mm": 1200, "girt_spacing_mm": 1500,
     "column_profile": null, "bracing_profile": null,
     "purlin_profile": null, "girt_profile": null,
-    "sag_rod_profile": null, "base_plate_profile": null
+    "sag_rod_profile": null, "base_plate_profile": null,
+    "truss_chord_profile": null, "truss_web_profile": null
   }},
   "structural_members": []
 }})
@@ -178,8 +181,13 @@ def _parse_grid_layout(arguments: str, *, user_text: str = "") -> StructuralGrid
     layout = StructuralGridLayout.model_validate(raw)
     # Python OWNS the geometry: ignore any AI-authored members and always rebuild
     # the complete, correct shed from the parametric grid_definition + toggles.
+    # AI tool arguments are authoritative; regex intent only fills non-boolean hints.
     intent = extract_grid_intent_from_text(user_text)
-    gd = merge_grid_intent_into_definition(layout.grid_definition, intent)
+    gd = merge_grid_intent_into_definition(
+        layout.grid_definition,
+        intent,
+        fill_gaps_only=True,
+    )
     layout = layout.model_copy(
         update={"grid_definition": gd, "structural_members": []},
     )

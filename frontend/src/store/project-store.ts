@@ -5,7 +5,6 @@ import { create } from "zustand";
 import { postChat, postGenerateShed, type GenerateShedBody } from "@/lib/api";
 import {
   extractGridIntentFromMessages,
-  mergeGridDefinitionWithIntent,
 } from "@/lib/grid-intent";
 import { gridLayoutToShedParams, isStructuralGridLayout } from "@/lib/grid-layout";
 import { extractProfilesFromMessages } from "@/lib/profile-overrides";
@@ -168,33 +167,41 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       : shedConfigToAssemblyParams(body as ShedAssemblyConfig);
     const chatProfiles = extractProfilesFromMessages(get().messages);
     const chatIntent = extractGridIntentFromMessages(get().messages);
+    const profileOverrides = {
+      column_profile: chatProfiles.column_profile,
+      bracing_profile: chatProfiles.bracing_profile,
+      purlin_profile: chatProfiles.purlin_profile,
+      girt_profile: chatProfiles.girt_profile,
+      sag_rod_profile: chatProfiles.sag_rod_profile,
+      base_plate_profile: chatProfiles.base_plate_profile,
+      truss_chord_profile: chatProfiles.truss_chord_profile,
+      truss_web_profile: chatProfiles.truss_web_profile,
+    };
     const params = mergeShedParams(
       mergeShedParams(get().shedAssemblyParams ?? DEFAULT_SHED_PARAMS, fromBody),
-      {
-        column_profile: chatProfiles.column_profile,
-        bracing_profile: chatProfiles.bracing_profile,
-        purlin_profile: chatProfiles.purlin_profile,
-        girt_profile: chatProfiles.girt_profile,
-        sag_rod_profile: chatProfiles.sag_rod_profile,
-        base_plate_profile: chatProfiles.base_plate_profile,
-        use_truss: chatIntent.use_truss ?? fromBody.use_truss,
-        truss_type: chatIntent.truss_type ?? fromBody.truss_type,
-        roof_style: chatIntent.roof_style ?? fromBody.roof_style,
-        roof_pitch_deg: chatIntent.roof_pitch_deg ?? fromBody.roof_pitch_deg,
-        use_bracing: chatIntent.x_bracing ?? fromBody.use_bracing,
-        use_gable_bracing: chatIntent.gable_bracing ?? fromBody.use_gable_bracing,
-        use_roof_bracing: chatIntent.roof_bracing ?? fromBody.use_roof_bracing,
-        use_sag_rods: chatIntent.sag_rods ?? fromBody.use_sag_rods,
-        use_haunches: chatIntent.haunches ?? fromBody.use_haunches,
-        use_fly_braces: chatIntent.fly_braces ?? fromBody.use_fly_braces,
-        use_base_plates: chatIntent.base_plates ?? fromBody.use_base_plates,
-        use_bottom_chord_restraint:
-          chatIntent.bottom_chord_restraint ?? fromBody.use_bottom_chord_restraint,
-        generate_wall_girts:
-          chatIntent.generate_wall_girts ?? fromBody.generate_wall_girts,
-        generate_tie_beams:
-          chatIntent.generate_tie_beams ?? fromBody.generate_tie_beams,
-      },
+      isGridLayout
+        ? profileOverrides
+        : {
+            ...profileOverrides,
+            use_truss: chatIntent.use_truss ?? fromBody.use_truss,
+            truss_type: chatIntent.truss_type ?? fromBody.truss_type,
+            roof_style: chatIntent.roof_style ?? fromBody.roof_style,
+            roof_pitch_deg: chatIntent.roof_pitch_deg ?? fromBody.roof_pitch_deg,
+            use_bracing: chatIntent.x_bracing ?? fromBody.use_bracing,
+            use_gable_bracing:
+              chatIntent.gable_bracing ?? fromBody.use_gable_bracing,
+            use_roof_bracing: chatIntent.roof_bracing ?? fromBody.use_roof_bracing,
+            use_sag_rods: chatIntent.sag_rods ?? fromBody.use_sag_rods,
+            use_haunches: chatIntent.haunches ?? fromBody.use_haunches,
+            use_fly_braces: chatIntent.fly_braces ?? fromBody.use_fly_braces,
+            use_base_plates: chatIntent.base_plates ?? fromBody.use_base_plates,
+            use_bottom_chord_restraint:
+              chatIntent.bottom_chord_restraint ?? fromBody.use_bottom_chord_restraint,
+            generate_wall_girts:
+              chatIntent.generate_wall_girts ?? fromBody.generate_wall_girts,
+            generate_tie_beams:
+              chatIntent.generate_tie_beams ?? fromBody.generate_tie_beams,
+          },
     );
 
     set({ isMacroLoading: true, error: null });
@@ -203,44 +210,27 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       let apiPayload: GenerateShedBody;
       if (isGridLayout) {
         const layout = body as StructuralGridLayout;
-        const gd = mergeGridDefinitionWithIntent(
-          layout.grid_definition,
-          chatIntent,
-        );
+        // AI/backend grid_definition is authoritative — only overlay profile picks.
+        const gd = layout.grid_definition;
         apiPayload = {
           ...layout,
           replace_existing: layout.replace_existing ?? true,
           structural_members: [],
           grid_definition: {
             ...gd,
-            use_truss: params.use_truss || Boolean(gd.use_truss),
-            truss_type: params.use_truss
-              ? params.truss_type
-              : ((gd.truss_type ?? "none") as typeof gd.truss_type),
-            mono_high_side: gd.mono_high_side ?? params.mono_high_side,
-            roof_style: params.roof_style ?? gd.roof_style,
-            roof_pitch_deg: params.roof_pitch_deg ?? gd.roof_pitch_deg,
-            height_mm: gd.height_mm ?? params.height,
-            x_bracing: params.use_bracing || Boolean(gd.x_bracing),
-            gable_bracing: params.use_gable_bracing || Boolean(gd.gable_bracing),
-            roof_bracing: params.use_roof_bracing || Boolean(gd.roof_bracing),
-            sag_rods: params.use_sag_rods || Boolean(gd.sag_rods),
-            haunches: params.use_haunches || Boolean(gd.haunches),
-            fly_braces: params.use_fly_braces || Boolean(gd.fly_braces),
-            base_plates: params.use_base_plates || Boolean(gd.base_plates),
-            bottom_chord_restraint:
-              params.use_bottom_chord_restraint ||
-              Boolean(gd.bottom_chord_restraint),
-            generate_wall_girts:
-              params.generate_wall_girts ?? gd.generate_wall_girts ?? true,
-            generate_tie_beams:
-              params.generate_tie_beams ?? gd.generate_tie_beams ?? true,
-            column_profile: params.column_profile ?? gd.column_profile,
-            bracing_profile: params.bracing_profile ?? gd.bracing_profile,
-            purlin_profile: params.purlin_profile ?? gd.purlin_profile,
-            girt_profile: params.girt_profile ?? gd.girt_profile,
-            sag_rod_profile: params.sag_rod_profile ?? gd.sag_rod_profile,
-            base_plate_profile: params.base_plate_profile ?? gd.base_plate_profile,
+            column_profile: profileOverrides.column_profile ?? gd.column_profile,
+            bracing_profile:
+              profileOverrides.bracing_profile ?? gd.bracing_profile,
+            purlin_profile: profileOverrides.purlin_profile ?? gd.purlin_profile,
+            girt_profile: profileOverrides.girt_profile ?? gd.girt_profile,
+            sag_rod_profile:
+              profileOverrides.sag_rod_profile ?? gd.sag_rod_profile,
+            base_plate_profile:
+              profileOverrides.base_plate_profile ?? gd.base_plate_profile,
+            truss_chord_profile:
+              profileOverrides.truss_chord_profile ?? gd.truss_chord_profile,
+            truss_web_profile:
+              profileOverrides.truss_web_profile ?? gd.truss_web_profile,
           },
         };
       } else {

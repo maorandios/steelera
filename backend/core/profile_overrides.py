@@ -16,6 +16,28 @@ _PROFILE_FIELDS = (
     "girt_profile",
     "sag_rod_profile",
     "base_plate_profile",
+    "truss_chord_profile",
+    "truss_web_profile",
+)
+
+_TRUSS_PROFILE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "truss_chord_profile",
+        re.compile(
+            r"(?:truss\s+chords?(?:\s*\([^)]*\))?|(?:top|bottom)\s+chords?|"
+            r"tc\s*(?:&|and)\s*bc)\s*[-:=]\s*"
+            r"([A-Za-z][A-Za-z0-9xX.\-/]+)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "truss_web_profile",
+        re.compile(
+            r"(?:truss\s+web(?:\s+diagonals?)?|web\s+diagonals?)\s*[-:=]\s*"
+            r"([A-Za-z][A-Za-z0-9xX.\-/]+)",
+            re.IGNORECASE,
+        ),
+    ),
 )
 
 # girt_profile: C220x2.0  |  girt profile C220x2.0  |  girt C220x2.0
@@ -42,6 +64,13 @@ def extract_profiles_from_text(text: str) -> dict[str, str]:
         return {}
 
     found: dict[str, str] = {}
+    for field, pattern in _TRUSS_PROFILE_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        value = match.group(1).strip().rstrip(",.;")
+        if value and has_profile(value):
+            found[field] = value
     for field, pattern in _FIELD_PATTERNS.items():
         match = pattern.search(text)
         if not match:
@@ -72,6 +101,10 @@ def _profiles_from_members(
             by_type["bracing_profile"] = str(profile)
         elif et == "sag_rod" and "sag_rod_profile" not in by_type:
             by_type["sag_rod_profile"] = str(profile)
+        elif et == "truss_chord" and "truss_chord_profile" not in by_type:
+            by_type["truss_chord_profile"] = str(profile)
+        elif et == "truss_web" and "truss_web_profile" not in by_type:
+            by_type["truss_web_profile"] = str(profile)
     return by_type
 
 

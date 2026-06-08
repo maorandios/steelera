@@ -41,6 +41,7 @@ def grid_definition_from_shed_config(cfg: ShedAssemblyConfig) -> GridDefinition:
         fly_braces=bool(cfg.fly_braces),
         base_plates=bool(cfg.base_plates),
         bottom_chord_restraint=bool(cfg.bottom_chord_restraint),
+        generate_purlins=bool(getattr(cfg, "generate_purlins", True)),
         generate_wall_girts=any_girts,
         generate_tie_beams=bool(cfg.generate_tie_beams),
         purlin_spacing_mm=float(cfg.purlin_spacing_mm),
@@ -51,4 +52,6 @@ def grid_definition_from_shed_config(cfg: ShedAssemblyConfig) -> GridDefinition:
         girt_profile=cfg.girt_profile,
         sag_rod_profile=cfg.sag_rod_profile,
         base_plate_profile=cfg.base_plate_profile,
+        truss_chord_profile=cfg.truss_chord_profile,
+        truss_web_profile=cfg.truss_web_profile,
     )

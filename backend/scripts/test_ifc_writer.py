@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ifcopenshell
+import ifcopenshell.util.placement as ifc_placement
 
 from core.ifc_topology import build_topology_from_layout
 from core.ifc_writer import export_topology_to_ifc
@@ -84,6 +85,23 @@ with tempfile.TemporaryDirectory() as tmp:
     assert purlin_right["rotation_euler"][0] < 0
     assert purlin_right["rotation_euler"][1] > 90
     assert abs(purlin_right["local_rotation"] - purlin_right["rotation_euler"][0]) < 1e-6
+
+    col_entity = next(e for e in data["entities"] if e.get("ifc_type") == "IfcColumn")
+    start_node = data["nodes"][col_entity["start_node_id"]]
+    col = next(p for p in columns if p.Name == col_entity["id"])
+    matrix = ifc_placement.get_local_placement(col.ObjectPlacement)
+    origin_ifc = (float(matrix[0, 3]), float(matrix[1, 3]), float(matrix[2, 3]))
+    origin_steelera = (origin_ifc[0], origin_ifc[2], origin_ifc[1])
+    assert abs(origin_steelera[0] - start_node["x"]) < 0.1
+    assert abs(origin_steelera[1] - start_node["y"]) < 0.1
+    assert abs(origin_steelera[2] - start_node["z"]) < 0.1
+
+    rep_ids = {
+        r.RepresentationIdentifier
+        for r in beams[0].Representation.Representations
+    }
+    assert "Body" in rep_ids
+    assert "Axis" in rep_ids
 
     print(
         "PASS: ifc_writer",

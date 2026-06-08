@@ -67,7 +67,9 @@ layout = StructuralGridLayout(
     ],
 )
 macro = layout_to_macro_members(layout)
-assert len(macro) == 2
+assert len(macro) > 2
+assert any(m.get("element_type") == "column" for m in macro)
+assert any(m.get("element_type") == "rafter" for m in macro)
 print("PASS: member resolver", len(macro), "members")
 
 # --- Catalog from legacy config ---

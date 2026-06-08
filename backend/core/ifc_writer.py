@@ -110,45 +110,58 @@ def _quat_rotate(
     )
 
 
-def _member_placement_ifc(
+def _member_ref_direction(
+    axis_z: tuple[float, float, float],
     start_steelera: tuple[float, float, float],
     end_steelera: tuple[float, float, float],
-    *,
     roll_deg: float,
-    align_offset_mm: float,
-) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float], float] | None:
-    """
-    Match viewport ``memberNodeFrame``: quaternion along start→end, roll about member
-    local +X, then alignment shift along local +Y — mapped into IFC Z-up coords.
-    """
+) -> tuple[float, float, float]:
+    """Profile roll about the member axis (viewport quaternion, IFC Z-up)."""
     dx = end_steelera[0] - start_steelera[0]
     dy = end_steelera[1] - start_steelera[1]
     dz = end_steelera[2] - start_steelera[2]
-    length = math.sqrt(dx * dx + dy * dy + dz * dz)
-    if length < _MIN_MEMBER_LENGTH_MM:
-        return None
-
     dir_s = _normalize_vec((dx, dy, dz))
     q_align = _quat_from_unit_vectors(1.0, 0.0, 0.0, *dir_s)
     roll_rad = math.radians(roll_deg)
     q_roll = (math.sin(roll_rad * 0.5), 0.0, 0.0, math.cos(roll_rad * 0.5))
     q = _quat_mul(q_align, q_roll)
-
-    member_ifc = _normalize_vec(_to_ifc_vector(*_quat_rotate(q, (1.0, 0.0, 0.0))))
     profile_y_ifc = _normalize_vec(_to_ifc_vector(*_quat_rotate(q, (0.0, 1.0, 0.0))))
-    axis_x = _normalize_vec(_cross(profile_y_ifc, member_ifc))
-    axis_z = member_ifc
+    return _normalize_vec(_cross(profile_y_ifc, axis_z))
 
-    origin = _to_ifc_point(*start_steelera)
-    if abs(align_offset_mm) > 1e-9:
-        offset_ifc = _to_ifc_vector(*_quat_rotate(q, (0.0, align_offset_mm, 0.0)))
-        origin = (
-            origin[0] + offset_ifc[0],
-            origin[1] + offset_ifc[1],
-            origin[2] + offset_ifc[2],
-        )
 
-    return origin, axis_z, axis_x, length
+def _strict_member_frame(
+    start_steelera: tuple[float, float, float],
+    end_steelera: tuple[float, float, float],
+    *,
+    roll_deg: float,
+) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float], float] | None:
+    """
+    Structural axis: placement at exact start node, extrusion along end − start.
+    Length is the Euclidean distance between global topology nodes (IFC Z-up).
+    """
+    start_ifc = _to_ifc_point(*start_steelera)
+    end_ifc = _to_ifc_point(*end_steelera)
+    vx = end_ifc[0] - start_ifc[0]
+    vy = end_ifc[1] - start_ifc[1]
+    vz = end_ifc[2] - start_ifc[2]
+    length = math.sqrt(vx * vx + vy * vy + vz * vz)
+    if length < _MIN_MEMBER_LENGTH_MM:
+        return None
+
+    axis_z = _normalize_vec((vx, vy, vz))
+    axis_x = _member_ref_direction(axis_z, start_steelera, end_steelera, roll_deg)
+    return start_ifc, axis_z, axis_x, length
+
+
+def _solid_seating_offset(align_offset_mm: float) -> tuple[float, float, float]:
+    """
+    Shift the Body solid along product-local +Y (profile height), matching viewport
+    ``meshAlignmentOffsetLocal``.  Location must be in the product placement frame
+    (RefDirection, Y, member Axis) — not global IFC coordinates.
+    """
+    if abs(align_offset_mm) < 1e-9:
+        return (0.0, 0.0, 0.0)
+    return (0.0, align_offset_mm, 0.0)
 
 # --------------------------------------------------------------------------- #
 # Schema / GUID helpers                                                       #
@@ -475,6 +488,21 @@ def _center_polygon(points: list[tuple[float, float]]) -> list[tuple[float, floa
     return [(x - cx, y - cy) for x, y in points]
 
 
+def _mirror_polygon_x(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Mirror profile through the local Y axis (viewport ``scale(1,1,-1)`` width flip)."""
+    return [(-x, y) for x, y in points]
+
+
+def _mirror_polygon_y(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Mirror profile through the local X axis (open-side / height flip)."""
+    return [(x, -y) for x, y in points]
+
+
+def _is_girt_entity(entity: dict[str, Any]) -> bool:
+    entity_id = str(entity.get("id", ""))
+    return "-girt-" in entity_id or "-gablegirt-" in entity_id
+
+
 def _cee_polygon(h: float, b: float, t: float, lip: float) -> list[tuple[float, float]]:
     if lip > t:
         raw = [
@@ -593,14 +621,22 @@ def _create_profile_def(
     *,
     schema: str,
     cache: dict[str, Any],
+    mirror_profile_x: bool = False,
+    mirror_profile_y: bool = False,
 ) -> Any:
-    key = str(profile_family or "GENERIC").strip().upper().replace(" ", "") or "GENERIC"
+    base_key = str(profile_family or "GENERIC").strip().upper().replace(" ", "") or "GENERIC"
+    suffix = ""
+    if mirror_profile_y:
+        suffix += "Y"
+    if mirror_profile_x:
+        suffix += "X"
+    key = f"{base_key}#{suffix}" if suffix else base_key
     if key in cache:
         return cache[key]
 
-    dims = _catalog_dims(key)
-    prefix = _profile_prefix(key)
-    name = key
+    dims = _catalog_dims(base_key)
+    prefix = _profile_prefix(base_key)
+    name = base_key
     kind = _resolve_profile_kind(prefix, dims)
 
     profile: Any
@@ -657,25 +693,28 @@ def _create_profile_def(
                 float(dims["t"]),
                 float(dims["lip"]),
             )
-            if schema == "IFC4":
-                profile = file.create_entity(
-                    "IfcCShapeProfileDef",
-                    ProfileType="AREA",
-                    ProfileName=name,
-                    Depth=float(dims["h"]),
-                    Width=float(dims["b"]),
-                    WallThickness=float(dims["t"]),
-                    Girth=float(dims["lip"]),
-                )
-            else:
-                profile = _arbitrary_profile_def(
-                    file,
-                    name=name,
-                    polygon=cee,
-                )
+            if mirror_profile_y:
+                cee = _mirror_polygon_y(cee)
+            if mirror_profile_x:
+                cee = _mirror_polygon_x(cee)
+            profile = _arbitrary_profile_def(
+                file,
+                name=name,
+                polygon=cee,
+            )
 
         elif kind == "z":
-            if schema == "IFC4":
+            zed = _zed_polygon(
+                float(dims["h"]),
+                float(dims["b"]),
+                float(dims["t"]),
+                float(dims["lip"]),
+            )
+            if mirror_profile_y:
+                zed = _mirror_polygon_y(zed)
+            if mirror_profile_x:
+                zed = _mirror_polygon_x(zed)
+            if schema == "IFC4" and not mirror_profile_x:
                 profile = file.create_entity(
                     "IfcZShapeProfileDef",
                     ProfileType="AREA",
@@ -690,12 +729,7 @@ def _create_profile_def(
                 profile = _arbitrary_profile_def(
                     file,
                     name=name,
-                    polygon=_zed_polygon(
-                        float(dims["h"]),
-                        float(dims["b"]),
-                        float(dims["t"]),
-                        float(dims["lip"]),
-                    ),
+                    polygon=zed,
                 )
 
         elif kind == "l":
@@ -795,15 +829,18 @@ def _purlin_ridge_mirror(entity: dict[str, Any]) -> bool:
     return abs(yaw_mirror) > 90.0
 
 
-def _effective_roll_deg(entity: dict[str, Any]) -> float:
-    """Match viewport roll; ridge mirror is a profile flip, not roll + 180°."""
-    roll, _, _ = _entity_rotation_euler(entity)
+def _girt_geometry_flip_z(entity: dict[str, Any]) -> bool:
+    """Match viewport ``wallGirtGeometryFlipZ`` (Z-flip at 90° roll, not roll + 180°)."""
     entity_id = str(entity.get("id", ""))
+    if "-girt-" not in entity_id and "-gablegirt-" not in entity_id:
+        return False
+    roll, _, _ = _entity_rotation_euler(entity)
+    return abs(roll - 90.0) < 1.0
 
-    if "-girt-" in entity_id or "-gablegirt-" in entity_id:
-        if abs(roll - 90.0) < 1.0:
-            roll += 180.0
 
+def _effective_roll_deg(entity: dict[str, Any]) -> float:
+    """Match viewport roll; profile mirror is a geometry flip, not roll + 180°."""
+    roll, _, _ = _entity_rotation_euler(entity)
     return roll
 
 
@@ -837,12 +874,13 @@ def _create_extruded_body(
     length_mm: float,
     context: Any,
     profile_flip_z: bool = False,
+    solid_origin: tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> Any:
     # Viewport ridge mirror uses geometry.scale(1,1,-1) — flip profile local X in the solid.
     ref_x = -1.0 if profile_flip_z else 1.0
     solid_position = _axis2_placement(
         file,
-        (0.0, 0.0, 0.0),
+        solid_origin,
         (0.0, 0.0, 1.0),
         (ref_x, 0.0, 0.0),
     )
@@ -862,6 +900,33 @@ def _create_extruded_body(
     )
 
 
+def _create_axis_representation(
+    file: ifcopenshell.file,
+    *,
+    length_mm: float,
+    context: Any,
+) -> Any:
+    """
+    Analytical member axis: local line from origin to (0, 0, length).
+    With placement at the global start node and axis along end − start, this
+    maps exactly onto the topology nodes in world space (STRAP / analysis).
+    """
+    polyline = file.create_entity(
+        "IfcPolyline",
+        Points=[
+            _point(file, 0.0, 0.0, 0.0),
+            _point(file, 0.0, 0.0, length_mm),
+        ],
+    )
+    return file.create_entity(
+        "IfcShapeRepresentation",
+        ContextOfItems=context,
+        RepresentationIdentifier="Axis",
+        RepresentationType="Curve3D",
+        Items=[polyline],
+    )
+
+
 def _product_class_name(ifc_type: str, schema: str) -> str:
     key = str(ifc_type or "IfcMember").strip()
     if key == "IfcPlate" and schema == "IFC2X3":
@@ -878,7 +943,7 @@ def _create_product(
     structural_role: str,
     owner_history: Any,
     placement: Any,
-    body: Any,
+    representations: list[Any],
 ) -> Any:
     kwargs: dict[str, Any] = {
         "GlobalId": _new_guid(),
@@ -888,7 +953,7 @@ def _create_product(
         "ObjectPlacement": placement,
         "Representation": file.create_entity(
             "IfcProductDefinitionShape",
-            Representations=[body],
+            Representations=representations,
         ),
     }
     class_name = _product_class_name(ifc_type, schema)
@@ -1135,35 +1200,41 @@ def _create_member_from_entity(
         roll_deg = _effective_roll_deg(entity)
         profile_family = str(entity.get("profile_family", "") or "GENERIC")
         align_offset = _alignment_offset_mm(entity, profile_family)
-        frame = _member_placement_ifc(
-            start,
-            end,
-            roll_deg=roll_deg,
-            align_offset_mm=align_offset,
-        )
+        frame = _strict_member_frame(start, end, roll_deg=roll_deg)
         if frame is None:
             logger.warning("Entity %s: zero or degenerate length — skipped", entity_id)
             return None
 
-        origin, axis_z, axis_x, length_mm = frame
+        start_ifc, axis_z, axis_x, length_mm = frame
+        girt_mirror_x = _girt_geometry_flip_z(entity)
+        girt_mirror_y = _is_girt_entity(entity)
         profile = _create_profile_def(
             file,
             profile_family,
             schema=schema,
             cache=profile_cache,
+            mirror_profile_x=girt_mirror_x,
+            mirror_profile_y=girt_mirror_y,
         )
 
         member_placement = _local_placement(
             file,
-            _axis2_placement(file, origin, axis_z, axis_x),
+            _axis2_placement(file, start_ifc, axis_z, axis_x),
             parent=storey_placement,
         )
+        solid_origin = _solid_seating_offset(align_offset)
         body = _create_extruded_body(
             file,
             profile=profile,
             length_mm=length_mm,
             context=context,
             profile_flip_z=_purlin_ridge_mirror(entity),
+            solid_origin=solid_origin,
+        )
+        axis_rep = _create_axis_representation(
+            file,
+            length_mm=length_mm,
+            context=context,
         )
         product = _create_product(
             file,
@@ -1173,7 +1244,7 @@ def _create_member_from_entity(
             structural_role=str(entity.get("structural_role", "")),
             owner_history=owner_history,
             placement=member_placement,
-            body=body,
+            representations=[body, axis_rep],
         )
         weight_kg = _member_weight_kg(profile_family, length_mm)
         _attach_property_set(

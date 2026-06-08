@@ -92,6 +92,13 @@ class ShedAssemblyConfig(BaseModel):
     base_plate_profile: str | None = Field(
         None, description="Catalog base plate thickness, e.g. PL12 or PL20"
     )
+    truss_chord_profile: str | None = Field(
+        None, description="Truss top + bottom chord, e.g. SHS120x120x6 or IPE200"
+    )
+    truss_web_profile: str | None = Field(
+        None, description="Truss web diagonal, e.g. L60x60x6 or L50x50"
+    )
+    generate_purlins: bool = True
     generate_tie_beams: bool = True
     gable_bracing: bool = False
     roof_bracing: bool = False
@@ -107,6 +114,8 @@ class ShedAssemblyConfig(BaseModel):
         "girt_profile",
         "sag_rod_profile",
         "base_plate_profile",
+        "truss_chord_profile",
+        "truss_web_profile",
     )
     @classmethod
     def validate_profile(cls, value: str | None) -> str | None:

@@ -1,4 +1,4 @@
-"""Parse structural intent from chat prompts and merge into grid definitions."""
+"""Parse structural intent from chat prompts (fallback only — AI tool args win)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ _TRUSS_TYPE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("pratt", re.compile(r"\bpratt\b", re.IGNORECASE)),
 )
 
-_BOOL_FIELDS = (
+_BOOL_FIELDS = frozenset({
     "use_truss",
     "x_bracing",
     "gable_bracing",
@@ -27,17 +27,87 @@ _BOOL_FIELDS = (
     "base_plates",
     "bottom_chord_restraint",
     "generate_wall_girts",
+    "generate_purlins",
     "generate_tie_beams",
+})
+
+# Feature labels users type in engineering specs (order: longer phrases first).
+_FEATURE_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("generate_purlins", ("roof purlin", "purlin", "purlins")),
+    ("generate_wall_girts", ("wall girt", "girts", "girt")),
+    ("roof_bracing", (
+        "roof cross-bracing",
+        "roof cross bracing",
+        "roof x-bracing",
+        "roof x bracing",
+        "roof bracing",
+    )),
+    ("x_bracing", (
+        "wall cross-bracing",
+        "wall cross bracing",
+        "side wall bracing",
+        "long wall bracing",
+        "wall x-bracing",
+        "wall x bracing",
+        "wall bracing",
+        "x-bracing",
+        "x bracing",
+    )),
+    ("gable_bracing", ("gable bracing", "end wall bracing", "gable x-bracing")),
+    ("sag_rods", ("sag rod", "sag rods", "anti-sag")),
+    ("use_truss", ("truss", "trusses")),
+    ("bottom_chord_restraint", ("bottom chord restraint", "bc restraint")),
+    ("base_plates", ("base plate", "base plates")),
+    ("fly_braces", ("fly brace", "fly braces", "flange brace")),
+    ("haunches", ("haunch", "haunches")),
+    ("generate_tie_beams", ("tie beam", "tie beams", "longitudinal tie")),
+)
+
+_DISABLED_RE = re.compile(
+    r"\b(?:disabled|disable|off|no|none|zero|0|do\s+not\s+generate|don't\s+generate|without)\b",
+    re.IGNORECASE,
+)
+_ENABLED_RE = re.compile(
+    r"\b(?:enabled|enable|on|yes|generate|include|with)\b",
+    re.IGNORECASE,
 )
 
 
-def extract_grid_intent_from_text(text: str) -> dict[str, bool | str]:
+def _line_for_match(text: str, start: int) -> str:
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", start)
+    if line_end < 0:
+        line_end = len(text)
+    return text[line_start:line_end]
+
+
+def _feature_tristate_from_text(text: str, aliases: tuple[str, ...]) -> bool | None:
+    """
+    Return True/False when a feature line states ENABLED/DISABLED near an alias.
+    None when the prompt does not clearly mention that feature.
+    """
+    if not text or not text.strip():
+        return None
+
+    lower = text.lower()
+    for alias in aliases:
+        pattern = re.compile(rf"\b{re.escape(alias.lower())}\b", re.IGNORECASE)
+        for match in pattern.finditer(lower):
+            line = _line_for_match(lower, match.start())
+            if _DISABLED_RE.search(line):
+                return False
+            if _ENABLED_RE.search(line):
+                return True
+    return None
+
+
+def extract_grid_intent_from_text(text: str) -> dict[str, bool | str | float]:
     """Best-effort parse of user-requested grid toggles from natural language."""
     if not text or not text.strip():
         return {}
 
     t = text.lower()
-    intent: dict[str, bool | str] = {}
+    intent: dict[str, bool | str | float] = {}
 
     if re.search(
         r"\bmono[\s-]?pitch\b|\bmonopitch\b|single[\s-]slope|\bmono[\s-]shed\b",
@@ -49,10 +119,10 @@ def extract_grid_intent_from_text(text: str) -> dict[str, bool | str]:
     elif re.search(r"\bduo[\s-]?pitch\b|\bduopitch\b|\bgable[\s-]?roof\b", t):
         intent["roof_style"] = "duo_pitch"
 
-    if re.search(r"\btruss(?:es)?\b", t) and not re.search(
-        r"\bno[\s-]?truss|\bwithout[\s-]?truss", t
-    ):
-        intent["use_truss"] = True
+    if re.search(r"\btruss(?:es)?\b", t):
+        state = _feature_tristate_from_text(text, ("truss", "trusses"))
+        if state is not False:
+            intent["use_truss"] = True
 
     for truss_type, pattern in _TRUSS_TYPE_PATTERNS:
         if pattern.search(text):
@@ -60,37 +130,18 @@ def extract_grid_intent_from_text(text: str) -> dict[str, bool | str]:
             intent["truss_type"] = truss_type
             break
 
-    if re.search(r"bottom[\s-]?chord[\s-]?restraint|bc[\s-]?restraint", t):
-        intent["bottom_chord_restraint"] = True
-        intent["use_truss"] = True
+    for field, aliases in _FEATURE_ALIASES:
+        state = _feature_tristate_from_text(text, aliases)
+        if state is not None:
+            intent[field] = state
 
-    if re.search(r"\bsag[\s-]?rod", t):
-        intent["sag_rods"] = True
-
-    if re.search(r"\bbase[\s-]?plate", t):
-        intent["base_plates"] = True
-
-    if re.search(r"\bgirt", t) and not re.search(r"\bno[\s-]?girt", t):
-        intent["generate_wall_girts"] = True
-
-    if re.search(r"\bpurlin", t):
-        pass  # always generated; spacing handled separately
-
-    if re.search(r"roof[\s-]?bracing|bracing[\s-]?in[\s-]?the[\s-]?roof", t):
-        intent["roof_bracing"] = True
-
-    if re.search(r"gable[\s-]?bracing|end[\s-]?wall[\s-]?bracing", t):
-        intent["gable_bracing"] = True
-
-    if re.search(
-        r"side[\s-]?bracing|wall[\s-]?bracing|long[\s-]?wall[\s-]?bracing|x[\s-]?bracing",
-        t,
-    ) or (
-        re.search(r"\bbracing\b", t)
-        and "roof bracing" not in t
-        and "gable bracing" not in t
-    ):
-        intent["x_bracing"] = True
+    # Generic "bracing" when not scoped to roof/gable/wall lines above.
+    if "x_bracing" not in intent and "roof_bracing" not in intent:
+        if re.search(r"\bbracing\b", t) and not re.search(
+            r"roof[\s-]?(?:cross[\s-]?)?bracing|gable[\s-]?bracing|wall[\s-]?(?:cross[\s-]?)?bracing",
+            t,
+        ):
+            intent["x_bracing"] = True
 
     pitch_match = re.search(
         r"(\d+(?:\.\d+)?)\s*(?:°|deg(?:ree)?s?|pitch)",
@@ -105,15 +156,25 @@ def extract_grid_intent_from_text(text: str) -> dict[str, bool | str]:
 
 def merge_grid_intent_into_definition(
     grid_def: GridDefinition,
-    intent: dict[str, bool | str],
+    intent: dict[str, bool | str | float],
+    *,
+    fill_gaps_only: bool = True,
 ) -> GridDefinition:
-    """Apply parsed user intent; explicit prompt wins over AI grid defaults."""
+    """
+    Apply parsed user intent.
+
+    When ``fill_gaps_only`` is True (default), boolean flags from the AI tool
+    are never overwritten — only non-boolean hints (pitch, truss type, roof style)
+    fill missing values.
+    """
     if not intent:
         return grid_def
 
-    updates: dict[str, bool | str] = {}
+    updates: dict[str, bool | str | float] = {}
     for key, value in intent.items():
         if key in _BOOL_FIELDS and isinstance(value, bool):
+            if fill_gaps_only:
+                continue
             updates[key] = value
         elif key == "roof_style" and value in ("duo_pitch", "mono_pitch", "flat"):
             updates[key] = value

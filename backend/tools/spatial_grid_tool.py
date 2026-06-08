@@ -158,6 +158,10 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                                 "frames (only meaningful with trusses)."
                             ),
                         },
+                        "generate_purlins": {
+                            "type": "boolean",
+                            "description": "Longitudinal roof purlins seated on rafters/truss top chord.",
+                        },
                         "generate_wall_girts": {"type": "boolean"},
                         "generate_tie_beams": {"type": "boolean"},
                         "purlin_spacing_mm": {
@@ -204,6 +208,20 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                             "type": ["string", "null"],
                             "description": "Base plate thickness, e.g. PL12 or PL20. null = default PL20.",
                         },
+                        "truss_chord_profile": {
+                            "type": ["string", "null"],
+                            "description": (
+                                "Truss top + bottom chord section, e.g. SHS120x120x6 or IPE200. "
+                                "null = default IPE200."
+                            ),
+                        },
+                        "truss_web_profile": {
+                            "type": ["string", "null"],
+                            "description": (
+                                "Truss web diagonal section, e.g. L60x60x6 or L50x50. "
+                                "null = default L50x50."
+                            ),
+                        },
                     },
                     "required": [
                         "x_spans",
@@ -222,6 +240,7 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                         "fly_braces",
                         "base_plates",
                         "bottom_chord_restraint",
+                        "generate_purlins",
                         "generate_wall_girts",
                         "generate_tie_beams",
                         "purlin_spacing_mm",
@@ -232,6 +251,8 @@ SUBMIT_STRUCTURAL_GRID_LAYOUT_TOOL = {
                         "girt_profile",
                         "sag_rod_profile",
                         "base_plate_profile",
+                        "truss_chord_profile",
+                        "truss_web_profile",
                     ],
                     "additionalProperties": False,
                 },
