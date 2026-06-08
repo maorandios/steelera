@@ -148,7 +148,7 @@ export function extractGridIntentFromText(text: string): GridIntentOverrides {
   for (const [field, aliases] of FEATURE_ALIASES) {
     const state = featureTristateFromText(text, aliases);
     if (state !== undefined) {
-      intent[field] = state;
+      Object.assign(intent, { [field]: state });
     }
   }
 
@@ -203,15 +203,7 @@ export function mergeGridDefinitionWithIntent(
     truss_type: useTruss ? trussType : "none",
   };
 
-  if (!fillGapsOnly) {
-    for (const key of BOOL_FIELDS) {
-      const value = intent[key as keyof GridIntentOverrides];
-      if (typeof value === "boolean") {
-        (merged as Record<string, boolean>)[key] = value;
-      }
-    }
-    return merged;
-  }
+  void fillGapsOnly;
 
   return {
     ...merged,

@@ -2,7 +2,13 @@
 
 import { create } from "zustand";
 
-import { postChat, postGenerateShed, type GenerateShedBody } from "@/lib/api";
+import {
+  postChat,
+  postGenerateShed,
+  postProposeShed,
+  type GenerateShedBody,
+} from "@/lib/api";
+import { gridDefinitionToLayout } from "@/lib/grid-proposal";
 import {
   extractGridIntentFromMessages,
 } from "@/lib/grid-intent";
@@ -34,6 +40,14 @@ import type {
   ShedChecklistPayload,
   ShedChecklistSelections,
 } from "@/types/chat";
+import type { GridDefinition } from "@/types/spatial-grid";
+import type {
+  ShedProposalResult,
+  UiPhase,
+  WizardStep,
+  WizardStep1Data,
+  WizardStep2Data,
+} from "@/types/wizard";
 import type {
   ElementAlignment,
   ElementRotation,
@@ -43,6 +57,23 @@ import { emptyProjectState, normalizeElement } from "@/types/project";
 
 /** Keep API payloads bounded so long chats stay responsive. */
 const API_MESSAGE_WINDOW = 24;
+
+const WELCOME_STEP1 =
+  "Welcome to Steelera. Let's design an optimized, production-ready structure for your project.\n\nWhat will this shed be used for, and what are your target dimensions?";
+
+const DEFAULT_WIZARD_STEP1: WizardStep1Data = {
+  use_case: "",
+  width_mm: 15_000,
+  length_mm: 30_000,
+  height_mm: 6_000,
+};
+
+const DEFAULT_WIZARD_STEP2: WizardStep2Data = {
+  roof_style: "duo_pitch",
+  roof_pitch_deg: 10,
+  exposure: "open",
+  bay_spacing_mm: 6_000,
+};
 
 function projectElementsFingerprint(elements: ProjectElementMm[]): string {
   return elements
@@ -82,6 +113,13 @@ function applyElementsFromApi(
 }
 
 interface ProjectStore {
+  uiPhase: UiPhase;
+  wizardStep: WizardStep;
+  wizardStep1: WizardStep1Data;
+  wizardStep2: WizardStep2Data;
+  proposal: ShedProposalResult | null;
+  proposalDraft: GridDefinition | null;
+  isProposing: boolean;
   messages: ChatMessage[];
   projectElements: ProjectElementMm[];
   shedAssemblyParams: ShedAssemblyParams | null;
@@ -92,6 +130,12 @@ interface ProjectStore {
   isLoading: boolean;
   isMacroLoading: boolean;
   error: string | null;
+  submitWizardStep1: (data: WizardStep1Data) => void;
+  submitWizardStep2: (data: WizardStep2Data) => Promise<void>;
+  wizardBack: (step: WizardStep) => void;
+  updateProposalDraft: (patch: Partial<GridDefinition>) => void;
+  buildFromProposal: () => Promise<void>;
+  completeTransition: () => void;
   sendMessage: (content: string) => Promise<void>;
   confirmShedChecklist: (
     payload: ShedChecklistPayload,
@@ -110,13 +154,14 @@ interface ProjectStore {
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
-  messages: [
-    {
-      role: "assistant",
-      content:
-        "Welcome to Steelera. Describe a portal-frame shed — I'll place members on the spatial grid (axes A,B,… and 1,2,…) and resolve them to 3D. Example: “Build 10×30 m duo shed, 4 m eave, 10° pitch, Pratt truss in bay 1.”",
-    },
-  ],
+  uiPhase: "onboarding",
+  wizardStep: 1,
+  wizardStep1: { ...DEFAULT_WIZARD_STEP1 },
+  wizardStep2: { ...DEFAULT_WIZARD_STEP2 },
+  proposal: null,
+  proposalDraft: null,
+  isProposing: false,
+  messages: [{ role: "assistant", content: WELCOME_STEP1 }],
   projectElements: emptyProjectState().projectElements,
   shedAssemblyParams: null,
   structuralGrid: { ...DEFAULT_STRUCTURAL_GRID },
@@ -126,6 +171,115 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   isLoading: false,
   isMacroLoading: false,
   error: null,
+
+  submitWizardStep1: (data) => {
+    const useLabel = data.use_case.trim() || "your project";
+    set({
+      wizardStep1: data,
+      wizardStep: 2,
+      messages: [
+        ...get().messages,
+        {
+          role: "user",
+          content: `${useLabel} · ${data.width_mm / 1000}×${data.length_mm / 1000}×${data.height_mm / 1000} m`,
+        },
+        {
+          role: "assistant",
+          content: `Got it. A ${useLabel} at ${(data.width_mm / 1000).toFixed(1)}×${(data.length_mm / 1000).toFixed(1)} m needs clean internal clearance.\n\nWhat roof line do you prefer, and how exposed is the site?`,
+        },
+      ],
+    });
+  },
+
+  submitWizardStep2: async (data) => {
+    const step1 = get().wizardStep1;
+    set({ wizardStep2: data, isProposing: true, error: null });
+    try {
+      const result = await postProposeShed({
+        use_case: step1.use_case,
+        width_mm: step1.width_mm,
+        length_mm: step1.length_mm,
+        height_mm: step1.height_mm,
+        roof_style: data.roof_style,
+        roof_pitch_deg: data.roof_pitch_deg,
+        exposure: data.exposure,
+        bay_spacing_mm: data.bay_spacing_mm,
+      });
+      const rationaleText = result.rationale.map((r) => `• ${r}`).join("\n");
+      set({
+        proposal: result,
+        proposalDraft: { ...result.grid_definition },
+        wizardStep: 3,
+        isProposing: false,
+        messages: [
+          ...get().messages,
+          {
+            role: "user",
+            content: `${data.roof_style.replace("_", " ")} · ${data.exposure} exposure · ${data.bay_spacing_mm ? `${data.bay_spacing_mm / 1000} m bays` : "auto bays"}`,
+          },
+          {
+            role: "assistant",
+            content: `Here's my engineering proposal for ${result.summary}:\n\n${rationaleText}\n\nReview the configuration below, adjust anything you like, then build when ready.`,
+          },
+        ],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to compute proposal";
+      set({ isProposing: false, error: message });
+      throw err;
+    }
+  },
+
+  wizardBack: (step) => {
+    set({ wizardStep: step, error: null });
+  },
+
+  updateProposalDraft: (patch) => {
+    const draft = get().proposalDraft;
+    if (!draft) return;
+    set({ proposalDraft: { ...draft, ...patch } });
+  },
+
+  buildFromProposal: async () => {
+    const draft = get().proposalDraft;
+    if (!draft) {
+      throw new Error("No proposal to build");
+    }
+    set({
+      uiPhase: "transition",
+      statuses: ["Generating structural model…"],
+      messages: [
+        ...get().messages,
+        {
+          role: "assistant",
+          content:
+            "Building your structure now — the 3D model will appear momentarily.",
+        },
+      ],
+    });
+    try {
+      await get().generateShedMacro(gridDefinitionToLayout(draft));
+    } catch {
+      set({ uiPhase: "onboarding", wizardStep: 3, statuses: [] });
+      throw new Error("Build failed — check the backend on port 8000.");
+    }
+  },
+
+  completeTransition: () => {
+    set({
+      uiPhase: "workspace",
+      statuses: [],
+      messages: [
+        ...get().messages,
+        {
+          role: "assistant",
+          content:
+            "Your structure is ready in the workspace. Select members in the viewport, refine in the side panels, or ask me to modify the design.",
+        },
+      ],
+    });
+  },
 
   setProjectElements: (elements) =>
     set({
@@ -352,7 +506,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       let elements = priorElements;
       let nextShedParams = get().shedAssemblyParams;
 
-      if (gridLayoutRaw) {
+      if (gridLayoutRaw && get().uiPhase === "workspace") {
         set({ statuses: ["Resolving structural members on spatial grid..."] });
         await get().generateShedMacro(
           gridLayoutRaw as StructuralGridLayout | ShedAssemblyConfig,

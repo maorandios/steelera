@@ -398,6 +398,7 @@ export function parseShedFormValues(
       height: h,
       roof_pitch_deg,
       roof_style: form.roofStyle,
+      mono_high_side: DEFAULT_SHED_PARAMS.mono_high_side,
       purlin_spacing: purlin,
       girt_spacing_mm: girt,
       use_truss: form.useTruss,

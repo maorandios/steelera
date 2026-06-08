@@ -50,6 +50,8 @@ export interface GridDefinition {
   generate_purlins?: boolean;
   generate_wall_girts?: boolean;
   generate_tie_beams?: boolean;
+  purlin_spacing_mm?: number;
+  girt_spacing_mm?: number;
   column_profile?: string | null;
   bracing_profile?: string | null;
   purlin_profile?: string | null;

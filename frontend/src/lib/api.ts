@@ -1,4 +1,8 @@
 import type { ChatMessage, ChatResponse } from "@/types/chat";
+import type {
+  ShedProposalRequest,
+  ShedProposalResult,
+} from "@/types/wizard";
 import type { GenerateShedResponse } from "@/types/macro";
 import type { ShedAssemblyConfig } from "@/types/shed-config";
 import type { StructuralGridLayout } from "@/types/spatial-grid";
@@ -70,6 +74,21 @@ export async function postChat(
 const MACRO_TIMEOUT_MS = 60_000;
 
 export type GenerateShedBody = ShedAssemblyConfig | StructuralGridLayout;
+
+export async function postProposeShed(
+  body: ShedProposalRequest,
+): Promise<ShedProposalResult> {
+  const res = await fetch(`${apiBaseUrl()}/api/macro/propose-shed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `Proposal failed (${res.status})`);
+  }
+  return res.json() as Promise<ShedProposalResult>;
+}
 
 export async function postGenerateShed(
   body: GenerateShedBody,

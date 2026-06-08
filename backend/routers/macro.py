@@ -27,6 +27,8 @@ from schemas.macro import GenerateShedRequest, GenerateShedResponse
 from schemas.shed_assembly_config import ShedAssemblyConfig
 
 from core.shed_grid_bridge import grid_definition_from_shed_config
+from core.shed_proposal import propose_shed_configuration
+from schemas.proposal import ShedProposalRequest, ShedProposalResponse
 from schemas.spatial_grid import StructuralGridLayout
 
 
@@ -232,5 +234,14 @@ async def generate_shed(request: Request) -> GenerateShedResponse:
         structural_topology=topology,
 
     )
+
+
+@router.post("/propose-shed", response_model=ShedProposalResponse)
+async def propose_shed(request: ShedProposalRequest) -> ShedProposalResponse:
+    """Deterministic engineering proposal from onboarding wizard inputs."""
+    try:
+        return propose_shed_configuration(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
