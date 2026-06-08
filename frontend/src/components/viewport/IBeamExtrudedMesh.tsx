@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 import { memberLengthM } from "@/lib/coordinates";
 import { isFiniteNumber } from "@/lib/elementValidation";
+import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { createMemberLocalIBeamGeometry } from "@/lib/iSectionShape";
 import type { ProjectElementMm, SectionDimensionsMm } from "@/types/project";
 
@@ -36,7 +37,7 @@ export function IBeamExtrudedMesh({
 
   return (
     <mesh geometry={geometry}>
-      <meshStandardMaterial color={color} metalness={0.4} roughness={0.45} />
+      <SteelMeshMaterial color={color} />
     </mesh>
   );
 }

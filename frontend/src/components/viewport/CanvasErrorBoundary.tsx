@@ -2,6 +2,8 @@
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { viewportTheme } from "@/lib/viewport-theme";
+
 type CanvasErrorBoundaryProps = {
   children: ReactNode;
   onReset: () => void;
@@ -40,8 +42,11 @@ export class CanvasErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 text-center">
-          <p className="text-sm font-medium text-foreground">
+        <div
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 px-6 text-center"
+          style={{ background: viewportTheme.canvas.overlay }}
+        >
+          <p className="text-sm font-medium text-slate-900">
             3D view stopped responding
           </p>
           <p className="max-w-sm text-xs text-muted-foreground">

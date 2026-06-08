@@ -1,7 +1,6 @@
 "use client";
 
 import { Edges } from "@react-three/drei";
-import type { ThreeEvent } from "@react-three/fiber";
 import { useMemo, type ReactNode } from "react";
 
 import {
@@ -14,6 +13,8 @@ import {
 } from "@/lib/coordinates";
 import { isElementRenderable } from "@/lib/elementValidation";
 import { hasNodeDrivenFrame, memberNodeFrame } from "@/lib/memberFrame";
+import { VIEWPORT_PICK_ROLE } from "@/lib/viewport-pick";
+import { viewportTheme } from "@/lib/viewport-theme";
 import { useProjectStore } from "@/store/project-store";
 import type { ProjectElementMm } from "@/types/project";
 
@@ -21,6 +22,11 @@ interface ElementMeshGroupProps {
   element: ProjectElementMm;
   children: ReactNode;
 }
+
+const memberPickUserData = (elementId: string) => ({
+  elementId,
+  viewportPickRole: VIEWPORT_PICK_ROLE.ELEMENT,
+});
 
 /**
  * Node-driven frame (preferred): center + quaternion from start→end nodes.
@@ -32,7 +38,6 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
   }
 
   const selectedElementId = useProjectStore((state) => state.selectedElementId);
-  const selectElement = useProjectStore((state) => state.selectElement);
   const isSelected = selectedElementId === element.id;
 
   const nodeFrame = useMemo(
@@ -64,25 +69,27 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
     return null;
   }
 
-  const handleClick = (event: ThreeEvent<MouseEvent>) => {
-    event.stopPropagation();
-    selectElement(element.id);
-  };
+  const pickMesh = (position: [number, number, number]) => (
+    <mesh position={position} userData={memberPickUserData(element.id)}>
+      <boxGeometry args={[lengthM, height, width]} />
+      <meshBasicMaterial visible={false} />
+      {isSelected && (
+        <Edges color={viewportTheme.selection.edge} threshold={15} />
+      )}
+    </mesh>
+  );
 
   if (nodeFrame) {
     return (
-      <group position={nodeFrame.centerM} onClick={handleClick}>
+      <group
+        position={nodeFrame.centerM}
+        userData={memberPickUserData(element.id)}
+      >
         <group quaternion={nodeFrame.quaternion}>
           <group position={nodeFrame.alignOffsetM}>
             <group rotation={[userRotation, 0, 0]}>
               {children}
-              {isSelected && (
-                <mesh position={selectBoxPos}>
-                  <boxGeometry args={[lengthM, height, width]} />
-                  <meshBasicMaterial visible={false} />
-                  <Edges color="#38bdf8" threshold={15} />
-                </mesh>
-              )}
+              {pickMesh(selectBoxPos)}
             </group>
           </group>
         </group>
@@ -93,21 +100,20 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
   if (!legacy) return null;
 
   const [originX, originY, originZ] = legacy.origin;
+  const legacyPickPos: [number, number, number] =
+    element.shape_type === "Haunch" ? selectBoxPos : [lengthM / 2, 0, 0];
 
   return (
-    <group position={[originX, originY, originZ]} onClick={handleClick}>
+    <group
+      position={[originX, originY, originZ]}
+      userData={memberPickUserData(element.id)}
+    >
       <group rotation={legacy.axisRotation}>
         <group rotation={legacy.macroEuler}>
           <group position={legacy.alignOffset}>
             <group rotation={[legacy.userRotation, 0, 0]}>
               {children}
-              {isSelected && (
-                <mesh position={[lengthM / 2, 0, 0]}>
-                  <boxGeometry args={[lengthM, height, width]} />
-                  <meshBasicMaterial visible={false} />
-                  <Edges color="#38bdf8" threshold={15} />
-                </mesh>
-              )}
+              {pickMesh(legacyPickPos)}
             </group>
           </group>
         </group>

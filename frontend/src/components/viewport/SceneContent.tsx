@@ -1,12 +1,16 @@
 "use client";
 
-import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
+import { Environment, PerspectiveCamera } from "@react-three/drei";
 import { useMemo } from "react";
 
+import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { StructuralGrid } from "@/components/viewport/StructuralGrid";
 import { StructuralElementMesh } from "@/components/viewport/StructuralElementMesh";
+import { ViewportOrbitControls } from "@/components/viewport/ViewportOrbitControls";
+import { ViewportPointerPicker } from "@/components/viewport/ViewportPointerPicker";
 import { sceneStructuralBounds } from "@/lib/coordinates";
 import { filterRenderableElements } from "@/lib/elementValidation";
+import { viewportTheme } from "@/lib/viewport-theme";
 import { useProjectStore } from "@/store/project-store";
 import type { ProjectElementMm } from "@/types/project";
 
@@ -15,13 +19,17 @@ interface SceneContentProps {
 }
 
 export function SceneContent({ projectElements }: SceneContentProps) {
-  const clearSelection = useProjectStore((state) => state.clearSelection);
   const structuralGrid = useProjectStore((state) => state.structuralGrid);
+  const { lighting, environment, placeholder, performance } = viewportTheme;
 
   const renderableElements = useMemo(
     () => filterRenderableElements(projectElements),
     [projectElements],
   );
+
+  const useHdrEnvironment =
+    performance.enableEnvironment &&
+    renderableElements.length <= performance.environmentMaxElements;
 
   const { center, size, minX, maxX, minZ, maxZ } = useMemo(() => {
     const bounds = sceneStructuralBounds(renderableElements);
@@ -51,8 +59,25 @@ export function SceneContent({ projectElements }: SceneContentProps) {
         ]}
         fov={45}
       />
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[15, 20, 10]} intensity={1} />
+      {useHdrEnvironment && (
+        <Environment
+          preset={environment.preset}
+          environmentIntensity={environment.intensity}
+        />
+      )}
+      <hemisphereLight args={["#f8fafc", "#cbd5e1", 0.55]} />
+      <ambientLight intensity={lighting.ambient} />
+      <directionalLight
+        position={lighting.directionalPosition}
+        intensity={lighting.directional}
+        castShadow={performance.enableShadows}
+      />
+      {lighting.fill > 0 && (
+        <directionalLight
+          position={lighting.fillPosition}
+          intensity={lighting.fill}
+        />
+      )}
       <StructuralGrid
         xCoordsMm={structuralGrid.xCoordsMm}
         zCoordsMm={structuralGrid.zCoordsMm}
@@ -60,7 +85,6 @@ export function SceneContent({ projectElements }: SceneContentProps) {
         extentMaxX={maxX}
         extentMinZ={minZ}
         extentMaxZ={maxZ}
-        onBackgroundClick={() => clearSelection()}
       />
       {renderableElements.map((element) => (
         <StructuralElementMesh key={element.id} element={element} />
@@ -68,10 +92,11 @@ export function SceneContent({ projectElements }: SceneContentProps) {
       {renderableElements.length === 0 && (
         <mesh position={[0, 0, 0]}>
           <boxGeometry args={[1, 0.05, 1]} />
-          <meshStandardMaterial color="#27272a" transparent opacity={0.4} />
+          <SteelMeshMaterial color={placeholder} transparent opacity={0.55} />
         </mesh>
       )}
-      <OrbitControls target={center} enablePan enableZoom />
+      <ViewportPointerPicker />
+      <ViewportOrbitControls defaultTarget={center} />
     </>
   );
 }

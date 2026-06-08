@@ -125,13 +125,14 @@ layout = StructuralGridLayout(grid_definition=gd_scissor, structural_members=mem
 macro = layout_to_macro_members(layout)
 bcties = [m for m in macro if "bctie" in str(m.get("id", ""))]
 assert bcties, "no bottom-chord restraint ties"
+eave_y = float(gd_scissor.height_mm)
 for m in bcties:
     y = m["nodes"]["start"][1]
-    assert y > 5200.0, (m["id"], y)
+    assert y > eave_y + 50.0, (m["id"], y)
 roof_braces = [m for m in macro if "brace-roof-s" in str(m.get("id", ""))]
 assert len(roof_braces) == 0, ("truss end bays should not get rafter-style roof X", len(roof_braces))
 
-# Scissor shed: no fly braces / gable X-bracing on truss frames; girts bay-sized.
+# Scissor shed: no fly braces / gable X-bracing on truss frames; gable girts full width.
 gd_scissor_full = GridDefinition(
     x_spans=[12000],
     z_spans=[5000, 5000, 5000],
@@ -157,9 +158,13 @@ assert not [m for m in macro_full if "-brace-A-" in m.get("id", "")], "side-wall
 assert not [m for m in macro_full if "brace-roof-s" in m.get("id", "")], "roof X on truss bays"
 gable_girts = [m for m in macro_full if "gablegirt" in str(m.get("id", ""))]
 assert gable_girts, "no gable girts"
-assert all(abs(m["nodes"]["start"][0] - m["nodes"]["end"][0]) < 7000 for m in gable_girts), (
-    "full-width gable girt",
-    max(abs(m["nodes"]["start"][0] - m["nodes"]["end"][0]) for m in gable_girts),
+span_x = float(gd_scissor_full.x_spans[0])
+assert all(
+    abs(abs(m["nodes"]["start"][0] - m["nodes"]["end"][0]) - span_x) < 100.0
+    for m in gable_girts
+), (
+    "gable girt should span full building width",
+    [abs(m["nodes"]["start"][0] - m["nodes"]["end"][0]) for m in gable_girts],
 )
 
 # Stale AI/hand members with bracing must not survive truss catalog resolution.
@@ -505,24 +510,82 @@ for w in _wing_struts:
         wing_deg = math.degrees(math.atan2(dy, dx))
         assert 20.0 <= wing_deg <= 70.0, (w["id"], wing_deg)
 
-# Scissor (and all apex types) must get the same explicit portal end posts as Pratt.
-from core.engineering_rules import scissor_truss_web_plan
+# Scissor: central vertical, purlin-aligned panels, heels at column top.
+from core.engineering_rules import (
+    scissor_centre_web_pairs,
+    scissor_outer_web_pairs,
+    scissor_truss_web_plan,
+)
+from core.grid_member_catalog import _scissor_panel_layout, _purlin_placement_refs
+from core.spatial_grid import StructuralGridEngine
 
-_scissor_plan = scissor_truss_web_plan(4, 2)
-assert len(_scissor_plan) == 4, len(_scissor_plan)
-assert scissor_truss_web_plan(4, 2) == truss_web_plan("scissor", 4, 2)
-assert (("bottom", 1), ("top", 2)) in _scissor_plan
-assert (("bottom", 3), ("top", 2)) in _scissor_plan
-assert (("bottom", 1), ("top", 3)) in _scissor_plan
-assert (("bottom", 3), ("top", 1)) in _scissor_plan
+_scissor_plan = scissor_truss_web_plan(8, 4)
+assert scissor_truss_web_plan(8, 4) == truss_web_plan("scissor", 8, 4)
+assert (("top", 4), ("bottom", 4)) in _scissor_plan, "missing king post"
+assert (("bottom", 4), ("top", 3)) in _scissor_plan, "missing left centre diagonal"
+assert (("bottom", 4), ("top", 5)) in _scissor_plan, "missing right centre diagonal"
+assert (("bottom", 0), ("top", 1)) in _scissor_plan
+assert (("bottom", 6), ("top", 5)) in _scissor_plan
+assert (("bottom", 2), ("top", 3)) in _scissor_plan, "left outer stops at bottom(2)→top(3)"
+assert (("bottom", 5), ("top", 4)) not in _scissor_plan, "right outer must not touch TC apex"
+assert (("bottom", 3), ("top", 4)) not in scissor_outer_web_pairs(8, 4)
+assert (("bottom", 6), ("top", 5)) in scissor_outer_web_pairs(8, 4)
+assert scissor_centre_web_pairs(4) == [
+    (("top", 4), ("bottom", 4)),
+    (("bottom", 4), ("top", 3)),
+    (("bottom", 4), ("top", 5)),
+]
 _, scissor_macro = _build("duo_pitch", 18.0, "scissor")
+_gd_scissor = GridDefinition(
+    x_spans=[12000],
+    z_spans=[5000, 5000, 5000],
+    height_mm=4000,
+    roof_pitch_deg=18.0,
+    roof_style="duo_pitch",
+    use_truss=True,
+    truss_type="scissor",
+)
+_grid_scissor = StructuralGridEngine.from_definition(_gd_scissor)
+_xlabels, _ridge_i, _case, _x_offsets = _scissor_panel_layout(_grid_scissor)
+_purlin_xs = {
+    round(
+        _grid_scissor.resolve_x_mm(xa)
+        + float(off.get("x", 0)),
+        0,
+    )
+    for xa, off in _purlin_placement_refs(_grid_scissor, _gd_scissor.purlin_spacing_mm)
+}
+_panel_xs = {
+    round(
+        _grid_scissor.resolve_x_mm(xl) + float(off.get("x", 0)),
+        0,
+    )
+    for xl, off in zip(_xlabels, _x_offsets)
+}
+assert _purlin_xs.issubset(_panel_xs), (
+    "scissor panel nodes must include every purlin seat",
+    sorted(_purlin_xs - _panel_xs),
+)
 _scissor_webs = [
     m
     for m in scissor_macro
     if m.get("element_type") == "truss_web"
     and m["id"].startswith("shed_1-truss-web-1-")
 ]
-assert len(_scissor_webs) == 4, ("scissor needs 4 triangulation webs", len(_scissor_webs))
+assert len(_scissor_webs) >= 4, ("scissor needs triangulation webs", len(_scissor_webs))
+_vertical_webs = [
+    m
+    for m in _scissor_webs
+    if abs(m["nodes"]["start"][0] - m["nodes"]["end"][0]) < 1.0
+    and abs(m["nodes"]["start"][1] - m["nodes"]["end"][1]) > 200.0
+]
+assert len(_vertical_webs) == 1, (
+    "centre must have exactly one king post vertical",
+    len(_vertical_webs),
+)
+_central_web = _vertical_webs[0]
+_ridge_x = _grid_scissor.roof.ridge_x
+assert abs(_central_web["nodes"]["start"][0] - _ridge_x) < 2.0, _central_web
 for w in _scissor_webs:
     assert w["profile"] == "L50x50", w
 _scissor_tc = [m for m in scissor_macro if m["id"].startswith("shed_1-truss-tc-1-")]
@@ -551,19 +614,19 @@ else:
 assert tc_pitch > 5.0, tc_pitch
 assert bc_pitch > 2.0, bc_pitch
 assert abs(bc_pitch - tc_pitch * 0.5) < 3.0, (bc_pitch, tc_pitch)
+_eave_y = 4000.0
+_tc_heel = next(m for m in scissor_macro if m["id"] == "shed_1-truss-tc-1-0")[
+    "nodes"
+]["start"][1]
+_bc_heel = next(m for m in scissor_macro if m["id"] == "shed_1-truss-bc-1-0")[
+    "nodes"
+]["start"][1]
+assert abs(_tc_heel - _eave_y) < 2.0, ("TC heel must sit at column top", _tc_heel)
+assert abs(_bc_heel - _eave_y) < 2.0, ("BC heel must sit at column top", _bc_heel)
 _bc_center_y = next(m for m in scissor_macro if m["id"] == "shed_1-truss-bc-1-0")[
     "nodes"
 ]["end"][1]
-_bc_heel_y = next(m for m in scissor_macro if m["id"] == "shed_1-truss-bc-1-0")[
-    "nodes"
-]["start"][1]
-assert _bc_center_y > _bc_heel_y + 200, (_bc_center_y, _bc_heel_y)
-
-scissor_posts = _portal_end_posts(scissor_macro, "shed_1-truss-web-1-")
-assert len(scissor_posts) >= 2, ("scissor end posts", len(scissor_posts))
-assert next(m for m in scissor_macro if m["id"] == "shed_1-truss-post-1-0")[
-    "element_type"
-] == "truss_chord"
+assert _bc_center_y > _bc_heel + 200, (_bc_center_y, _bc_heel)
 
 print("PASS: truss types")
 print(f"  duo types verified: {', '.join(DUO_TYPES)}")

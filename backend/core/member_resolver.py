@@ -12,6 +12,7 @@ from core.engineering_rules import (
     max_column_outside_half_on_x_line,
     max_column_outside_half_on_z_line,
     profile_column_outside_half_mm,
+    purlin_center_on_rafter,
     purlin_ridge_mirror_flag,
     purlin_roll_deg,
     rafter_pitch_at_x,
@@ -204,6 +205,8 @@ def _place_secondary_steel(
     column_profile: str,
     column_profiles: dict[tuple[str, str], str],
     truss_chord_profile: str = _RAFTER_PROFILE,
+    girt_profile: str = "C150x2",
+    purlin_profile: str = "C150x2",
     use_truss: bool = False,
 ) -> tuple[tuple[float, float, float], tuple[float, float, float], list[float], str]:
     """Seat girts/purlins outside primary steel, perpendicular to the support."""
@@ -211,7 +214,7 @@ def _place_secondary_steel(
     et = member.element_type
     profile = member.profile
 
-    # Vertical sag rods belong to a WALL (they tie girts); seat them on the girt plane.
+    # Vertical wall sag rods pierce girts at the girt centroid (not the rod profile).
     if et == "sag_rod":
         dx = abs(end[0] - start[0])
         dy = abs(end[1] - start[1])
@@ -225,13 +228,13 @@ def _place_secondary_steel(
                     start[0],
                     grid.total_width_mm,
                     col_outside_half_mm=col_half,
-                    girt_profile=profile,
+                    girt_profile=girt_profile,
                 )
                 return (
                     (x_out, start[1], start[2]),
                     (x_out, end[1], end[2]),
                     [0.0, 0.0, 0.0],
-                    member.alignment,
+                    "center",
                 )
             col_half = _column_outside_half_on_z_wall(
                 grid, start[2], column_profiles, column_profile
@@ -240,18 +243,18 @@ def _place_secondary_steel(
                 start[2],
                 grid.total_length_mm,
                 col_outside_half_mm=col_half,
-                girt_profile=profile,
+                girt_profile=girt_profile,
             )
             return (
                 (start[0], start[1], z_out),
                 (end[0], end[1], z_out),
                 [0.0, 0.0, 0.0],
-                member.alignment,
+                "center",
             )
 
     if et in ("purlin", "sag_rod"):
         support_profile = truss_chord_profile if use_truss else _RAFTER_PROFILE
-        if use_truss and et == "purlin":
+        if use_truss and et in ("purlin", "sag_rod"):
             from core.grid_member_catalog import truss_pitch_at_x, truss_top_chord_y_at_x
 
             truss_type = _truss_type_from_grid(grid)
@@ -268,26 +271,42 @@ def _place_secondary_steel(
             )
             pitch_start = truss_pitch_at_x(grid, start[0], truss_type=truss_type)
             pitch_end = truss_pitch_at_x(grid, end[0], truss_type=truss_type)
-            new_start = seat_purlin_bottom_on_rafter(
+            if et == "purlin":
+                new_start = seat_purlin_bottom_on_rafter(
+                    *start,
+                    rafter_profile=support_profile,
+                    pitch_rad=pitch_start[0],
+                    pitch_sign=pitch_start[1],
+                )
+                new_end = seat_purlin_bottom_on_rafter(
+                    *end,
+                    rafter_profile=support_profile,
+                    pitch_rad=pitch_end[0],
+                    pitch_sign=pitch_end[1],
+                )
+                roll = purlin_roll_deg(pitch_start[0], pitch_start[1])
+                mirror = purlin_ridge_mirror_flag(
+                    start[0],
+                    ridge_x_mm=roof.ridge_x,
+                    is_flat=roof.is_flat,
+                    is_mono=roof.is_mono,
+                )
+                return new_start, new_end, [roll, mirror, 0.0], "bottom"
+            new_start = purlin_center_on_rafter(
                 *start,
+                purlin_profile=purlin_profile,
                 rafter_profile=support_profile,
                 pitch_rad=pitch_start[0],
                 pitch_sign=pitch_start[1],
             )
-            new_end = seat_purlin_bottom_on_rafter(
+            new_end = purlin_center_on_rafter(
                 *end,
+                purlin_profile=purlin_profile,
                 rafter_profile=support_profile,
                 pitch_rad=pitch_end[0],
                 pitch_sign=pitch_end[1],
             )
-            roll = purlin_roll_deg(pitch_start[0], pitch_start[1])
-            mirror = purlin_ridge_mirror_flag(
-                start[0],
-                ridge_x_mm=roof.ridge_x,
-                is_flat=roof.is_flat,
-                is_mono=roof.is_mono,
-            )
-            return new_start, new_end, [roll, mirror, 0.0], "bottom"
+            return new_start, new_end, [0.0, 0.0, 0.0], "center"
 
         pitch_rad, pitch_sign = rafter_pitch_at_x(
             start[0],
@@ -298,19 +317,19 @@ def _place_secondary_steel(
             is_flat=roof.is_flat,
             is_mono=roof.is_mono,
         )
-        new_start = seat_purlin_bottom_on_rafter(
-            *start,
-            rafter_profile=support_profile,
-            pitch_rad=pitch_rad,
-            pitch_sign=pitch_sign,
-        )
-        new_end = seat_purlin_bottom_on_rafter(
-            *end,
-            rafter_profile=support_profile,
-            pitch_rad=pitch_rad,
-            pitch_sign=pitch_sign,
-        )
         if et == "purlin":
+            new_start = seat_purlin_bottom_on_rafter(
+                *start,
+                rafter_profile=support_profile,
+                pitch_rad=pitch_rad,
+                pitch_sign=pitch_sign,
+            )
+            new_end = seat_purlin_bottom_on_rafter(
+                *end,
+                rafter_profile=support_profile,
+                pitch_rad=pitch_rad,
+                pitch_sign=pitch_sign,
+            )
             roll = purlin_roll_deg(pitch_rad, pitch_sign)
             mirror = purlin_ridge_mirror_flag(
                 start[0],
@@ -319,7 +338,21 @@ def _place_secondary_steel(
                 is_mono=roof.is_mono,
             )
             return new_start, new_end, [roll, mirror, 0.0], "bottom"
-        return new_start, new_end, [0.0, 0.0, 0.0], "bottom"
+        new_start = purlin_center_on_rafter(
+            *start,
+            purlin_profile=purlin_profile,
+            rafter_profile=support_profile,
+            pitch_rad=pitch_rad,
+            pitch_sign=pitch_sign,
+        )
+        new_end = purlin_center_on_rafter(
+            *end,
+            purlin_profile=purlin_profile,
+            rafter_profile=support_profile,
+            pitch_rad=pitch_rad,
+            pitch_sign=pitch_sign,
+        )
+        return new_start, new_end, [0.0, 0.0, 0.0], "center"
 
     if et == "haunch":
 
@@ -436,6 +469,8 @@ def member_from_grid_nodes(
     column_profile: str = _COLUMN_PROFILE,
     column_profiles: dict[tuple[str, str], str] | None = None,
     truss_chord_profile: str = _RAFTER_PROFILE,
+    girt_profile: str = "C150x2",
+    purlin_profile: str = "C150x2",
     use_truss: bool = False,
 ) -> dict[str, Any] | None:
     profile = member.profile
@@ -466,6 +501,8 @@ def member_from_grid_nodes(
             column_profile=column_profile,
             column_profiles=column_profiles or {},
             truss_chord_profile=truss_chord_profile,
+            girt_profile=girt_profile,
+            purlin_profile=purlin_profile,
             use_truss=use_truss,
         )
 
@@ -513,6 +550,8 @@ def resolve_structural_members(
     assembly_id: str,
     column_profile: str | None = None,
     truss_chord_profile: str | None = None,
+    girt_profile: str | None = None,
+    purlin_profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Iterate uniform BOM; resolve grid references → absolute mm macro members.
 
@@ -526,6 +565,14 @@ def resolve_structural_members(
     resolved_truss_chord = truss_chord_profile or next(
         (m.profile for m in members if m.element_type == "truss_chord"),
         _RAFTER_PROFILE,
+    )
+    resolved_girt = girt_profile or next(
+        (m.profile for m in members if m.element_type == "wall_girt"),
+        _PROFILE_DEFAULTS["wall_girt"][0],
+    )
+    resolved_purlin = purlin_profile or next(
+        (m.profile for m in members if m.element_type == "purlin"),
+        _PROFILE_DEFAULTS["purlin"][0],
     )
     use_truss = any(m.element_type == "truss_chord" for m in members)
     column_profiles = _column_profile_index(members)
@@ -543,6 +590,8 @@ def resolve_structural_members(
             column_profile=resolved_column,
             column_profiles=column_profiles,
             truss_chord_profile=resolved_truss_chord,
+            girt_profile=resolved_girt,
+            purlin_profile=resolved_purlin,
             use_truss=use_truss,
         )
         if built is None:
@@ -564,11 +613,15 @@ def layout_to_macro_members(layout: StructuralGridLayout) -> list[dict[str, Any]
     grid = StructuralGridEngine.from_definition(layout.grid_definition)
     gd = layout.grid_definition
     column_profile = getattr(gd, "column_profile", None)
+    girt_profile = getattr(gd, "girt_profile", None)
+    purlin_profile = getattr(gd, "purlin_profile", None)
     return resolve_structural_members(
         grid,
         layout.structural_members,
         assembly_id=layout.assembly_id,
         column_profile=column_profile,
+        girt_profile=girt_profile,
+        purlin_profile=purlin_profile,
     )
 
 

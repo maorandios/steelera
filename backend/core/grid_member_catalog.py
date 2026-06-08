@@ -42,6 +42,28 @@ def _ref(
     return GridNodeReference(x_axis=x, z_axis=z, elevation=elev, offset_mm=offset or {})
 
 
+def _panel_offsets(count: int) -> list[dict[str, float]]:
+    return [{} for _ in range(count)]
+
+
+def _panel_x_mm(
+    grid: StructuralGridEngine,
+    xlabels: list[str],
+    x_offsets: list[dict[str, float]],
+    i: int,
+) -> float:
+    off = x_offsets[i] if i < len(x_offsets) else {}
+    return grid.resolve_x_mm(xlabels[i]) + float(off.get("x", 0))
+
+
+def _merge_node_offset(
+    base: dict[str, float] | None, extra: dict[str, float]
+) -> dict[str, float] | None:
+    merged = dict(base or {})
+    merged.update(extra)
+    return merged or None
+
+
 def _roof_elev_at(grid: StructuralGridEngine, x_mm: float) -> float:
     return roof_elevation_at_x(x_mm, grid.roof, grid.total_width_mm)
 
@@ -307,7 +329,7 @@ def _rafters(
 
 def _truss_panel_layout(
     grid: StructuralGridEngine, ridge_label: str | None, truss_type: str
-) -> tuple[list[str], int | None, str]:
+) -> tuple[list[str], int | None, str, list[dict[str, float]]]:
     """Panel-node X references + apex index + profile case for a truss frame.
 
     case is ``symmetric`` (duo, apex inside), ``mono`` (single slope) or
@@ -359,7 +381,8 @@ def _truss_panel_layout(
             ]
             + [right]
         )
-        return left_xs + right_xs, half, "symmetric"
+        xs = left_xs + right_xs
+        return xs, half, "symmetric", _panel_offsets(len(xs))
 
     if not grid.roof.is_flat:
         rise = abs(_roof_elev_at(grid, right_x) - _roof_elev_at(grid, left_x))
@@ -375,7 +398,7 @@ def _truss_panel_layout(
             + [right]
         )
         high_left = _roof_elev_at(grid, left_x) >= _roof_elev_at(grid, right_x)
-        return xs, (0 if high_left else n), "mono"
+        return xs, (0 if high_left else n), "mono", _panel_offsets(len(xs))
 
     depth = max(600.0, grid.total_width_mm / 20.0)
     n = engineering_rules.truss_panel_count(grid.total_width_mm, depth, 0.0)
@@ -387,7 +410,7 @@ def _truss_panel_layout(
         ]
         + [right]
     )
-    return xs, None, "flat"
+    return xs, None, "flat", _panel_offsets(len(xs))
 
 
 def _king_post_panel_layout(
@@ -408,7 +431,7 @@ def _king_post_panel_layout(
         _x_ref_at_mm(grid, x_strut_r),
         _x_ref_at_mm(grid, right_x),
     ]
-    return xlabels, 2, "king_post"
+    return xlabels, 2, "king_post", _panel_offsets(len(xlabels))
 
 
 def _queen_post_panel_layout(
@@ -421,20 +444,44 @@ def _queen_post_panel_layout(
     span = right_x - left_x
     fracs = (0.0, 0.25, 1.0 / 3.0, 0.5, 2.0 / 3.0, 0.75, 1.0)
     xlabels = [_x_ref_at_mm(grid, left_x + span * frac) for frac in fracs]
-    return xlabels, 3, "queen_post"
+    return xlabels, 3, "queen_post", _panel_offsets(len(xlabels))
 
 
 def _scissor_panel_layout(
     grid: StructuralGridEngine,
 ) -> tuple[list[str], int, str]:
-    """Scissor panel lines: quarter points + apex for crossing-chord triangulation."""
+    """Scissor panel lines at purlin-seat X positions plus the roof apex."""
     left, right = grid.x_labels[0], grid.x_labels[-1]
-    left_x = grid.resolve_x_mm(left)
-    right_x = grid.resolve_x_mm(right)
-    span = right_x - left_x
-    fracs = (0.0, 0.25, 0.5, 0.75, 1.0)
-    xlabels = [_x_ref_at_mm(grid, left_x + span * frac) for frac in fracs]
-    return xlabels, 2, "scissor"
+    ridge_x = grid.roof.ridge_x
+
+    spacing = float(getattr(grid.definition, "purlin_spacing_mm", 1200.0) or 1200.0)
+    refs: list[tuple[str, dict[str, float]]] = []
+    xs: list[float] = []
+    seen: set[float] = set()
+    for x_axis, offset in _purlin_placement_refs(grid, spacing):
+        x = _resolved_purlin_x(grid, x_axis, offset)
+        key = round(x, 3)
+        if key in seen:
+            continue
+        seen.add(key)
+        xs.append(x)
+        refs.append((x_axis, dict(offset)))
+
+    for x in (grid.resolve_x_mm(left), ridge_x, grid.resolve_x_mm(right)):
+        key = round(x, 3)
+        if key in seen:
+            continue
+        seen.add(key)
+        xs.append(x)
+        refs.append(_x_ref_with_offset(grid, x))
+
+    order = sorted(range(len(xs)), key=lambda i: xs[i])
+    xs = [xs[i] for i in order]
+    refs = [refs[i] for i in order]
+    xlabels = [r[0] for r in refs]
+    x_offsets = [dict(r[1]) for r in refs]
+    ridge_i = min(range(len(xs)), key=lambda i: abs(xs[i] - ridge_x))
+    return xlabels, ridge_i, "scissor", x_offsets
 
 
 def _fink_panel_layout(
@@ -447,7 +494,7 @@ def _fink_panel_layout(
     span = right_x - left_x
     fracs = (0.0, 0.25, 1.0 / 3.0, 0.5, 2.0 / 3.0, 0.75, 1.0)
     xlabels = [_x_ref_at_mm(grid, left_x + span * frac) for frac in fracs]
-    return xlabels, 3, "fink"
+    return xlabels, 3, "fink", _panel_offsets(len(xlabels))
 
 
 def _full_mono_rise_mm(grid: StructuralGridEngine) -> float:
@@ -510,20 +557,46 @@ def _symmetric_top_chord_y_mm(
     return y_ridge + frac * (y_heel - y_ridge)
 
 
+def _scissor_top_chord_y_mm(
+    grid: StructuralGridEngine,
+    xlabels: list[str],
+    x_offsets: list[dict[str, float]],
+    i: int,
+    ridge_i: int,
+) -> float:
+    """Absolute Y of a scissor top-chord node — heels at column top, slopes to apex."""
+    n = len(xlabels) - 1
+    x_mm = _panel_x_mm(grid, xlabels, x_offsets, i)
+    x_left = _panel_x_mm(grid, xlabels, x_offsets, 0)
+    x_ridge = _panel_x_mm(grid, xlabels, x_offsets, ridge_i)
+    x_right = _panel_x_mm(grid, xlabels, x_offsets, n)
+    y_eave = grid.roof.eave_y
+    y_ridge = _roof_elev_at(grid, x_ridge)
+
+    half_left = x_ridge - x_left
+    half_right = x_right - x_ridge
+    if half_left < 1.0 or half_right < 1.0:
+        return y_eave
+
+    if i <= ridge_i:
+        return y_eave + (x_mm - x_left) / half_left * (y_ridge - y_eave)
+    return y_eave + (x_right - x_mm) / half_right * (y_ridge - y_eave)
+
+
 def _scissor_bottom_chord_y_mm(
     grid: StructuralGridEngine,
     xlabels: list[str],
+    x_offsets: list[dict[str, float]],
     i: int,
     ridge_i: int,
 ) -> float:
     """Absolute Y of a scissor bottom-chord node — ceiling pitch is half the roof pitch."""
     n = len(xlabels) - 1
-    x_mm = grid.resolve_x_mm(xlabels[i])
-    x_left = grid.resolve_x_mm(xlabels[0])
-    x_ridge = grid.resolve_x_mm(xlabels[ridge_i])
-    x_right = grid.resolve_x_mm(xlabels[n])
+    x_mm = _panel_x_mm(grid, xlabels, x_offsets, i)
+    x_left = _panel_x_mm(grid, xlabels, x_offsets, 0)
+    x_ridge = _panel_x_mm(grid, xlabels, x_offsets, ridge_i)
+    x_right = _panel_x_mm(grid, xlabels, x_offsets, n)
     y_eave = grid.roof.eave_y
-    y_top_heel = y_eave + _truss_end_heel_rise_mm(grid, xlabels, 0)
     y_top_ridge = _roof_elev_at(grid, x_ridge)
 
     half_left = x_ridge - x_left
@@ -531,7 +604,7 @@ def _scissor_bottom_chord_y_mm(
     if half_left < 1.0 or half_right < 1.0:
         return y_eave
 
-    roof_pitch = math.atan2(y_top_ridge - y_top_heel, half_left)
+    roof_pitch = math.atan2(y_top_ridge - y_eave, half_left)
     ceiling_pitch = engineering_rules.scissor_ceiling_pitch_rad(roof_pitch)
 
     if i <= ridge_i:
@@ -571,17 +644,29 @@ def _truss_top_node(
     *,
     case: str,
     ridge_i: int | None,
+    x_offsets: list[dict[str, float]] | None = None,
 ) -> GridNodeReference:
     """Top-chord panel node; portal ends always sit above the bottom chord."""
     n = len(xlabels) - 1
     xl = xlabels[i]
+    x_off = (x_offsets or _panel_offsets(len(xlabels)))[i]
     if case == "flat":
-        return _ref(xl, z_label, "eave")
+        return _ref(xl, z_label, "eave", x_off or None)
     if case in ("symmetric", "fink", "king_post", "queen_post", "scissor") and ridge_i is not None:
         if i == ridge_i:
-            return _ref(xl, z_label, "apex")
-        y_mm = _symmetric_top_chord_y_mm(grid, xlabels, i, ridge_i)
-        return _ref(xl, z_label, "eave", {"y": y_mm - grid.roof.eave_y})
+            return _ref(xl, z_label, "apex", x_off or None)
+        if case == "scissor":
+            y_mm = _scissor_top_chord_y_mm(
+                grid, xlabels, x_offsets or _panel_offsets(len(xlabels)), i, ridge_i
+            )
+        else:
+            y_mm = _symmetric_top_chord_y_mm(grid, xlabels, i, ridge_i)
+        return _ref(
+            xl,
+            z_label,
+            "eave",
+            _merge_node_offset({"y": y_mm - grid.roof.eave_y}, x_off),
+        )
 
     if case == "mono":
         y_mm = _mono_top_chord_y_mm(grid, xlabels, i)
@@ -607,18 +692,29 @@ def _truss_top_chord_panel_xy(
     ridge = _ridge_label(grid)
     z_label = grid.z_labels[0] if grid.z_labels else "1"
     if grid.roof.is_mono:
-        xlabels, ridge_i, case = _truss_panel_layout(grid, ridge, truss_type)
+        xlabels, ridge_i, case, x_offsets = _truss_panel_layout(
+            grid, ridge, truss_type
+        )
         if case != "mono" or len(xlabels) < 2:
             xlabels = [grid.x_labels[0], grid.x_labels[-1]]
+            x_offsets = _panel_offsets(len(xlabels))
         ridge_i = (len(xlabels) - 1) if grid.roof.mono_high_side == "B" else 0
     else:
-        xlabels, ridge_i, case = _truss_panel_layout(grid, ridge, truss_type)
+        xlabels, ridge_i, case, x_offsets = _truss_panel_layout(
+            grid, ridge, truss_type
+        )
 
     xs: list[float] = []
     ys: list[float] = []
     for i, _xl in enumerate(xlabels):
         ref = _truss_top_node(
-            grid, z_label, xlabels, i, case=case, ridge_i=ridge_i
+            grid,
+            z_label,
+            xlabels,
+            i,
+            case=case,
+            ridge_i=ridge_i,
+            x_offsets=x_offsets,
         )
         px, py, _pz = grid.resolve_node(ref)
         xs.append(px)
@@ -805,7 +901,9 @@ def _mono_pitch_truss_frame(
     web_profile: str = DEFAULT_TRUSS_WEB_PROFILE,
 ) -> list[StructuralMember]:
     """Mono-pitch portal truss — flat bottom chord, sloping top chord, panelled webs."""
-    xlabels, _ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
+    xlabels, _ridge_i, case, _x_offsets = _truss_panel_layout(
+        grid, ridge_label, truss_type
+    )
     if case != "mono" or len(xlabels) < 2:
         xlabels = [grid.x_labels[0], grid.x_labels[-1]]
     n = len(xlabels) - 1
@@ -895,7 +993,9 @@ def _truss_frame(
     chord_profile: str = DEFAULT_TRUSS_CHORD_PROFILE,
     web_profile: str = DEFAULT_TRUSS_WEB_PROFILE,
 ) -> list[StructuralMember]:
-    xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
+    xlabels, ridge_i, case, x_offsets = _truss_panel_layout(
+        grid, ridge_label, truss_type
+    )
     n = len(xlabels) - 1
     eave_y = grid.roof.eave_y
 
@@ -915,16 +1015,33 @@ def _truss_frame(
         else:
             top.append(
                 _truss_top_node(
-                    grid, z_label, xlabels, i, case=case, ridge_i=ridge_i
+                    grid,
+                    z_label,
+                    xlabels,
+                    i,
+                    case=case,
+                    ridge_i=ridge_i,
+                    x_offsets=x_offsets,
                 )
             )
 
         if case == "flat":
             bottom.append(_ref(xl, z_label, "eave", {"y": -flat_depth}))
         elif case == "scissor":
-            y_bc = _scissor_bottom_chord_y_mm(grid, xlabels, i, ridge_i or 0)
-            off = y_bc - eave_y
-            bottom.append(_ref(xl, z_label, "eave", {"y": off} if off > 1.0 else None))
+            y_bc = _scissor_bottom_chord_y_mm(
+                grid, xlabels, x_offsets, i, ridge_i or 0
+            )
+            y_off = y_bc - eave_y
+            bottom.append(
+                _ref(
+                    xl,
+                    z_label,
+                    "eave",
+                    _merge_node_offset(
+                        {"y": y_off} if y_off > 1.0 else None, x_offsets[i]
+                    ),
+                )
+            )
         else:
             bottom.append(_ref(xl, z_label, "eave"))
 
@@ -947,10 +1064,39 @@ def _truss_frame(
                 )
             )
 
-    plan = engineering_rules.truss_web_plan(web_type, n, ridge_i)
-    for k, pair in enumerate(plan):
+    if case == "scissor" and ridge_i is not None:
+        plan = engineering_rules.scissor_truss_web_plan(n, ridge_i)
+    else:
+        plan = engineering_rules.truss_web_plan(web_type, n, ridge_i)
+
+    allowed_centre = (
+        {
+            tuple(sorted(p))
+            for p in engineering_rules.scissor_centre_web_pairs(ridge_i)
+        }
+        if case == "scissor" and ridge_i is not None
+        else set()
+    )
+    reserved_centre = (
+        engineering_rules.scissor_reserved_endpoints(ridge_i)
+        if case == "scissor" and ridge_i is not None
+        else frozenset()
+    )
+
+    seen_pairs: set[tuple[tuple[str, int], tuple[str, int]]] = set()
+    web_k = 0
+    for pair in plan:
         if web_type != "warren" and _is_eave_portal_end_vertical(pair, n):
             continue
+        if reserved_centre:
+            if tuple(sorted(pair)) not in allowed_centre and (
+                pair[0] in reserved_centre or pair[1] in reserved_centre
+            ):
+                continue
+        key = tuple(sorted(pair))
+        if key in seen_pairs:
+            continue
+        seen_pairs.add(key)
         out.append(
             _truss_web_member(
                 aid=aid,
@@ -960,9 +1106,10 @@ def _truss_frame(
                 chord=chord,
                 chord_profile=chord_profile,
                 web_profile=web_profile,
-                member_id=f"{aid}-truss-web-{z_label}-{k}",
+                member_id=f"{aid}-truss-web-{z_label}-{web_k}",
             )
         )
+        web_k += 1
     _append_truss_end_posts(
         out,
         aid=aid,
@@ -982,21 +1129,38 @@ def _truss_top_panel_refs(
 ) -> list[GridNodeReference]:
     """Top-chord panel nodes for one frame (same refs as the frame builder)."""
     if grid.roof.is_mono:
-        xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
+        xlabels, ridge_i, case, x_offsets = _truss_panel_layout(
+            grid, ridge_label, truss_type
+        )
         if case != "mono" or len(xlabels) < 2:
             xlabels = [grid.x_labels[0], grid.x_labels[-1]]
+            x_offsets = _panel_offsets(len(xlabels))
             ridge_i = 1 if grid.roof.mono_high_side == "B" else 0
         return [
             _truss_top_node(
-                grid, z_label, xlabels, i, case="mono", ridge_i=ridge_i
+                grid,
+                z_label,
+                xlabels,
+                i,
+                case="mono",
+                ridge_i=ridge_i,
+                x_offsets=x_offsets,
             )
             for i in range(len(xlabels))
         ]
 
-    xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
+    xlabels, ridge_i, case, x_offsets = _truss_panel_layout(
+        grid, ridge_label, truss_type
+    )
     return [
         _truss_top_node(
-            grid, z_label, xlabels, i, case=case, ridge_i=ridge_i
+            grid,
+            z_label,
+            xlabels,
+            i,
+            case=case,
+            ridge_i=ridge_i,
+            x_offsets=x_offsets,
         )
         for i in range(len(xlabels))
     ]
@@ -1166,8 +1330,8 @@ def _gable_girts(
 ) -> list[StructuralMember]:
     """Fill END walls at the same global levels as the side walls.
 
-    Girts are never sloped. Each level is split into horizontal bays between adjacent
-    end-wall posts so rails do not span the full truss width in one piece.
+    Girts are never sloped. Each level is one continuous rail from the first to the
+    last end-wall support that clears the roof at that height (same as side-wall girts).
     """
     if not levels:
         return []
@@ -1186,21 +1350,28 @@ def _gable_girts(
             if _truss_fills_gable_triangle(grid, z_label, trussed)
             else levels
         )
+        x_first, x_last = grid.x_labels[0], grid.x_labels[-1]
         for li, y_abs in enumerate(wall_levels):
-            cols = [x for x in xs if roof_at[x] >= y_abs - 1.0]
-            if len(cols) < 2:
-                continue
+            if (
+                roof_at.get(x_first, 0.0) < y_abs - 1.0
+                or roof_at.get(x_last, 0.0) < y_abs - 1.0
+            ):
+                cols = [x for x in xs if roof_at[x] >= y_abs - 1.0]
+                if len(cols) < 2:
+                    continue
+                left, right = cols[0], cols[-1]
+            else:
+                left, right = x_first, x_last
             elev, y_off = _girt_nodes_at_y(y_abs, eave_y)
-            for gi, (left, right) in enumerate(zip(cols, cols[1:])):
-                out.append(
-                    StructuralMember(
-                        id=f"{aid}-gablegirt-{z_label}-L{li}-{gi}",
-                        element_type="wall_girt",
-                        profile=profile,
-                        start_node=_ref(left, z_label, elev, y_off),
-                        end_node=_ref(right, z_label, elev, y_off),
-                    )
+            out.append(
+                StructuralMember(
+                    id=f"{aid}-gablegirt-{z_label}-L{li}",
+                    element_type="wall_girt",
+                    profile=profile,
+                    start_node=_ref(left, z_label, elev, y_off),
+                    end_node=_ref(right, z_label, elev, y_off),
                 )
+            )
     return out
 
 
@@ -1323,7 +1494,9 @@ def _roof_bracing_segments(
 ) -> list[tuple[str, str, str, str]]:
     """Roof-plane segments for X-bracing — follow truss top-chord panel lines when trussed."""
     if use_truss and truss_type not in ("none", ""):
-        xlabels, _ridge_i, _case = _truss_panel_layout(grid, ridge_label, truss_type)
+        xlabels, _ridge_i, _case, _x_offsets = _truss_panel_layout(
+            grid, ridge_label, truss_type
+        )
         if len(xlabels) >= 2:
             return [
                 (xlabels[i], "roof", xlabels[i + 1], "roof")
@@ -1534,12 +1707,19 @@ def _bottom_chord_restraint(
     out: list[StructuralMember] = []
 
     if truss_type == "scissor" and not grid.roof.is_flat and not grid.roof.is_mono:
-        xlabels, ridge_i, case = _truss_panel_layout(grid, ridge_label, truss_type)
+        xlabels, ridge_i, case, x_offsets = _truss_panel_layout(
+            grid, ridge_label, truss_type
+        )
         if case == "scissor" and len(xlabels) >= 3:
             eave_y = grid.roof.eave_y
             for k, i in enumerate(range(1, len(xlabels) - 1)):
-                y_bc = _scissor_bottom_chord_y_mm(grid, xlabels, i, ridge_i or 0)
-                off = {"y": y_bc - eave_y} if y_bc - eave_y > 1.0 else {}
+                y_bc = _scissor_bottom_chord_y_mm(
+                    grid, xlabels, x_offsets, i, ridge_i or 0
+                )
+                off = _merge_node_offset(
+                    {"y": y_bc - eave_y} if y_bc - eave_y > 1.0 else None,
+                    x_offsets[i],
+                ) or {}
                 out.append(
                     StructuralMember(
                         id=f"{aid}-bctie-{k}",

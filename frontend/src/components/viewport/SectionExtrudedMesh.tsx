@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 
+import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { memberLengthM } from "@/lib/coordinates";
 import { isFiniteNumber } from "@/lib/elementValidation";
 import { purlinGeometryFlipZ, wallGirtGeometryFlipZ } from "@/lib/memberFrame";
@@ -88,7 +89,7 @@ export function SectionExtrudedMesh({
 
   return (
     <mesh geometry={geometry}>
-      <meshStandardMaterial color={color} metalness={0.4} roughness={0.45} />
+      <SteelMeshMaterial color={color} />
     </mesh>
   );
 }

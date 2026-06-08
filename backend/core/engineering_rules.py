@@ -169,6 +169,34 @@ def seat_purlin_bottom_on_rafter(
     )
 
 
+def purlin_center_on_rafter(
+    x: float,
+    y_centerline: float,
+    z: float,
+    *,
+    purlin_profile: str,
+    rafter_profile: str,
+    pitch_rad: float,
+    pitch_sign: float = 1.0,
+) -> tuple[float, float, float]:
+    """Centroid of a bottom-seated purlin on a sloping rafter/truss top chord."""
+    bottom = seat_purlin_bottom_on_rafter(
+        x,
+        y_centerline,
+        z,
+        rafter_profile=rafter_profile,
+        pitch_rad=pitch_rad,
+        pitch_sign=pitch_sign,
+    )
+    half = profile_half_depth_mm(purlin_profile)
+    nx, ny = _rafter_outward_normal(pitch_rad, pitch_sign)
+    return (
+        bottom[0] + half * nx,
+        bottom[1] + half * ny,
+        bottom[2],
+    )
+
+
 def seat_web_on_top_chord_bottom(
     x: float,
     y_centerline: float,
@@ -692,7 +720,6 @@ _FIXED_TRUSS_PANELS: dict[str, int] = {
     "king_post": 4,
     "queen_post": 6,
     "fink": 6,
-    "scissor": 4,
 }
 
 # Scissor: interior ceiling pitch = half exterior roof pitch (2-to-1 rule).
@@ -734,27 +761,60 @@ def scissor_bottom_rise_mm(
     return frac * SCISSOR_CEILING_PITCH_RATIO * float(total_rise_mm)
 
 
-def scissor_truss_web_plan(n: int, ridge_i: int | None) -> list[WebPair]:
-    """Scissor truss — four diagonals triangulating the crossing apex (n=4, ridge at 2).
+def scissor_centre_web_pairs(ridge_i: int) -> list[WebPair]:
+    """Hard-coded centre bay — exactly three members, no loop generation."""
+    apex = ridge_i
+    return [
+        (("top", apex), ("bottom", apex)),  # Central Vertical King Post
+        (("bottom", apex), ("top", apex - 1)),  # Left Diagonal Anchor
+        (("bottom", apex), ("top", apex + 1)),  # Right Diagonal Anchor
+    ]
 
-    Inner bottom-chord nodes tie to the top apex; crossing diagonals brace the vault.
-    No central vertical — top and bottom chords meet at different elevations at mid-span.
-    """
-    if n != 4 or ridge_i != 2:
-        raise ValueError(
-            f"Scissor truss requires n=4 and ridge_i=2, got n={n} ridge_i={ridge_i}"
-        )
+
+def scissor_reserved_endpoints(ridge_i: int) -> frozenset[WebEnd]:
+    """Centre nodes that only ``scissor_centre_web_pairs`` may connect."""
+    apex = ridge_i
+    return frozenset(
+        {
+            ("top", apex),
+            ("bottom", apex),
+            ("top", apex - 1),
+            ("top", apex + 1),
+        }
+    )
+
+
+def scissor_outer_web_pairs(n: int, ridge_i: int) -> list[WebPair]:
+    """Pratt diagonals outside the centre panel — loops never touch centre nodes."""
+    apex = ridge_i
 
     def d(a: str, ai: int, b: str, bi: int) -> WebPair:
         return ((a, ai), (b, bi))
 
-    apex = ridge_i
-    return [
-        d("bottom", 1, "top", apex),  # left ceiling → apex
-        d("bottom", 3, "top", apex),  # right ceiling → apex
-        d("bottom", 1, "top", 3),  # crossing brace
-        d("bottom", 3, "top", 1),  # crossing brace
-    ]
+    plan: list[WebPair] = []
+
+    # Left: last diagonal is bottom(apex - 2) → top(apex - 1); stops before centre BC peak
+    for i in range(0, apex - 1):
+        plan.append(d("bottom", i, "top", i + 1))
+
+    # Right: starts at apex + 2 so no diagonal lands on top(apex) or bottom(apex)
+    for i in range(apex + 2, n):
+        plan.append(d("bottom", i, "top", i - 1))
+
+    return plan
+
+
+def scissor_truss_web_plan(n: int, ridge_i: int | None) -> list[WebPair]:
+    """Scissor truss — three hard-coded centre webs plus outer Pratt diagonals."""
+    if ridge_i is None or ridge_i <= 0 or ridge_i >= n:
+        raise ValueError(
+            f"Scissor truss requires ridge_i in 1..{n - 1}, got n={n} ridge_i={ridge_i}"
+        )
+    if ridge_i < 2 or ridge_i > n - 2:
+        raise ValueError(
+            f"Scissor truss requires room for adjacent purlin nodes, got n={n} ridge_i={ridge_i}"
+        )
+    return scissor_centre_web_pairs(ridge_i) + scissor_outer_web_pairs(n, ridge_i)
 
 
 def mono_pitch_truss_web_plan(n: int, *, high_side: str = "B") -> list[WebPair]:

@@ -119,6 +119,48 @@ for m in fly_m:
     assert abs(dz) > 50.0, (m["id"], dz)  # V leg along purlin run
     assert abs(dz) > abs(dx), (m["id"], dx, dz)  # not a slope-parallel stub
 
+# --- Sag rods pierce girts/purlins at section centre ----------------------- #
+_, macro, _ = _build(
+    use_truss=True,
+    truss_type="pratt",
+    sag_rods=True,
+    column_profile="UC203x203x46",
+    girt_profile="Z200x2.5",
+    purlin_profile="Z200x2.5",
+)
+girts = {m["id"]: m for m in macro if m.get("element_type") == "wall_girt"}
+sags = [m for m in macro if m.get("element_type") == "sag_rod"]
+assert sags, "no sag rods"
+for sag in sags:
+    if "-sag-wall-" not in sag["id"]:
+        continue
+    wall = "A" if "-sag-wall-A-" in sag["id"] else "B"
+    level = sag["id"].split("-")[-1]
+    girt = girts.get(f"shed_1-girt-{wall}-L{level}")
+    assert girt, (sag["id"], wall, level)
+    assert abs(sag["nodes"]["start"][0] - girt["nodes"]["start"][0]) < 1.0, (
+        sag["id"],
+        sag["nodes"]["start"][0],
+        girt["nodes"]["start"][0],
+    )
+roof_sags = [
+    m for m in sags if abs(m["nodes"]["start"][0] - m["nodes"]["end"][0]) > 100.0
+]
+purlins = sorted(
+    [m for m in macro if m.get("element_type") == "purlin"],
+    key=lambda m: m["nodes"]["start"][0],
+)
+if roof_sags and len(purlins) >= 2:
+    sag = roof_sags[0]
+    sx = sag["nodes"]["start"][0]
+    near = min(purlins, key=lambda p: abs(p["nodes"]["start"][0] - sx))
+    cy = (near["nodes"]["start"][1] + near["nodes"]["end"][1]) / 2.0
+    assert abs(sag["nodes"]["start"][1] - cy) < 120.0, (
+        sag["id"],
+        sag["nodes"]["start"][1],
+        cy,
+    )
+
 # --- Bottom-chord restraint (needs trusses) -------------------------------- #
 _, macro, _ = _build(use_truss=True, truss_type="pratt", bottom_chord_restraint=True)
 bc = [m for m in macro if "bctie" in str(m.get("id", ""))]

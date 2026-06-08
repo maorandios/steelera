@@ -8,10 +8,11 @@ import {
   gridLineLetter,
   gridLineNumber,
 } from "@/lib/structural-grid";
+import { VIEWPORT_PICK_ROLE } from "@/lib/viewport-pick";
+import { viewportTheme } from "@/lib/viewport-theme";
 
 const MM_TO_M = 0.001;
 const GROUND_Y = 0;
-const GRID_COLOR = "#71717a";
 
 type StructuralGridProps = {
   xCoordsMm: number[];
@@ -20,7 +21,6 @@ type StructuralGridProps = {
   extentMaxX: number;
   extentMinZ: number;
   extentMaxZ: number;
-  onBackgroundClick: () => void;
 };
 
 function GridLineSegment({
@@ -49,11 +49,14 @@ function GridLineSegment({
   }, [x0, y0, z0, x1, y1, z1]);
 
   const material = useMemo(() => {
-    const color = variant === "minor" ? "#52525b" : GRID_COLOR;
+    const color =
+      variant === "minor"
+        ? viewportTheme.grid.minor
+        : viewportTheme.grid.primary;
     return new THREE.LineBasicMaterial({
       color,
       transparent: variant === "minor",
-      opacity: variant === "minor" ? 0.85 : 1,
+      opacity: variant === "minor" ? 0.9 : 1,
     });
   }, [variant]);
 
@@ -92,15 +95,15 @@ function GridLabelBubble({
           width: 26,
           height: 26,
           borderRadius: "50%",
-          background: "#18181b",
-          border: "1.5px solid #52525b",
-          color: "#fafafa",
+          background: viewportTheme.grid.labelBackground,
+          border: `1.5px solid ${viewportTheme.grid.labelBorder}`,
+          color: viewportTheme.grid.labelText,
           fontSize: 11,
           fontWeight: 700,
           lineHeight: "22px",
           textAlign: "center",
           fontFamily: "system-ui, sans-serif",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.45)",
+          boxShadow: viewportTheme.grid.labelShadow,
         }}
       >
         {label}
@@ -116,7 +119,6 @@ export function StructuralGrid({
   extentMaxX,
   extentMinZ,
   extentMaxZ,
-  onBackgroundClick,
 }: StructuralGridProps) {
   const xCoordsM = useMemo(
     () => xCoordsMm.map((value) => value * MM_TO_M),
@@ -145,10 +147,7 @@ export function StructuralGrid({
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[(lineX0 + lineX1) / 2, GROUND_Y, (lineZ0 + lineZ1) / 2]}
-        onClick={(event) => {
-          event.stopPropagation();
-          onBackgroundClick();
-        }}
+        userData={{ viewportPickRole: VIEWPORT_PICK_ROLE.BACKGROUND }}
       >
         <planeGeometry args={[pickPlaneSize, pickPlaneSize]} />
         <meshBasicMaterial visible={false} side={THREE.DoubleSide} />
