@@ -15,8 +15,9 @@ type EngineeringProposalPanelProps = {
   disabled?: boolean;
   building?: boolean;
   onChange: (patch: Partial<GridDefinition>) => void;
-  onBack: () => void;
+  onBack?: () => void;
   onBuild: () => void;
+  compact?: boolean;
 };
 
 function ToggleRow({
@@ -55,17 +56,116 @@ export function EngineeringProposalPanel({
   onChange,
   onBack,
   onBuild,
+  compact,
 }: EngineeringProposalPanelProps) {
   const nFrames = draft.z_spans.length + 1;
   const trussLabel = draft.use_truss
     ? (draft.truss_type ?? "pratt").replace(/_/g, " ")
     : "Portal rafters";
 
+  if (compact) {
+    return (
+      <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Adjust before build
+        </p>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <Label className="text-muted-foreground">Column</Label>
+            <Input
+              value={draft.column_profile ?? ""}
+              disabled={disabled}
+              onChange={(e) => onChange({ column_profile: e.target.value || null })}
+              className="mt-0.5 h-8 text-xs"
+            />
+          </div>
+          <div>
+            <Label className="text-muted-foreground">Bracing</Label>
+            <Input
+              value={draft.bracing_profile ?? ""}
+              disabled={disabled}
+              onChange={(e) => onChange({ bracing_profile: e.target.value || null })}
+              className="mt-0.5 h-8 text-xs"
+            />
+          </div>
+        </div>
+        <p className="font-mono text-[10px] text-muted-foreground">
+          {nFrames} frames · {trussLabel} · bays{" "}
+          {draft.z_spans.map((s) => `${(s / 1000).toFixed(1)}m`).join(" + ")}
+        </p>
+        <div className="divide-y divide-border/60 border-t border-border/60 pt-1">
+          <ToggleRow
+            id="prop-truss"
+            label="Roof truss"
+            checked={Boolean(draft.use_truss)}
+            disabled={disabled}
+            onCheckedChange={(v) =>
+              onChange({ use_truss: v, truss_type: v ? "pratt" : "none" })
+            }
+          />
+          <ToggleRow
+            id="prop-x"
+            label="Wall X-bracing"
+            checked={Boolean(draft.x_bracing)}
+            disabled={disabled}
+            onCheckedChange={(v) => onChange({ x_bracing: v })}
+          />
+          <ToggleRow
+            id="prop-roof-x"
+            label="Roof X-bracing"
+            checked={Boolean(draft.roof_bracing)}
+            disabled={disabled}
+            onCheckedChange={(v) => onChange({ roof_bracing: v })}
+          />
+          <ToggleRow
+            id="prop-gable-x"
+            label="Gable X-bracing"
+            checked={Boolean(draft.gable_bracing)}
+            disabled={disabled}
+            onCheckedChange={(v) => onChange({ gable_bracing: v })}
+          />
+          <ToggleRow
+            id="prop-sag"
+            label="Anti-sag rods"
+            checked={Boolean(draft.sag_rods)}
+            disabled={disabled}
+            onCheckedChange={(v) => onChange({ sag_rods: v })}
+          />
+          <ToggleRow
+            id="prop-girts"
+            label="Wall girts"
+            checked={draft.generate_wall_girts !== false}
+            disabled={disabled}
+            onCheckedChange={(v) => onChange({ generate_wall_girts: v })}
+          />
+        </div>
+        <Button
+          type="button"
+          disabled={disabled || building}
+          onClick={onBuild}
+          className="w-full gap-2"
+        >
+          {building ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Building structure…
+            </>
+          ) : (
+            <>
+              <Rocket className="h-4 w-4" />
+              Build structure
+            </>
+          )}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-4 space-y-3">
       <div className="rounded-xl border border-white/40 bg-white/35 p-4">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-          Engineering proposal
+          Preliminary structural proposal
         </p>
         <p className="mt-1 text-sm font-medium text-slate-800">{proposal.summary}</p>
         <ul className="mt-3 space-y-1.5 text-xs leading-relaxed text-slate-600">
@@ -175,9 +275,11 @@ export function EngineeringProposalPanel({
       </div>
 
       <div className="flex gap-2">
-        <Button type="button" variant="outline" disabled={disabled || building} onClick={onBack}>
-          Back
-        </Button>
+        {onBack ? (
+          <Button type="button" variant="outline" disabled={disabled || building} onClick={onBack}>
+            Back
+          </Button>
+        ) : null}
         <Button
           type="button"
           disabled={disabled || building}

@@ -29,6 +29,7 @@ _FLY_BRACE_Z_LEG_MM = 200.0
 DEFAULT_COLUMN_PROFILE = "HEA200"
 DEFAULT_TRUSS_CHORD_PROFILE = "IPE200"
 DEFAULT_TRUSS_WEB_PROFILE = "L50x50"
+DEFAULT_TIE_BEAM_PROFILE = "IPE200"
 DEFAULT_BRACING_PROFILE = "L50x50"
 DEFAULT_PURLIN_PROFILE = "C150x2"
 DEFAULT_GIRT_PROFILE = "C150x2"
@@ -1167,7 +1168,11 @@ def _truss_top_panel_refs(
 
 
 def _eave_ridge_ties(
-    grid: StructuralGridEngine, aid: str, ridge_label: str | None
+    grid: StructuralGridEngine,
+    aid: str,
+    ridge_label: str | None,
+    *,
+    tie_profile: str = "IPE200",
 ) -> list[StructuralMember]:
     z_first, z_last = grid.z_labels[0], grid.z_labels[-1]
     out: list[StructuralMember] = []
@@ -1177,7 +1182,7 @@ def _eave_ridge_ties(
             StructuralMember(
                 id=f"{aid}-tie-{x_label}",
                 element_type="tie_beam",
-                profile="IPE200",
+                profile=tie_profile,
                 start_node=_ref(x_label, z_first, elev),
                 end_node=_ref(x_label, z_last, elev),
             )
@@ -1187,7 +1192,7 @@ def _eave_ridge_ties(
             StructuralMember(
                 id=f"{aid}-tie-ridge",
                 element_type="tie_beam",
-                profile="IPE200",
+                profile=tie_profile,
                 start_node=_ref(ridge_label, z_first, "apex"),
                 end_node=_ref(ridge_label, z_last, "apex"),
             )
@@ -1944,6 +1949,7 @@ def members_from_grid_definition(
         base_plate_profile=getattr(grid_def, "base_plate_profile", None),
         truss_chord_profile=getattr(grid_def, "truss_chord_profile", None),
         truss_web_profile=getattr(grid_def, "truss_web_profile", None),
+        tie_beam_profile=getattr(grid_def, "tie_beam_profile", None),
         generate_purlins=bool(getattr(grid_def, "generate_purlins", True)),
         generate_tie_beams=bool(getattr(grid_def, "generate_tie_beams", True)),
         gable_bracing=bool(getattr(grid_def, "gable_bracing", False)),
@@ -2008,6 +2014,7 @@ def members_from_shed_config(
         getattr(cfg, "truss_chord_profile", None) or DEFAULT_TRUSS_CHORD_PROFILE
     )
     web_profile = getattr(cfg, "truss_web_profile", None) or DEFAULT_TRUSS_WEB_PROFILE
+    tie_profile = getattr(cfg, "tie_beam_profile", None) or DEFAULT_TIE_BEAM_PROFILE
     members.extend(_columns(grid, aid, trussed_frames, column_profile))
     for z_label, uses_truss, ttype in frame_truss:
         if uses_truss:
@@ -2034,7 +2041,7 @@ def members_from_shed_config(
 
     # Longitudinal stability: eave/ridge ties tying the frames together.
     if cfg.generate_tie_beams:
-        members.extend(_eave_ridge_ties(grid, aid, ridge))
+        members.extend(_eave_ridge_ties(grid, aid, ridge, tie_profile=tie_profile))
 
     # Roof purlins (run along the length, seated on the rafters).
     if bool(getattr(cfg, "generate_purlins", True)):

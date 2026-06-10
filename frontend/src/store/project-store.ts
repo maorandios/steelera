@@ -3,6 +3,8 @@
 import { create } from "zustand";
 
 import {
+  fetchSiteContext,
+  geocodeLocation,
   postChat,
   postGenerateShed,
   postProposeShed,
@@ -34,6 +36,27 @@ import {
   type StructuralGridState,
 } from "@/lib/structural-grid";
 import { checklistPayloadToShedParams } from "@/lib/shed-checklist";
+import {
+  CUSTOM_VALUE,
+  initialOnboardingMessage,
+  messagesAfterSiteSurroundingsConfirm,
+  nextOnboardingMessage,
+  nextPhaseAfter,
+  parseMetresInput,
+  mapPinMessage,
+  siteConfirmedMessage,
+  stripInitialOnboardingWelcome,
+  userLabelForPhase,
+  type OnboardingPhase,
+} from "@/lib/onboarding-flow";
+import {
+  SITE_BUILT_UP,
+  SITE_OPEN_INDUSTRIAL,
+  SITE_PIN,
+  surroundingsLabel,
+  type SiteSurroundings,
+} from "@/lib/site-surroundings";
+import type { SiteContext } from "@/types/site";
 import type { StructuralTopology } from "@/types/ifc-topology";
 import type {
   ChatMessage,
@@ -44,7 +67,6 @@ import type { GridDefinition } from "@/types/spatial-grid";
 import type {
   ShedProposalResult,
   UiPhase,
-  WizardStep,
   WizardStep1Data,
   WizardStep2Data,
 } from "@/types/wizard";
@@ -58,22 +80,46 @@ import { emptyProjectState, normalizeElement } from "@/types/project";
 /** Keep API payloads bounded so long chats stay responsive. */
 const API_MESSAGE_WINDOW = 24;
 
-const WELCOME_STEP1 =
-  "Welcome to Steelera. Let's design an optimized, production-ready structure for your project.\n\nWhat will this shed be used for, and what are your target dimensions?";
-
-const DEFAULT_WIZARD_STEP1: WizardStep1Data = {
-  use_case: "",
-  width_mm: 15_000,
-  length_mm: 30_000,
-  height_mm: 6_000,
-};
-
 const DEFAULT_WIZARD_STEP2: WizardStep2Data = {
   roof_style: "duo_pitch",
   roof_pitch_deg: 10,
   exposure: "open",
   bay_spacing_mm: 6_000,
 };
+
+async function fetchAndShowProposal(
+  step1: WizardStep1Data,
+  step2: WizardStep2Data,
+  priorMessages: ChatMessage[],
+): Promise<{
+  proposal: ShedProposalResult;
+  messages: ChatMessage[];
+}> {
+  const result = await postProposeShed({
+    use_case: step1.use_case,
+    width_mm: step1.width_mm,
+    length_mm: step1.length_mm,
+    height_mm: step1.height_mm,
+    roof_style: step2.roof_style,
+    roof_pitch_deg: step2.roof_pitch_deg,
+    latitude: step1.latitude,
+    longitude: step1.longitude,
+    location_label: step1.location_label,
+    site_surroundings: step1.site_surroundings,
+    bay_spacing_mm: step2.bay_spacing_mm,
+  });
+  return {
+    proposal: result,
+    messages: [
+      ...priorMessages,
+      {
+        role: "assistant",
+        content: `Your starting model for ${result.summary}.\n\nRecommended sections are pre-selected — pick Light or Conservative if you prefer, then Build model.`,
+        ui_block: { type: "show_proposal" as const, payload: {} },
+      },
+    ],
+  };
+}
 
 function projectElementsFingerprint(elements: ProjectElementMm[]): string {
   return elements
@@ -112,11 +158,24 @@ function applyElementsFromApi(
   });
 }
 
+const DEFAULT_WIZARD_STEP1: WizardStep1Data = {
+  use_case: "",
+  width_mm: 15_000,
+  length_mm: 30_000,
+  height_mm: 6_000,
+  latitude: null,
+  longitude: null,
+  location_label: "",
+  site_surroundings: "auto",
+};
+
 interface ProjectStore {
   uiPhase: UiPhase;
-  wizardStep: WizardStep;
+  onboardingPhase: OnboardingPhase;
+  onboardingAwaitingCustom: OnboardingPhase | null;
   wizardStep1: WizardStep1Data;
   wizardStep2: WizardStep2Data;
+  siteContext: SiteContext | null;
   proposal: ShedProposalResult | null;
   proposalDraft: GridDefinition | null;
   isProposing: boolean;
@@ -130,10 +189,20 @@ interface ProjectStore {
   isLoading: boolean;
   isMacroLoading: boolean;
   error: string | null;
-  submitWizardStep1: (data: WizardStep1Data) => void;
-  submitWizardStep2: (data: WizardStep2Data) => Promise<void>;
-  wizardBack: (step: WizardStep) => void;
+  answerOnboarding: (value: string) => Promise<void>;
+  submitOnboardingCustom: (text: string) => Promise<void>;
+  setOnboardingLocation: (
+    lat: number,
+    lon: number,
+    label: string,
+  ) => Promise<void>;
+  confirmSiteRefine: (choice: string) => Promise<void>;
+  confirmSiteMapPin: (lat: number, lon: number) => Promise<void>;
+  requestLocationCustom: () => void;
+  updateWizardStep1: (patch: Partial<WizardStep1Data>) => void;
+  setOnboardingPhase: (phase: OnboardingPhase | "start") => void;
   updateProposalDraft: (patch: Partial<GridDefinition>) => void;
+  applyProposalTier: (tier: import("@/types/wizard").SectionTierName) => void;
   buildFromProposal: () => Promise<void>;
   completeTransition: () => void;
   sendMessage: (content: string) => Promise<void>;
@@ -155,13 +224,15 @@ interface ProjectStore {
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
   uiPhase: "onboarding",
-  wizardStep: 1,
+  onboardingPhase: "location",
+  onboardingAwaitingCustom: null,
   wizardStep1: { ...DEFAULT_WIZARD_STEP1 },
   wizardStep2: { ...DEFAULT_WIZARD_STEP2 },
+  siteContext: null,
   proposal: null,
   proposalDraft: null,
   isProposing: false,
-  messages: [{ role: "assistant", content: WELCOME_STEP1 }],
+  messages: [initialOnboardingMessage()],
   projectElements: emptyProjectState().projectElements,
   shedAssemblyParams: null,
   structuralGrid: { ...DEFAULT_STRUCTURAL_GRID },
@@ -172,73 +243,373 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   isMacroLoading: false,
   error: null,
 
-  submitWizardStep1: (data) => {
-    const useLabel = data.use_case.trim() || "your project";
-    set({
-      wizardStep1: data,
-      wizardStep: 2,
-      messages: [
-        ...get().messages,
-        {
-          role: "user",
-          content: `${useLabel} · ${data.width_mm / 1000}×${data.length_mm / 1000}×${data.height_mm / 1000} m`,
-        },
-        {
-          role: "assistant",
-          content: `Got it. A ${useLabel} at ${(data.width_mm / 1000).toFixed(1)}×${(data.length_mm / 1000).toFixed(1)} m needs clean internal clearance.\n\nWhat roof line do you prefer, and how exposed is the site?`,
-        },
-      ],
-    });
+  setOnboardingLocation: async (lat, lon, label) => {
+    if (get().uiPhase !== "onboarding" || get().isProposing) return;
+    set({ statuses: ["Fetching site wind and terrain data…"], error: null });
+    try {
+      const site = await fetchSiteContext(lat, lon, label);
+      const step1 = {
+        ...get().wizardStep1,
+        latitude: lat,
+        longitude: lon,
+        location_label: label,
+      };
+      const prior = stripInitialOnboardingWelcome(get().messages);
+      const nextMessages: ChatMessage[] = [
+        ...prior,
+        { role: "user", content: label },
+        siteConfirmedMessage(site),
+      ];
+      set({
+        wizardStep1: step1,
+        siteContext: site,
+        onboardingPhase: "site_refine",
+        onboardingAwaitingCustom: null,
+        statuses: [],
+        error: null,
+        messages: nextMessages,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to load site data";
+      set({ statuses: [], error: message });
+    }
   },
 
-  submitWizardStep2: async (data) => {
+  confirmSiteRefine: async (choice) => {
+    if (get().uiPhase !== "onboarding" || get().onboardingPhase !== "site_refine") {
+      return;
+    }
     const step1 = get().wizardStep1;
-    set({ wizardStep2: data, isProposing: true, error: null });
-    try {
-      const result = await postProposeShed({
-        use_case: step1.use_case,
-        width_mm: step1.width_mm,
-        length_mm: step1.length_mm,
-        height_mm: step1.height_mm,
-        roof_style: data.roof_style,
-        roof_pitch_deg: data.roof_pitch_deg,
-        exposure: data.exposure,
-        bay_spacing_mm: data.bay_spacing_mm,
-      });
-      const rationaleText = result.rationale.map((r) => `• ${r}`).join("\n");
+    if (step1.latitude === null || step1.longitude === null) return;
+
+    if (choice === SITE_PIN) {
       set({
-        proposal: result,
-        proposalDraft: { ...result.grid_definition },
-        wizardStep: 3,
-        isProposing: false,
+        messages: [
+          ...get().messages,
+          { role: "user", content: "Pin exact site on map" },
+          mapPinMessage(step1.latitude, step1.longitude),
+        ],
+        error: null,
+      });
+      return;
+    }
+
+    if (choice === SITE_BUILT_UP) {
+      const userLabel = surroundingsLabel(SITE_BUILT_UP);
+      const priorMessages = get().messages;
+      set({
+        statuses: ["Applying built-up / urban exposure…"],
+        error: null,
+        messages: [...priorMessages, { role: "user", content: userLabel }],
+      });
+
+      try {
+        const site = await fetchSiteContext(
+          step1.latitude,
+          step1.longitude,
+          step1.location_label,
+          SITE_BUILT_UP,
+        );
+        const step1BuiltUp: WizardStep1Data = {
+          ...step1,
+          site_surroundings: SITE_BUILT_UP,
+        };
+        const { messages, phase } = messagesAfterSiteSurroundingsConfirm(
+          site,
+          step1BuiltUp,
+          priorMessages,
+          userLabel,
+        );
+        set({
+          wizardStep1: step1BuiltUp,
+          siteContext: site,
+          onboardingPhase: phase,
+          statuses: [],
+          messages,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to update site data";
+        set({ statuses: [], error: message });
+      }
+      return;
+    }
+
+    if (choice !== SITE_OPEN_INDUSTRIAL) return;
+
+    const userLabel = surroundingsLabel(SITE_OPEN_INDUSTRIAL);
+    const priorMessages = get().messages;
+    set({
+      statuses: ["Applying open-site exposure…"],
+      error: null,
+      messages: [...priorMessages, { role: "user", content: userLabel }],
+    });
+
+    try {
+      const site = await fetchSiteContext(
+        step1.latitude,
+        step1.longitude,
+        step1.location_label,
+        SITE_OPEN_INDUSTRIAL,
+      );
+      const step1Open: WizardStep1Data = {
+        ...step1,
+        site_surroundings: SITE_OPEN_INDUSTRIAL,
+      };
+      const { messages, phase } = messagesAfterSiteSurroundingsConfirm(
+        site,
+        step1Open,
+        priorMessages,
+        userLabel,
+      );
+      set({
+        wizardStep1: step1Open,
+        siteContext: site,
+        onboardingPhase: phase,
+        statuses: [],
+        messages,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to update site data";
+      set({ statuses: [], error: message });
+    }
+  },
+
+  confirmSiteMapPin: async (lat, lon) => {
+    if (get().uiPhase !== "onboarding" || get().onboardingPhase !== "site_refine") {
+      return;
+    }
+    const step1 = get().wizardStep1;
+    const label = step1.location_label
+      ? `${step1.location_label} (pinned)`
+      : "Pinned site";
+
+    set({ statuses: ["Fetching site data for pinned location…"], error: null });
+    try {
+      const site = await fetchSiteContext(lat, lon, label, "auto");
+      const nextStep1 = {
+        ...step1,
+        latitude: lat,
+        longitude: lon,
+        location_label: label,
+      };
+      set({
+        wizardStep1: { ...nextStep1, site_surroundings: "auto" },
+        siteContext: site,
+        statuses: [],
+        error: null,
         messages: [
           ...get().messages,
           {
             role: "user",
-            content: `${data.roof_style.replace("_", " ")} · ${data.exposure} exposure · ${data.bay_spacing_mm ? `${data.bay_spacing_mm / 1000} m bays` : "auto bays"}`,
+            content: `Pinned at ${lat.toFixed(4)}, ${lon.toFixed(4)}`,
           },
-          {
-            role: "assistant",
-            content: `Here's my engineering proposal for ${result.summary}:\n\n${rationaleText}\n\nReview the configuration below, adjust anything you like, then build when ready.`,
-          },
+          siteConfirmedMessage(site),
         ],
       });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to compute proposal";
-      set({ isProposing: false, error: message });
-      throw err;
+        err instanceof Error ? err.message : "Failed to load pinned site";
+      set({ statuses: [], error: message });
     }
   },
 
-  wizardBack: (step) => {
-    set({ wizardStep: step, error: null });
+  requestLocationCustom: () => {
+    set({ onboardingAwaitingCustom: "location", error: null });
+  },
+
+  updateWizardStep1: (patch) => {
+    set({ wizardStep1: { ...get().wizardStep1, ...patch } });
+  },
+
+  setOnboardingPhase: (phase) => {
+    if (get().uiPhase !== "onboarding" || get().isProposing) return;
+    if (phase === "start") {
+      set({
+        onboardingPhase: "location",
+        onboardingAwaitingCustom: null,
+        messages: [initialOnboardingMessage()],
+        error: null,
+      });
+      return;
+    }
+    set({ onboardingPhase: phase, onboardingAwaitingCustom: null, error: null });
+  },
+
+  answerOnboarding: async (value) => {
+    if (get().uiPhase !== "onboarding" || get().isProposing) return;
+    const phase = get().onboardingPhase;
+    if (phase === "proposal") return;
+
+    if (value === CUSTOM_VALUE) {
+      set({ onboardingAwaitingCustom: phase, error: null });
+      return;
+    }
+
+    await get().submitOnboardingCustom(value);
+  },
+
+  submitOnboardingCustom: async (rawValue) => {
+    if (get().uiPhase !== "onboarding" || get().isProposing) return;
+
+    const phase = get().onboardingAwaitingCustom ?? get().onboardingPhase;
+    if (phase === "proposal") return;
+
+    const trimmed = rawValue.trim();
+    if (!trimmed) return;
+
+    let value = trimmed;
+    if (phase === "width" || phase === "length" || phase === "height") {
+      if (/^\d+$/.test(trimmed) && Number(trimmed) >= 1000) {
+        value = trimmed;
+      } else {
+        const mm = parseMetresInput(trimmed);
+        if (mm === null || mm < 1000) {
+          set({ error: "Enter a valid dimension in metres (e.g. 15)." });
+          return;
+        }
+        value = String(mm);
+      }
+    } else if (phase === "location") {
+      set({ statuses: ["Looking up address…"], error: null });
+      try {
+        const geo = await geocodeLocation(trimmed);
+        await get().setOnboardingLocation(
+          geo.latitude,
+          geo.longitude,
+          geo.display_name || trimmed,
+        );
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Could not find that location";
+        set({ statuses: [], error: message });
+      }
+      return;
+    } else if (phase === "use_case") {
+      value = trimmed;
+    }
+
+    const step1 = { ...get().wizardStep1 };
+    const step2 = { ...get().wizardStep2 };
+
+    switch (phase) {
+      case "use_case":
+        step1.use_case = value;
+        break;
+      case "width":
+        step1.width_mm = Number(value);
+        break;
+      case "length":
+        step1.length_mm = Number(value);
+        break;
+      case "height":
+        step1.height_mm = Number(value);
+        break;
+      case "roof_style":
+        step2.roof_style = value as WizardStep2Data["roof_style"];
+        if (value === "flat") step2.roof_pitch_deg = 0;
+        break;
+      case "roof_pitch":
+        step2.roof_pitch_deg = Number(value);
+        break;
+      default:
+        return;
+    }
+
+    const userContent = userLabelForPhase(phase, value, step1, step2);
+    const nextMessages: ChatMessage[] = [
+      ...get().messages,
+      { role: "user", content: userContent },
+    ];
+    const nextPhase = nextPhaseAfter(phase, step2);
+
+    set({
+      wizardStep1: step1,
+      wizardStep2: step2,
+      onboardingPhase: nextPhase,
+      onboardingAwaitingCustom: null,
+      error: null,
+      messages: nextMessages,
+    });
+
+    if (nextPhase === "proposal") {
+      set({
+        isProposing: true,
+        statuses: ["Computing proposal and running AI review…"],
+        messages: [
+          ...nextMessages,
+          {
+            role: "assistant",
+            content: "Let me work out the best structural layout for your site…",
+          },
+        ],
+      });
+      try {
+        const { proposal, messages } = await fetchAndShowProposal(
+          step1,
+          step2,
+          nextMessages,
+        );
+        set({
+          proposal,
+          proposalDraft: { ...proposal.grid_definition },
+          isProposing: false,
+          statuses: [],
+          messages,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to compute proposal";
+        set({
+          isProposing: false,
+          statuses: [],
+          onboardingPhase: step2.roof_style === "flat" ? "roof_style" : "roof_pitch",
+          error: message,
+          messages: [
+            ...nextMessages,
+            {
+              role: "assistant",
+              content: `Sorry, I couldn't compute the proposal: ${message}\n\nCheck the backend on port 8000 and try again.`,
+              ui_block: nextOnboardingMessage(
+                step2.roof_style === "flat" ? "roof_style" : "roof_pitch",
+                step1,
+                step2,
+              ).ui_block,
+            },
+          ],
+        });
+      }
+      return;
+    }
+
+    const assistantMessage = nextOnboardingMessage(nextPhase, step1, step2);
+    set({ messages: [...nextMessages, assistantMessage] });
   },
 
   updateProposalDraft: (patch) => {
     const draft = get().proposalDraft;
     if (!draft) return;
     set({ proposalDraft: { ...draft, ...patch } });
+  },
+
+  applyProposalTier: (tier) => {
+    const proposal = get().proposal;
+    const draft = get().proposalDraft;
+    if (!proposal?.section_tiers?.length || !draft) return;
+    const pkg = proposal.section_tiers.find((t) => t.tier === tier);
+    if (!pkg) return;
+    set({
+      proposalDraft: {
+        ...draft,
+        column_profile: pkg.column_profile,
+        bracing_profile: pkg.bracing_profile,
+        truss_chord_profile: pkg.truss_chord_profile ?? draft.truss_chord_profile,
+        truss_web_profile: pkg.truss_web_profile ?? draft.truss_web_profile,
+        tie_beam_profile: pkg.tie_beam_profile ?? draft.tie_beam_profile,
+      },
+    });
   },
 
   buildFromProposal: async () => {
@@ -261,7 +632,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     try {
       await get().generateShedMacro(gridDefinitionToLayout(draft));
     } catch {
-      set({ uiPhase: "onboarding", wizardStep: 3, statuses: [] });
+      set({ uiPhase: "onboarding", onboardingPhase: "proposal", statuses: [] });
       throw new Error("Build failed — check the backend on port 8000.");
     }
   },

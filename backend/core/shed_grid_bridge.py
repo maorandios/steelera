@@ -54,4 +54,5 @@ def grid_definition_from_shed_config(cfg: ShedAssemblyConfig) -> GridDefinition:
         base_plate_profile=cfg.base_plate_profile,
         truss_chord_profile=cfg.truss_chord_profile,
         truss_web_profile=cfg.truss_web_profile,
+        tie_beam_profile=cfg.tie_beam_profile,
     )

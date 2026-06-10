@@ -30,10 +30,44 @@ export type ShedChecklistSelections = {
   truss_type: Exclude<TrussType, "none">;
 };
 
-export type ChatUiBlock = {
-  type: "show_component_checklist";
-  payload: ShedChecklistPayload;
+export type QuickReplyOption = {
+  label: string;
+  value: string;
 };
+
+export type QuickRepliesPayload = {
+  onboardingPhase: string;
+  options: QuickReplyOption[];
+  allowCustom?: boolean;
+  customPlaceholder?: string;
+  customUnit?: string;
+};
+
+export type ChatUiBlock =
+  | {
+      type: "show_component_checklist";
+      payload: ShedChecklistPayload;
+    }
+  | {
+      type: "quick_replies";
+      payload: QuickRepliesPayload;
+    }
+  | {
+      type: "location_picker";
+      payload: Record<string, never>;
+    }
+  | {
+      type: "site_refine";
+      payload: Record<string, never>;
+    }
+  | {
+      type: "map_pin_picker";
+      payload: { latitude: number; longitude: number };
+    }
+  | {
+      type: "show_proposal";
+      payload: Record<string, never>;
+    };
 
 export interface ChatMessage {
   role: ChatRole;

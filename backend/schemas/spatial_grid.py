@@ -148,7 +148,11 @@ class GridDefinition(BaseModel):
     )
     truss_web_profile: str | None = Field(
         None,
-        description="Truss web diagonal section (e.g. L60x60x6 / L50x50).",
+        description="Truss web diagonal (L / SHS / CHS, e.g. L60x60x6 / SHS100x100x6).",
+    )
+    tie_beam_profile: str | None = Field(
+        None,
+        description="Longitudinal eave/ridge tie beam (e.g. IPE240).",
     )
     custom_levels: dict[str, float] = Field(
         default_factory=dict,
@@ -173,6 +177,7 @@ class GridDefinition(BaseModel):
         "base_plate_profile",
         "truss_chord_profile",
         "truss_web_profile",
+        "tie_beam_profile",
     )
     @classmethod
     def validate_profile(cls, value: str | None) -> str | None:

@@ -96,7 +96,10 @@ class ShedAssemblyConfig(BaseModel):
         None, description="Truss top + bottom chord, e.g. SHS120x120x6 or IPE200"
     )
     truss_web_profile: str | None = Field(
-        None, description="Truss web diagonal, e.g. L60x60x6 or L50x50"
+        None, description="Truss web diagonal (L / SHS / CHS, e.g. L60x60x6)"
+    )
+    tie_beam_profile: str | None = Field(
+        None, description="Longitudinal eave/ridge tie beam, e.g. IPE240"
     )
     generate_purlins: bool = True
     generate_tie_beams: bool = True
@@ -116,6 +119,7 @@ class ShedAssemblyConfig(BaseModel):
         "base_plate_profile",
         "truss_chord_profile",
         "truss_web_profile",
+        "tie_beam_profile",
     )
     @classmethod
     def validate_profile(cls, value: str | None) -> str | None:

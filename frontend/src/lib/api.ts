@@ -1,3 +1,5 @@
+import type { SiteSurroundings } from "@/lib/site-surroundings";
+import type { GeocodeResult, SiteContext } from "@/types/site";
 import type { ChatMessage, ChatResponse } from "@/types/chat";
 import type {
   ShedProposalRequest,
@@ -74,6 +76,54 @@ export async function postChat(
 const MACRO_TIMEOUT_MS = 60_000;
 
 export type GenerateShedBody = ShedAssemblyConfig | StructuralGridLayout;
+
+const SITE_TIMEOUT_MS = 45_000;
+
+export async function fetchSiteContext(
+  lat: number,
+  lon: number,
+  label = "",
+  surroundings: SiteSurroundings = "auto",
+): Promise<SiteContext> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SITE_TIMEOUT_MS);
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    surroundings,
+    ...(label ? { label } : {}),
+  });
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/site/context?${params}`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Site context failed (${res.status})`);
+    }
+    return res.json() as Promise<SiteContext>;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function geocodeLocation(query: string): Promise<GeocodeResult> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SITE_TIMEOUT_MS);
+  const params = new URLSearchParams({ q: query });
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/site/geocode?${params}`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Geocoding failed (${res.status})`);
+    }
+    return res.json() as Promise<GeocodeResult>;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export async function postProposeShed(
   body: ShedProposalRequest,

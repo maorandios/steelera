@@ -60,6 +60,7 @@ export interface GridDefinition {
   base_plate_profile?: string | null;
   truss_chord_profile?: string | null;
   truss_web_profile?: string | null;
+  tie_beam_profile?: string | null;
 }
 
 export interface StructuralMember {
