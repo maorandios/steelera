@@ -10,6 +10,8 @@ import {
   postGenerateShed,
   postPlaceBraceLeg,
   postPlaceBracingCross,
+  postPlaceGridColumn,
+  postPlaceGridTieBeam,
   postProposeShed,
   postUpdateProfile,
   type GenerateShedBody,
@@ -23,7 +25,23 @@ import {
   switchFrameToRafter,
   switchFrameToTruss,
 } from "@/lib/assembly-edit";
+import {
+  extractPendingProfileFromMessages,
+  WORKSPACE_PICK_ON_MODEL,
+} from "@/lib/pending-profile";
+import {
+  resolveColumnTargetIds,
+  type ColumnEditScope,
+} from "@/lib/column-member-scope";
 import { resolveSelectionContext } from "@/lib/selection-context";
+import { selectionContextToPayload } from "@/lib/selection-context-payload";
+import {
+  assemblyIdFromElements,
+  inferTrussedZLabels,
+  resolveBaySelection,
+  shedParamsToGridPlacement,
+  zLabelsForGrid,
+} from "@/lib/grid-selection";
 import { gridDefinitionToLayout } from "@/lib/grid-proposal";
 import {
   extractGridIntentFromMessages,
@@ -99,6 +117,7 @@ import type {
   SnapNode,
   ViewportMode,
 } from "@/types/interaction";
+import type { GridSelectionContext } from "@/types/grid-selection";
 import type { TrussType } from "@/types/shed-config";
 import { emptyProjectState, normalizeElement } from "@/types/project";
 
@@ -178,6 +197,8 @@ function projectElementsFingerprint(elements: ProjectElementMm[]): string {
 function isStructuralChatRequest(text: string): boolean {
   const t = text.toLowerCase();
   if (/\b(duplicate|copy|array|multiply|clone|delete)\b/.test(t)) return false;
+  if (/\b(switch to|apply)\s+(hea|heb|ipe|rhs|shs)\b/.test(t)) return false;
+  if (/^(hea|heb|ipe|rhs|shs)\d/i.test(t.trim())) return false;
   return (
     /\b(build|create|design|generate|make|shed|portal|frame|warehouse|structure|truss|church|hall)\b/.test(
       t,
@@ -214,6 +235,22 @@ const DEFAULT_WIZARD_STEP1: WizardStep1Data = {
   site_surroundings: "auto",
 };
 
+export type MemberPickIntent = "profile" | "rotation" | "alignment" | "delete";
+
+export type MemberPickMode = {
+  intent: MemberPickIntent;
+  profile?: string;
+  rotation?: ElementRotation;
+  alignment?: ElementAlignment;
+  updatedCount: number;
+};
+
+export type MemberPickStart =
+  | { intent: "profile"; profile: string }
+  | { intent: "rotation"; rotation: ElementRotation }
+  | { intent: "alignment"; alignment: ElementAlignment }
+  | { intent: "delete" };
+
 interface ProjectStore {
   uiPhase: UiPhase;
   onboardingPhase: OnboardingPhase;
@@ -230,8 +267,10 @@ interface ProjectStore {
   structuralGrid: StructuralGridState;
   selectedElementId: string | null;
   selectionContext: SelectionContext | null;
+  gridSelectionContext: GridSelectionContext | null;
   viewportMode: ViewportMode;
   placementIntent: PlacementIntent | null;
+  placementProfile: string | null;
   pickedNodes: PickedNode[];
   snapNodes: SnapNode[];
   structuralTopology: StructuralTopology | null;
@@ -239,6 +278,26 @@ interface ProjectStore {
   isLoading: boolean;
   isMacroLoading: boolean;
   error: string | null;
+  memberPickMode: MemberPickMode | null;
+  startMemberPickMode: (start: MemberPickStart) => void;
+  applyMemberPick: (elementId: string) => Promise<void>;
+  finishMemberPickMode: () => void;
+  cancelMemberPickMode: () => void;
+  /** @deprecated use startMemberPickMode */
+  startProfilePickMode: (profile: string) => void;
+  applyColumnProfile: (
+    profile: string,
+    scope: ColumnEditScope,
+  ) => Promise<void>;
+  applyColumnRotation: (
+    rotation: ElementRotation,
+    scope: ColumnEditScope,
+  ) => Promise<void>;
+  applyColumnAlignment: (
+    alignment: ElementAlignment,
+    scope: ColumnEditScope,
+  ) => Promise<void>;
+  deleteColumnsScoped: (scope: ColumnEditScope) => Promise<void>;
   answerOnboarding: (value: string) => Promise<void>;
   submitOnboardingCustom: (text: string) => Promise<void>;
   setOnboardingLocation: (
@@ -266,9 +325,23 @@ interface ProjectStore {
   setStructuralGridFromSpans: (xSpacingInput: string, zSpacingInput: string) => void;
   clearError: () => void;
   selectElement: (id: string) => void;
+  selectGridBay: (bayIndex: number) => void;
   selectAssembly: (assemblyId: string, focusElementId?: string | null) => void;
   clearSelection: () => void;
-  startNodePlacement: (intent: PlacementIntent) => Promise<void>;
+  placeGridColumn: (
+    xAxis: string,
+    zAxis: string,
+    profile?: string,
+  ) => Promise<void>;
+  placeGridTieBeam: (
+    xAxis: string,
+    profile?: string,
+    elevation?: string,
+  ) => Promise<void>;
+  startNodePlacement: (
+    intent: Exclude<PlacementIntent, "insert_frame">,
+    options?: { profile?: string },
+  ) => Promise<void>;
   cancelNodePlacement: () => void;
   pickSnapNode: (node: SnapNode) => Promise<void>;
   updateMemberProfile: (profile: string, scope: ProfileScope) => Promise<void>;
@@ -302,8 +375,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   structuralGrid: { ...DEFAULT_STRUCTURAL_GRID },
   selectedElementId: null,
   selectionContext: null,
+  gridSelectionContext: null,
   viewportMode: "inspect",
   placementIntent: null,
+  placementProfile: null,
   pickedNodes: [],
   snapNodes: [],
   structuralTopology: null,
@@ -311,6 +386,248 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   isLoading: false,
   isMacroLoading: false,
   error: null,
+  memberPickMode: null,
+
+  startMemberPickMode: (start) => {
+    set({
+      viewportMode: "pick_members_profile",
+      memberPickMode: { ...start, updatedCount: 0 },
+      selectedElementId: null,
+      selectionContext: null,
+      gridSelectionContext: null,
+      placementIntent: null,
+      pickedNodes: [],
+      statuses: ["Click columns in the viewport. Tap Done when finished."],
+    });
+  },
+
+  startProfilePickMode: (profile) => {
+    get().startMemberPickMode({ intent: "profile", profile });
+  },
+
+  applyMemberPick: async (elementId) => {
+    const pick = get().memberPickMode;
+    if (!pick) return;
+    const element = get().projectElements.find((e) => e.id === elementId);
+    if (!element || element.element_type !== "column") return;
+
+    try {
+      if (pick.intent === "profile" && pick.profile) {
+        set({ statuses: [`Applying ${pick.profile}…`] });
+        const result = await postUpdateProfile(
+          get().projectElements,
+          pick.profile,
+          elementId,
+          "selection",
+        );
+        const elements = applyElementsFromApi(
+          result.projectElements,
+          get().projectElements,
+        );
+        set({
+          projectElements: elements,
+          memberPickMode: {
+            ...pick,
+            updatedCount: pick.updatedCount + 1,
+          },
+          statuses: [],
+          error: null,
+        });
+        return;
+      }
+
+      if (pick.intent === "rotation" && pick.rotation !== undefined) {
+        set((state) => ({
+          projectElements: state.projectElements.map((el) =>
+            el.id === elementId ? { ...el, rotation: pick.rotation } : el,
+          ),
+          memberPickMode: {
+            ...pick,
+            updatedCount: pick.updatedCount + 1,
+          },
+          statuses: [],
+        }));
+        return;
+      }
+
+      if (pick.intent === "alignment" && pick.alignment) {
+        set((state) => ({
+          projectElements: state.projectElements.map((el) =>
+            el.id === elementId ? { ...el, alignment: pick.alignment } : el,
+          ),
+          memberPickMode: {
+            ...pick,
+            updatedCount: pick.updatedCount + 1,
+          },
+          statuses: [],
+        }));
+        return;
+      }
+
+      if (pick.intent === "delete") {
+        set({ statuses: ["Removing column…"] });
+        const result = await postDeleteMembers(
+          get().projectElements,
+          elementId,
+          "selection",
+        );
+        const elements = applyElementsFromApi(
+          result.projectElements,
+          get().projectElements,
+        );
+        set({
+          projectElements: elements,
+          memberPickMode: {
+            ...pick,
+            updatedCount: pick.updatedCount + 1,
+          },
+          selectedElementId: null,
+          selectionContext: null,
+          statuses: [],
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Update failed";
+      set({ statuses: [], error: message });
+    }
+  },
+
+  finishMemberPickMode: () => {
+    const pick = get().memberPickMode;
+    if (!pick) return;
+    const { updatedCount } = pick;
+    set({
+      viewportMode: "inspect",
+      memberPickMode: null,
+      statuses:
+        updatedCount > 0
+          ? [`Updated ${updatedCount} column(s).`]
+          : ["No columns were updated."],
+    });
+  },
+
+  cancelMemberPickMode: () => {
+    set({
+      viewportMode: "inspect",
+      memberPickMode: null,
+      statuses: [],
+    });
+  },
+
+  applyColumnProfile: async (profile, scope) => {
+    const id = get().selectedElementId;
+    if (!id) return;
+    const ids = resolveColumnTargetIds(get().projectElements, id, scope);
+    if (ids.length === 0) return;
+    set({ isLoading: true, error: null, statuses: ["Updating section…"] });
+    try {
+      const result = await postUpdateProfile(
+        get().projectElements,
+        profile,
+        id,
+        "selection",
+        ids,
+      );
+      const elements = applyElementsFromApi(
+        result.projectElements,
+        get().projectElements,
+      );
+      const selected = elements.find((e) => e.id === id) ?? null;
+      set({
+        projectElements: elements,
+        isLoading: false,
+        statuses: [result.message],
+        selectionContext: selected
+          ? resolveSelectionContext(selected, elements, {
+              trussType: trussTypeHint(get().shedAssemblyParams),
+            })
+          : get().selectionContext,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Profile update failed";
+      set({ isLoading: false, statuses: [], error: message });
+    }
+  },
+
+  applyColumnRotation: async (rotation, scope) => {
+    const id = get().selectedElementId;
+    if (!id) return;
+    const ids = new Set(
+      resolveColumnTargetIds(get().projectElements, id, scope),
+    );
+    if (ids.size === 0) return;
+    set((state) => {
+      const elements = state.projectElements.map((el) =>
+        ids.has(el.id) ? { ...el, rotation } : el,
+      );
+      const selected = elements.find((e) => e.id === id) ?? null;
+      return {
+        projectElements: elements,
+        statuses: [`Rotation ${rotation}° applied to ${ids.size} column(s).`],
+        selectionContext: selected
+          ? resolveSelectionContext(selected, elements, {
+              trussType: trussTypeHint(get().shedAssemblyParams),
+            })
+          : state.selectionContext,
+      };
+    });
+  },
+
+  applyColumnAlignment: async (alignment, scope) => {
+    const id = get().selectedElementId;
+    if (!id) return;
+    const ids = new Set(
+      resolveColumnTargetIds(get().projectElements, id, scope),
+    );
+    if (ids.size === 0) return;
+    set((state) => {
+      const elements = state.projectElements.map((el) =>
+        ids.has(el.id) ? { ...el, alignment } : el,
+      );
+      const selected = elements.find((e) => e.id === id) ?? null;
+      return {
+        projectElements: elements,
+        statuses: [`Alignment “${alignment}” applied to ${ids.size} column(s).`],
+        selectionContext: selected
+          ? resolveSelectionContext(selected, elements, {
+              trussType: trussTypeHint(get().shedAssemblyParams),
+            })
+          : state.selectionContext,
+      };
+    });
+  },
+
+  deleteColumnsScoped: async (scope) => {
+    const id = get().selectedElementId;
+    if (!id) return;
+    const ids = resolveColumnTargetIds(get().projectElements, id, scope);
+    if (ids.length === 0) return;
+    set({ isLoading: true, error: null, statuses: ["Removing columns…"] });
+    try {
+      const result = await postDeleteMembers(
+        get().projectElements,
+        id,
+        "selection",
+        ids,
+      );
+      const elements = applyElementsFromApi(
+        result.projectElements,
+        get().projectElements,
+      );
+      set({
+        projectElements: elements,
+        selectedElementId: null,
+        selectionContext: null,
+        isLoading: false,
+        statuses: [result.message],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Delete failed";
+      set({ isLoading: false, statuses: [], error: message });
+    }
+  },
 
   setOnboardingLocation: async (lat, lon, label) => {
     if (get().uiPhase !== "onboarding" || get().isProposing) return;
@@ -656,14 +973,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({
       uiPhase: "transition",
       statuses: ["Generating structural model…"],
-      messages: [
-        ...get().messages,
-        {
-          role: "assistant",
-          content:
-            "Building your structure now — the 3D model will appear momentarily.",
-        },
-      ],
     });
     try {
       await get().generateShedMacro(gridDefinitionToLayout(draft));
@@ -677,14 +986,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({
       uiPhase: "workspace",
       statuses: [],
-      messages: [
-        ...get().messages,
-        {
-          role: "assistant",
-          content:
-            "Your structure is ready in the workspace. Select members in the viewport, refine in the side panels, or ask me to modify the design.",
-        },
-      ],
+      messages: [],
+      selectedElementId: null,
+      selectionContext: null,
     });
   },
 
@@ -861,6 +1165,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   selectElement: (id) => {
     const elements = get().projectElements;
     const element = elements.find((e) => e.id === id);
+    const mode = get().viewportMode;
     set({
       selectedElementId: id,
       selectionContext: element
@@ -868,10 +1173,114 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
             trussType: trussTypeHint(get().shedAssemblyParams),
           })
         : null,
-      viewportMode: "inspect",
+      gridSelectionContext: null,
+      viewportMode: mode === "pick_members_profile" ? mode : "inspect",
       placementIntent: null,
       pickedNodes: [],
     });
+  },
+
+  selectGridBay: (bayIndex) => {
+    const ctx = resolveBaySelection(
+      bayIndex,
+      get().structuralGrid,
+      get().projectElements,
+      get().shedAssemblyParams,
+    );
+    if (!ctx) {
+      set({ error: "Invalid bay selection." });
+      return;
+    }
+    set({
+      selectedElementId: null,
+      selectionContext: null,
+      gridSelectionContext: ctx,
+      viewportMode: "inspect",
+      placementIntent: null,
+      pickedNodes: [],
+      error: null,
+    });
+  },
+
+  placeGridColumn: async (xAxis, zAxis, profile) => {
+    const gridCtx = get().gridSelectionContext;
+    if (!gridCtx) return;
+    const params =
+      get().shedAssemblyParams ??
+      inferShedParamsFromElements(get().projectElements);
+    if (!params) {
+      set({ error: "Generate a shed before placing grid members." });
+      return;
+    }
+    const prof = (profile ?? gridCtx.defaultColumnProfile).trim().toUpperCase();
+    const zLabels = zLabelsForGrid(get().structuralGrid);
+    const trussed = inferTrussedZLabels(
+      get().projectElements,
+      zLabels,
+      params.use_truss,
+    );
+    set({ isLoading: true, error: null, statuses: ["Placing column…"] });
+    try {
+      const result = await postPlaceGridColumn(get().projectElements, {
+        x_axis: xAxis,
+        z_axis: zAxis,
+        profile: prof,
+        grid: shedParamsToGridPlacement(params),
+        trussed_z_labels: trussed,
+        assembly_id: assemblyIdFromElements(get().projectElements),
+      });
+      const elements = applyElementsFromApi(
+        result.projectElements,
+        get().projectElements,
+      );
+      set({
+        projectElements: elements,
+        isLoading: false,
+        statuses: [result.message],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to place column";
+      set({ isLoading: false, statuses: [], error: message });
+    }
+  },
+
+  placeGridTieBeam: async (xAxis, profile, elevation = "eave") => {
+    const gridCtx = get().gridSelectionContext;
+    if (!gridCtx) return;
+    const params =
+      get().shedAssemblyParams ??
+      inferShedParamsFromElements(get().projectElements);
+    if (!params) {
+      set({ error: "Generate a shed before placing grid members." });
+      return;
+    }
+    const prof = (profile ?? gridCtx.defaultTieProfile).trim().toUpperCase();
+    set({ isLoading: true, error: null, statuses: ["Placing tie beam…"] });
+    try {
+      const result = await postPlaceGridTieBeam(get().projectElements, {
+        x_axis: xAxis,
+        z_start: gridCtx.zStart,
+        z_end: gridCtx.zEnd,
+        profile: prof,
+        elevation,
+        grid: shedParamsToGridPlacement(params),
+        assembly_id: assemblyIdFromElements(get().projectElements),
+      });
+      const elements = applyElementsFromApi(
+        result.projectElements,
+        get().projectElements,
+      );
+      set({
+        projectElements: elements,
+        isLoading: false,
+        statuses: [result.message],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to place tie beam";
+      set({ isLoading: false, statuses: [], error: message });
+    }
   },
 
   selectAssembly: (assemblyId, focusElementId = null) => {
@@ -896,6 +1305,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
             trussType: trussTypeHint(get().shedAssemblyParams),
           })
         : null,
+      gridSelectionContext: null,
     });
   },
 
@@ -903,6 +1313,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({
       selectedElementId: null,
       selectionContext: null,
+      gridSelectionContext: null,
       viewportMode: "inspect",
       placementIntent: null,
       pickedNodes: [],
@@ -1090,10 +1501,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
-  startNodePlacement: async (intent) => {
+  startNodePlacement: async (intent, options) => {
     set({
       viewportMode: "pick_nodes",
       placementIntent: intent,
+      placementProfile: options?.profile ?? null,
       pickedNodes: [],
       error: null,
       statuses: ["Loading connection points…"],
@@ -1113,6 +1525,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({
         viewportMode: "inspect",
         placementIntent: null,
+        placementProfile: null,
         statuses: [],
         error: message,
       });
@@ -1123,6 +1536,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({
       viewportMode: "inspect",
       placementIntent: null,
+      placementProfile: null,
       pickedNodes: [],
       statuses: [],
     }),
@@ -1151,7 +1565,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
 
     const ctx = get().selectionContext;
-    const profile = ctx?.profile ?? "L70x70x7";
+    const profile =
+      get().placementProfile ?? ctx?.profile ?? "L70x70x7";
     const assemblyId = ctx?.assemblyId;
     set({ statuses: ["Placing bracing…"], isLoading: true, error: null });
 
@@ -1189,6 +1604,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         projectElements: elements,
         viewportMode: "inspect",
         placementIntent: null,
+        placementProfile: null,
         pickedNodes: [],
         snapNodes: [],
         isLoading: false,
@@ -1219,6 +1635,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         pickedNodes: [],
         viewportMode: "inspect",
         placementIntent: null,
+        placementProfile: null,
       });
     }
   },
@@ -1242,16 +1659,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({
         projectElements: elements,
         isLoading: false,
-        statuses: [],
+        statuses: [result.message],
         selectionContext: selected
           ? resolveSelectionContext(selected, elements, {
               trussType: trussTypeHint(get().shedAssemblyParams),
             })
           : null,
-        messages: [
-          ...get().messages,
-          { role: "assistant", content: result.message },
-        ],
       });
     } catch (err) {
       const message =
@@ -1279,11 +1692,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         selectedElementId: null,
         selectionContext: null,
         isLoading: false,
-        statuses: [],
-        messages: [
-          ...get().messages,
-          { role: "assistant", content: result.message },
-        ],
+        statuses: [result.message],
       });
     } catch (err) {
       const message =
@@ -1310,6 +1719,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const trimmed = content.trim();
     if (!trimmed || get().isLoading) return;
 
+    if (trimmed === WORKSPACE_PICK_ON_MODEL) {
+      const profile = extractPendingProfileFromMessages(get().messages);
+      if (profile) {
+        get().startProfilePickMode(profile);
+      }
+      return;
+    }
+
     const userMessage: ChatMessage = { role: "user", content: trimmed };
     const nextMessages = [...get().messages, userMessage];
     const projectState = {
@@ -1326,11 +1743,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     try {
       const selectedId = get().selectedElementId;
+      const selectionPayload = selectionContextToPayload(get().selectionContext);
       const apiMessages = nextMessages.slice(-API_MESSAGE_WINDOW);
       const response = await postChat(
         apiMessages,
         projectState,
         selectedId,
+        selectionPayload,
       );
       const priorElements = get().projectElements;
       const incoming =
@@ -1375,6 +1794,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         ui_block: response.message.ui_block ?? null,
       };
 
+      const refreshedSelection = (() => {
+        if (!selectedStillExists || !selectedId) return null;
+        const el = elements.find((e) => e.id === selectedId);
+        return el
+          ? resolveSelectionContext(el, elements, {
+              trussType: trussTypeHint(nextShedParams),
+            })
+          : null;
+      })();
+
       set({
         messages: [...nextMessages, assistantMessage],
         projectElements: elements,
@@ -1385,6 +1814,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         statuses: [],
         isLoading: false,
         selectedElementId: selectedStillExists ? selectedId : null,
+        selectionContext: refreshedSelection,
       });
     } catch (err) {
       const message =
@@ -1413,11 +1843,7 @@ export function useSelectedElement(): ProjectElementMm | null {
 }
 
 export function useIsElementHighlighted(elementId: string): boolean {
-  const ctx = useProjectStore((state) => state.selectionContext);
   const selectedElementId = useProjectStore((state) => state.selectedElementId);
-  if (ctx?.highlightIds?.length) {
-    return ctx.highlightIds.includes(elementId);
-  }
   return selectedElementId === elementId;
 }
 

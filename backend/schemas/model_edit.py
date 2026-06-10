@@ -51,5 +51,35 @@ class ModelEditResponse(BaseModel):
     changed_ids: list[str] = Field(default_factory=list)
 
 
+class GridPlacementContext(BaseModel):
+    """Minimal grid definition to resolve node coordinates for surgical placement."""
+
+    x_spans: list[float] = Field(..., min_length=1)
+    z_spans: list[float] = Field(..., min_length=1)
+    height_mm: float = Field(..., gt=0)
+    roof_pitch_deg: float = Field(10.0, ge=0, lt=90)
+    roof_style: str = "duo_pitch"
+    mono_high_side: str = "B"
+
+
+class PlaceGridColumnRequest(BaseModel):
+    x_axis: str = Field(..., description='X grid line e.g. "A"')
+    z_axis: str = Field(..., description='Z grid line or sub-node e.g. "2" or "2+1/2"')
+    profile: str = Field(..., description="Catalog column section e.g. HEA200")
+    assembly_id: str | None = None
+    grid: GridPlacementContext
+    trussed_z_labels: list[str] = Field(default_factory=list)
+
+
+class PlaceGridTieBeamRequest(BaseModel):
+    x_axis: str
+    z_start: str = Field(..., description='Start frame e.g. "2"')
+    z_end: str = Field(..., description='End frame e.g. "3"')
+    profile: str = Field(default="IPE200")
+    elevation: str = Field(default="eave", description="eave | roof | apex")
+    assembly_id: str | None = None
+    grid: GridPlacementContext
+
+
 class ModelEditBody(BaseModel):
     project_elements: list[ProjectElementMm] = Field(default_factory=list)

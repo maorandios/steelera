@@ -28,9 +28,11 @@ const Canvas = dynamic(
 export function Viewport3D() {
   const projectElements = useProjectStore((state) => state.projectElements);
   const viewportMode = useProjectStore((s) => s.viewportMode);
+  const memberPickMode = useProjectStore((s) => s.memberPickMode);
   const placementIntent = useProjectStore((s) => s.placementIntent);
   const pickedNodes = useProjectStore((s) => s.pickedNodes);
   const cancelNodePlacement = useProjectStore((s) => s.cancelNodePlacement);
+  const cancelMemberPickMode = useProjectStore((s) => s.cancelMemberPickMode);
   const count = projectElements.length;
   const pickLabel =
     placementIntent === "full_x"
@@ -63,6 +65,26 @@ export function Viewport3D() {
             }`
           : "3D viewport — awaiting structure"}
       </div>
+      {viewportMode === "pick_members_profile" && memberPickMode ? (
+        <div className="pointer-events-auto absolute inset-x-3 top-12 z-10 flex items-center justify-between gap-2 rounded-md border border-violet-200 bg-violet-50/95 px-3 py-2 text-xs text-violet-900 shadow-sm backdrop-blur-sm">
+          <span>
+            Pick columns —{" "}
+            {memberPickMode.intent === "profile"
+              ? memberPickMode.profile
+              : memberPickMode.intent}
+            {memberPickMode.updatedCount > 0
+              ? ` (${memberPickMode.updatedCount} done)`
+              : ""}
+          </span>
+          <button
+            type="button"
+            className="shrink-0 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm"
+            onClick={cancelMemberPickMode}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
       {viewportMode === "pick_nodes" ? (
         <div className="pointer-events-auto absolute inset-x-3 top-12 z-10 flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50/95 px-3 py-2 text-xs text-blue-900 shadow-sm backdrop-blur-sm">
           <span>

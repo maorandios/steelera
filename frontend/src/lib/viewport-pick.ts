@@ -4,12 +4,14 @@ export const VIEWPORT_PICK_ROLE = {
   ELEMENT: "element",
   BACKGROUND: "background",
   GRID_FRAME: "grid_frame",
+  GRID_BAY: "grid_bay",
 } as const;
 
 export type ViewportPickTarget =
   | { type: typeof VIEWPORT_PICK_ROLE.ELEMENT; elementId: string }
   | { type: typeof VIEWPORT_PICK_ROLE.BACKGROUND }
-  | { type: typeof VIEWPORT_PICK_ROLE.GRID_FRAME; frameIndex: number };
+  | { type: typeof VIEWPORT_PICK_ROLE.GRID_FRAME; frameIndex: number }
+  | { type: typeof VIEWPORT_PICK_ROLE.GRID_BAY; bayIndex: number };
 
 export function viewportPickTargetFromObject(
   object: THREE.Object3D,
@@ -29,6 +31,12 @@ export function viewportPickTargetFromObject(
         return { type: VIEWPORT_PICK_ROLE.GRID_FRAME, frameIndex };
       }
     }
+    if (current.userData?.viewportPickRole === VIEWPORT_PICK_ROLE.GRID_BAY) {
+      const bayIndex = current.userData?.bayIndex;
+      if (typeof bayIndex === "number") {
+        return { type: VIEWPORT_PICK_ROLE.GRID_BAY, bayIndex };
+      }
+    }
     current = current.parent;
   }
   return null;
@@ -46,6 +54,12 @@ export function viewportPickTargetFromHits(
   for (const hit of hits) {
     const target = viewportPickTargetFromObject(hit.object);
     if (target?.type === VIEWPORT_PICK_ROLE.ELEMENT) {
+      return target;
+    }
+  }
+  for (const hit of hits) {
+    const target = viewportPickTargetFromObject(hit.object);
+    if (target?.type === VIEWPORT_PICK_ROLE.GRID_BAY) {
       return target;
     }
   }

@@ -21,6 +21,8 @@ export function ViewportPointerPicker() {
   const { camera, gl, scene } = useThree();
   const viewportMode = useProjectStore((state) => state.viewportMode);
   const selectElement = useProjectStore((state) => state.selectElement);
+  const selectGridBay = useProjectStore((state) => state.selectGridBay);
+  const applyMemberPick = useProjectStore((state) => state.applyMemberPick);
   const clearSelection = useProjectStore((state) => state.clearSelection);
   const pickGridFrameLine = useProjectStore((state) => state.pickGridFrameLine);
   const raycaster = useMemo(() => {
@@ -95,8 +97,24 @@ export function ViewportPointerPicker() {
         return;
       }
 
+      if (mode === "pick_members_profile") {
+        if (target?.type === VIEWPORT_PICK_ROLE.ELEMENT) {
+          const el = useProjectStore
+            .getState()
+            .projectElements.find((e) => e.id === target.elementId);
+          if (el?.element_type === "column") {
+            void applyMemberPick(target.elementId);
+          }
+        }
+        return;
+      }
+
       if (target?.type === VIEWPORT_PICK_ROLE.ELEMENT) {
         selectElement(target.elementId);
+        return;
+      }
+      if (target?.type === VIEWPORT_PICK_ROLE.GRID_BAY) {
+        selectGridBay(target.bayIndex);
         return;
       }
       if (target?.type === VIEWPORT_PICK_ROLE.BACKGROUND) {
@@ -116,6 +134,7 @@ export function ViewportPointerPicker() {
       window.removeEventListener("pointerup", onPointerUp);
     };
   }, [
+    applyMemberPick,
     camera,
     clearSelection,
     gl,
@@ -124,6 +143,7 @@ export function ViewportPointerPicker() {
     raycaster,
     scene,
     selectElement,
+    selectGridBay,
     viewportMode,
   ]);
 

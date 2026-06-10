@@ -28,11 +28,21 @@ export type ViewportTheme = {
     intensity: number;
   };
   steel: {
+    /** IFC-style role colours: primary frame, secondary infill, bracing. */
+    roles: {
+      primary: string;
+      secondary: string;
+      bracing: string;
+    };
     colors: Record<string, string>;
     default: string;
     selected: string;
     metalness: number;
     roughness: number;
+    /** Flatter schematic shading for role-based display. */
+    schematicMetalness: number;
+    schematicRoughness: number;
+    outline: string;
   };
   grid: {
     primary: string;
@@ -72,6 +82,11 @@ const lightTheme: ViewportTheme = {
     intensity: 0.55,
   },
   steel: {
+    roles: {
+      primary: "#dde2ea",
+      secondary: "#b8d4f0",
+      bracing: "#c8ced8",
+    },
     colors: {
       "I-beam": "#8b95a5",
       "C-channel": "#7f8c8d",
@@ -89,6 +104,9 @@ const lightTheme: ViewportTheme = {
     selected: "#f39c12",
     metalness: 0.72,
     roughness: 0.38,
+    schematicMetalness: 0.04,
+    schematicRoughness: 0.96,
+    outline: "#334155",
   },
   grid: {
     primary: "#94a3b8",
@@ -128,6 +146,11 @@ const darkTheme: ViewportTheme = {
     intensity: 0.35,
   },
   steel: {
+    roles: {
+      primary: "#cbd5e1",
+      secondary: "#93c5fd",
+      bracing: "#a8b4c4",
+    },
     colors: {
       "I-beam": "#5b9bd5",
       "C-channel": "#6b8cae",
@@ -145,6 +168,9 @@ const darkTheme: ViewportTheme = {
     selected: "#38bdf8",
     metalness: 0.4,
     roughness: 0.45,
+    schematicMetalness: 0.06,
+    schematicRoughness: 0.94,
+    outline: "#475569",
   },
   grid: {
     primary: "#71717a",

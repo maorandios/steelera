@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 
+import { MeshSchematicEdges } from "@/components/viewport/MeshSchematicEdges";
 import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { memberLengthM } from "@/lib/coordinates";
 import { isFiniteNumber } from "@/lib/elementValidation";
@@ -15,6 +16,8 @@ interface HaunchMeshProps {
   color: string;
   opacity?: number;
   transparent?: boolean;
+  metalness?: number;
+  roughness?: number;
 }
 
 /**
@@ -27,6 +30,8 @@ export function HaunchMesh({
   color,
   opacity = 1,
   transparent = false,
+  metalness,
+  roughness,
 }: HaunchMeshProps) {
   const lengthM = memberLengthM(element);
   const startDepthM = (element.depth_mm ?? 0) * MM_TO_M;
@@ -79,10 +84,13 @@ export function HaunchMesh({
     <mesh geometry={geometry}>
       <SteelMeshMaterial
         color={color}
+        metalness={metalness}
+        roughness={roughness}
         transparent={transparent}
         opacity={opacity}
         depthWrite={opacity > 0.5}
       />
+      {opacity > 0.5 && <MeshSchematicEdges />}
     </mesh>
   );
 }

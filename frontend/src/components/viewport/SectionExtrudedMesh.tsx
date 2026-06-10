@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 
+import { MeshSchematicEdges } from "@/components/viewport/MeshSchematicEdges";
 import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { memberLengthM } from "@/lib/coordinates";
 import { isFiniteNumber } from "@/lib/elementValidation";
@@ -26,6 +27,8 @@ interface SectionExtrudedMeshProps {
   color: string;
   opacity?: number;
   transparent?: boolean;
+  metalness?: number;
+  roughness?: number;
 }
 
 /** True cross-section extrusion for RHS/SHS, CHS, Angle (L) and Tee (T) sections. */
@@ -35,6 +38,8 @@ export function SectionExtrudedMesh({
   color,
   opacity = 1,
   transparent = false,
+  metalness,
+  roughness,
 }: SectionExtrudedMeshProps) {
   const lengthM = memberLengthM(element);
 
@@ -95,10 +100,13 @@ export function SectionExtrudedMesh({
     <mesh geometry={geometry}>
       <SteelMeshMaterial
         color={color}
+        metalness={metalness}
+        roughness={roughness}
         transparent={transparent}
         opacity={opacity}
         depthWrite={opacity > 0.5}
       />
+      {opacity > 0.5 && <MeshSchematicEdges />}
     </mesh>
   );
 }

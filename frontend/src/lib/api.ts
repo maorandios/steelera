@@ -46,6 +46,7 @@ export async function postChat(
   messages: ChatMessage[],
   projectState: ProjectState,
   targetElementId?: string | null,
+  selectionContext?: import("@/lib/selection-context-payload").SelectionContextPayload | null,
 ): Promise<ChatResponse> {
   const { signal, clear } = abortAfterMs(CHAT_TIMEOUT_MS);
   try {
@@ -58,11 +59,17 @@ export async function postChat(
         projectElements: projectState.projectElements,
         projectState,
         ...(targetElementId ? { target_element_id: targetElementId } : {}),
+        ...(selectionContext ? { selection_context: selectionContext } : {}),
       }),
     });
 
     if (!res.ok) {
       const detail = await res.text();
+      if (detail.includes("context_length_exceeded")) {
+        throw new Error(
+          "This model is too large for the AI context window. The server will use a compact summary — refresh and try again, or ask about a selected member only.",
+        );
+      }
       throw new Error(detail || `Chat request failed (${res.status})`);
     }
 
@@ -346,12 +353,14 @@ export async function postUpdateProfile(
   profile: string,
   referenceElementId: string,
   scope: ProfileScope,
+  elementIds?: string[],
 ): Promise<ModelEditResponse> {
   return postModelEdit("/api/model/update-profile", {
     project_elements: projectElements,
     profile,
     reference_element_id: referenceElementId,
     scope,
+    element_ids: elementIds ?? [],
   });
 }
 
@@ -359,11 +368,49 @@ export async function postDeleteMembers(
   projectElements: import("@/types/project").ProjectElementMm[],
   referenceElementId: string,
   scope: ProfileScope,
+  elementIds?: string[],
 ): Promise<ModelEditResponse> {
   return postModelEdit("/api/model/delete-members", {
     project_elements: projectElements,
     reference_element_id: referenceElementId,
     scope,
+    element_ids: elementIds ?? [],
+  });
+}
+
+export async function postPlaceGridColumn(
+  projectElements: import("@/types/project").ProjectElementMm[],
+  body: {
+    x_axis: string;
+    z_axis: string;
+    profile: string;
+    grid: import("@/types/grid-selection").GridPlacementContext;
+    trussed_z_labels?: string[];
+    assembly_id?: string | null;
+  },
+): Promise<ModelEditResponse> {
+  return postModelEdit("/api/model/place-grid-column", {
+    project_elements: projectElements,
+    ...body,
+  });
+}
+
+export async function postPlaceGridTieBeam(
+  projectElements: import("@/types/project").ProjectElementMm[],
+  body: {
+    x_axis: string;
+    z_start: string;
+    z_end: string;
+    profile: string;
+    elevation?: string;
+    grid: import("@/types/grid-selection").GridPlacementContext;
+    assembly_id?: string | null;
+  },
+): Promise<ModelEditResponse> {
+  return postModelEdit("/api/model/place-grid-tie-beam", {
+    project_elements: projectElements,
+    elevation: body.elevation ?? "eave",
+    ...body,
   });
 }
 

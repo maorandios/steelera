@@ -43,6 +43,24 @@ export type QuickRepliesPayload = {
   customUnit?: string;
 };
 
+export type WorkspaceQuickRepliesPayload = {
+  question?: string;
+  options: QuickReplyOption[];
+  allowCustom?: boolean;
+  customPlaceholder?: string;
+};
+
+export type ViewportNodePickPayload = {
+  intent: "single_brace" | "full_x";
+  needed: 2 | 4;
+  profile?: string | null;
+  instruction?: string;
+};
+
+export type ViewportGridPickPayload = {
+  instruction?: string;
+};
+
 export type ChatUiBlock =
   | {
       type: "show_component_checklist";
@@ -51,6 +69,18 @@ export type ChatUiBlock =
   | {
       type: "quick_replies";
       payload: QuickRepliesPayload;
+    }
+  | {
+      type: "workspace_quick_replies";
+      payload: WorkspaceQuickRepliesPayload;
+    }
+  | {
+      type: "viewport_node_pick";
+      payload: ViewportNodePickPayload;
+    }
+  | {
+      type: "viewport_grid_pick";
+      payload: ViewportGridPickPayload;
     }
   | {
       type: "location_picker";

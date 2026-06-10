@@ -1,12 +1,10 @@
 "use client";
 
-import { ArrowUp, Send, X } from "lucide-react";
+import { ArrowUp, Send } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatStatus } from "@/components/chat/ChatStatus";
-import { SelectionActionBar } from "@/components/chat/SelectionActionBar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -24,6 +22,9 @@ function findActiveActionMessageIndex(messages: ChatMessageType[]): number {
     if (
       message.role === "assistant" &&
       (block?.type === "quick_replies" ||
+        block?.type === "workspace_quick_replies" ||
+        block?.type === "viewport_node_pick" ||
+        block?.type === "viewport_grid_pick" ||
         block?.type === "show_proposal" ||
         block?.type === "location_picker" ||
         block?.type === "site_refine" ||
@@ -72,9 +73,7 @@ export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
   const onboardingAwaitingCustom = useProjectStore((s) => s.onboardingAwaitingCustom);
   const error = useProjectStore((s) => s.error);
   const clearError = useProjectStore((s) => s.clearError);
-  const selectedElementId = useProjectStore((s) => s.selectedElementId);
   const selectionContext = useProjectStore((s) => s.selectionContext);
-  const clearSelection = useProjectStore((s) => s.clearSelection);
 
   const activeActionIndex = useMemo(
     () => findActiveActionMessageIndex(messages),
@@ -145,22 +144,6 @@ export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
                 : "border-t border-border bg-background p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
           )}
         >
-          {isDesktop ? <SelectionActionBar /> : null}
-          {!isDesktop && selectedElementId ? (
-            <div className="mb-2">
-              <Badge variant="secondary" className="gap-1.5 pr-1 font-normal">
-                <span>Member: {selectedElementId}</span>
-                <button
-                  type="button"
-                  onClick={clearSelection}
-                  className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
-                  aria-label="Clear selection"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            </div>
-          ) : null}
           {isOnboarding && error ? (
             <p className="mb-2 text-center text-sm text-red-600" role="alert">
               {error}

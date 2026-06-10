@@ -4,19 +4,29 @@ import { ChevronDown, X } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   actionsByTier,
   actionsForSelection,
   profileOptionsForContext,
   profileScopeOptions,
   trussTypeOptions,
+  type ProfileScopeOption,
 } from "@/lib/interaction-actions";
 import { cn } from "@/lib/utils";
 import { useProjectStore, useSelectedElement } from "@/store/project-store";
 import type { ProfileScope, SelectionActionId } from "@/types/interaction";
 import type { TrussType } from "@/types/shed-config";
 
-export function SelectionActionBar() {
+type SelectionActionBarProps = {
+  layout?: "compact" | "panel";
+};
+
+type ProfileScopeChoice = ProfileScope | "pick_members";
+
+export function SelectionActionBar({
+  layout = "compact",
+}: SelectionActionBarProps) {
   const selected = useSelectedElement();
   const selectionContext = useProjectStore((s) => s.selectionContext);
   const viewportMode = useProjectStore((s) => s.viewportMode);
@@ -32,14 +42,94 @@ export function SelectionActionBar() {
   const changeTrussType = useProjectStore((s) => s.changeTrussType);
   const switchFramePrimary = useProjectStore((s) => s.switchFramePrimary);
   const removeSelectedFrame = useProjectStore((s) => s.removeSelectedFrame);
+  const startMemberPickMode = useProjectStore((s) => s.startMemberPickMode);
   const isLoading = useProjectStore((s) => s.isLoading);
   const isMacroLoading = useProjectStore((s) => s.isMacroLoading);
   const busy = isLoading || isMacroLoading;
 
+  const memberPickMode = useProjectStore((s) => s.memberPickMode);
+  const finishMemberPickMode = useProjectStore((s) => s.finishMemberPickMode);
+  const cancelMemberPickMode = useProjectStore((s) => s.cancelMemberPickMode);
+
   const [profileMenu, setProfileMenu] = useState(false);
-  const [profileScope, setProfileScope] = useState<ProfileScope | null>(null);
+  const [profileScope, setProfileScope] = useState<ProfileScopeChoice | null>(
+    null,
+  );
+  const [customProfile, setCustomProfile] = useState("");
+  const [showCustomProfile, setShowCustomProfile] = useState(false);
   const [trussMenu, setTrussMenu] = useState(false);
   const [showMore, setShowMore] = useState(false);
+
+  const panelClass =
+    layout === "panel"
+      ? "space-y-3 rounded-xl border border-border/80 bg-card px-4 py-4 shadow-sm"
+      : "mb-3 space-y-2 rounded-xl border border-border/80 bg-muted/30 px-3 py-3";
+
+  const applyProfile = (profile: string, scope: ProfileScopeChoice) => {
+    if (scope === "pick_members") {
+      startMemberPickMode({ intent: "profile", profile });
+      setProfileMenu(false);
+      setProfileScope(null);
+      setShowCustomProfile(false);
+      setCustomProfile("");
+      return;
+    }
+    void updateMemberProfile(profile, scope).then(() => {
+      setProfileMenu(false);
+      setProfileScope(null);
+      setShowCustomProfile(false);
+      setCustomProfile("");
+    });
+  };
+
+  if (viewportMode === "pick_members_profile" && memberPickMode) {
+    return (
+      <div className={panelClass}>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold text-violet-900">
+              Pick columns
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-violet-800/90">
+              Click columns in the viewport.
+              {memberPickMode.updatedCount > 0
+                ? ` ${memberPickMode.updatedCount} updated so far.`
+                : " None updated yet."}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            onClick={cancelMemberPickMode}
+            aria-label="Cancel pick mode"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="mt-2 flex gap-2">
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            onClick={finishMemberPickMode}
+          >
+            Done
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={cancelMemberPickMode}
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (viewportMode === "pick_nodes") {
     const needed = placementIntent === "full_x" ? 4 : 2;
@@ -101,7 +191,7 @@ export function SelectionActionBar() {
   const tiers = actionsByTier(actions);
   const scopeOptions = profileScopeOptions(selectionContext);
   const profiles = profileOptionsForContext(selectionContext);
-  const defaultScope =
+  const defaultScope: ProfileScopeChoice =
     profileScope ?? selectionContext.defaultProfileScope;
 
   const openProfileMenu = () => {
@@ -167,7 +257,7 @@ export function SelectionActionBar() {
   );
 
   return (
-    <div className="mb-3 space-y-2 rounded-xl border border-border/80 bg-muted/30 px-3 py-3">
+    <div className={panelClass}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -200,10 +290,15 @@ export function SelectionActionBar() {
       </div>
 
       {tiers.primary.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {tiers.primary.map((action) =>
-            renderChip(action.id, action.label),
-          )}
+        <div>
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Do
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {tiers.primary.map((action) =>
+              renderChip(action.id, action.label),
+            )}
+          </div>
         </div>
       ) : null}
 
@@ -236,9 +331,9 @@ export function SelectionActionBar() {
 
       {profileMenu ? (
         <div className="rounded-lg border border-border/60 bg-background p-2 space-y-2">
-          {scopeOptions.length > 1 ? (
+          {scopeOptions.length > 0 ? (
             <div className="flex flex-wrap gap-1">
-              {scopeOptions.map((opt) => (
+              {scopeOptions.map((opt: ProfileScopeOption) => (
                 <button
                   key={opt.scope}
                   type="button"
@@ -262,12 +357,7 @@ export function SelectionActionBar() {
                 key={profile}
                 type="button"
                 disabled={busy}
-                onClick={() => {
-                  void updateMemberProfile(profile, defaultScope).then(() => {
-                    setProfileMenu(false);
-                    setProfileScope(null);
-                  });
-                }}
+                onClick={() => applyProfile(profile, defaultScope)}
                 className="rounded-full bg-muted px-2.5 py-1 text-xs hover:bg-primary/10"
               >
                 {profile}
@@ -275,15 +365,52 @@ export function SelectionActionBar() {
             ))}
             <button
               type="button"
+              className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+              onClick={() => setShowCustomProfile((v) => !v)}
+            >
+              Other size…
+            </button>
+            <button
+              type="button"
               className="rounded-full px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
               onClick={() => {
                 setProfileMenu(false);
                 setProfileScope(null);
+                setShowCustomProfile(false);
+                setCustomProfile("");
               }}
             >
               Cancel
             </button>
           </div>
+          {showCustomProfile ? (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Input
+                value={customProfile}
+                onChange={(e) => setCustomProfile(e.target.value)}
+                placeholder="Type any section e.g. HEA380"
+                className="h-8 min-w-[10rem] flex-1 text-xs"
+                disabled={busy}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && customProfile.trim()) {
+                    e.preventDefault();
+                    applyProfile(customProfile.trim().toUpperCase(), defaultScope);
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-8"
+                disabled={busy || !customProfile.trim()}
+                onClick={() =>
+                  applyProfile(customProfile.trim().toUpperCase(), defaultScope)
+                }
+              >
+                Apply
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

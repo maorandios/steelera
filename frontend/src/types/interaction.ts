@@ -1,4 +1,8 @@
-export type ViewportMode = "inspect" | "pick_nodes" | "pick_grid";
+export type ViewportMode =
+  | "inspect"
+  | "pick_nodes"
+  | "pick_grid"
+  | "pick_members_profile";
 
 export type PlacementIntent = "single_brace" | "full_x" | "insert_frame";
 

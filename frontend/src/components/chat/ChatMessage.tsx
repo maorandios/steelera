@@ -6,6 +6,9 @@ import { QuickReplies } from "@/components/chat/QuickReplies";
 import { SiteMapPinPicker } from "@/components/chat/SiteMapPinPicker";
 import { SiteRefinePicker } from "@/components/chat/SiteRefinePicker";
 import { ShedComponentChecklist } from "@/components/chat/ShedComponentChecklist";
+import { ViewportPickPrompt } from "@/components/chat/ViewportPickPrompt";
+import { WorkspaceQuickReplies } from "@/components/chat/WorkspaceQuickReplies";
+import { inferWorkspaceQuickReplies } from "@/lib/infer-workspace-replies";
 import { cn } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType } from "@/types/chat";
 
@@ -27,6 +30,16 @@ export function ChatMessage({
     block?.type === "show_component_checklist" ? block.payload : null;
   const quickReplies =
     block?.type === "quick_replies" ? block.payload : null;
+  const workspaceQuickReplies =
+    block?.type === "workspace_quick_replies"
+      ? block.payload
+      : !isUser && !isOnboarding && !block
+        ? inferWorkspaceQuickReplies(message.content)
+        : null;
+  const viewportNodePick =
+    block?.type === "viewport_node_pick" ? block.payload : null;
+  const viewportGridPick =
+    block?.type === "viewport_grid_pick" ? block.payload : null;
   const showProposal = block?.type === "show_proposal";
   const locationPicker = block?.type === "location_picker";
   const siteRefine = block?.type === "site_refine";
@@ -35,6 +48,9 @@ export function ChatMessage({
   const hasInteractiveBlock = Boolean(
     checklist ||
       quickReplies ||
+      workspaceQuickReplies ||
+      viewportNodePick ||
+      viewportGridPick ||
       showProposal ||
       locationPicker ||
       siteRefine ||
@@ -76,7 +92,11 @@ export function ChatMessage({
             Steelera AI
           </p>
         ) : null}
-        {message.content.trim() ? (
+        {message.content.trim() && !workspaceQuickReplies ? (
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        ) : workspaceQuickReplies?.question ? (
+          <p className="whitespace-pre-wrap">{workspaceQuickReplies.question}</p>
+        ) : message.content.trim() ? (
           <p className="whitespace-pre-wrap">{message.content}</p>
         ) : null}
         {locationPicker ? <LocationPicker active={actionsActive} /> : null}
@@ -90,6 +110,26 @@ export function ChatMessage({
         ) : null}
         {quickReplies ? (
           <QuickReplies payload={quickReplies} active={actionsActive} />
+        ) : null}
+        {workspaceQuickReplies ? (
+          <WorkspaceQuickReplies
+            payload={workspaceQuickReplies}
+            active={actionsActive}
+          />
+        ) : null}
+        {viewportNodePick ? (
+          <ViewportPickPrompt
+            variant="node"
+            payload={viewportNodePick}
+            active={actionsActive}
+          />
+        ) : null}
+        {viewportGridPick ? (
+          <ViewportPickPrompt
+            variant="grid"
+            payload={viewportGridPick}
+            active={actionsActive}
+          />
         ) : null}
         {showProposal ? <ChatProposalBlock active={actionsActive} /> : null}
         {checklist ? <ShedComponentChecklist payload={checklist} /> : null}

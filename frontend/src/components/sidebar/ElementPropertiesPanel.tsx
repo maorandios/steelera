@@ -89,7 +89,7 @@ export function ElementPropertiesPanel() {
           ))}
         </select>
         <p className="text-[11px] text-muted-foreground">
-          Catalog assignment via AI chat for now.
+          Use Section size in the selection panel when a member is selected.
         </p>
       </div>
 

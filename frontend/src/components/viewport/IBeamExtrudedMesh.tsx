@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 import { memberLengthM } from "@/lib/coordinates";
 import { isFiniteNumber } from "@/lib/elementValidation";
+import { MeshSchematicEdges } from "@/components/viewport/MeshSchematicEdges";
 import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { createMemberLocalIBeamGeometry } from "@/lib/iSectionShape";
 import type { ProjectElementMm, SectionDimensionsMm } from "@/types/project";
@@ -16,6 +17,8 @@ interface IBeamExtrudedMeshProps {
   color: string;
   opacity?: number;
   transparent?: boolean;
+  metalness?: number;
+  roughness?: number;
 }
 
 export function IBeamExtrudedMesh({
@@ -24,6 +27,8 @@ export function IBeamExtrudedMesh({
   color,
   opacity = 1,
   transparent = false,
+  metalness,
+  roughness,
 }: IBeamExtrudedMeshProps) {
   const lengthM = memberLengthM(element);
   if (!isFiniteNumber(lengthM) || lengthM < 1e-6) {
@@ -43,10 +48,13 @@ export function IBeamExtrudedMesh({
     <mesh geometry={geometry}>
       <SteelMeshMaterial
         color={color}
+        metalness={metalness}
+        roughness={roughness}
         transparent={transparent}
         opacity={opacity}
         depthWrite={opacity > 0.5}
       />
+      {opacity > 0.5 && <MeshSchematicEdges />}
     </mesh>
   );
 }

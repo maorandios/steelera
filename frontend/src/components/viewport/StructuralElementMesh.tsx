@@ -7,10 +7,12 @@ import {
   isSectionExtruded,
 } from "@/components/viewport/SectionExtrudedMesh";
 import { ElementMeshGroup } from "@/components/viewport/ElementMeshGroup";
+import { MeshSchematicEdges } from "@/components/viewport/MeshSchematicEdges";
 import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { geometryExtentsM, memberLengthM } from "@/lib/coordinates";
 import { isElementRenderable } from "@/lib/elementValidation";
 import { hasNodeDrivenFrame } from "@/lib/memberFrame";
+import { elementDisplayColor } from "@/lib/element-display-color";
 import { viewportTheme } from "@/lib/viewport-theme";
 import { useIsElementHighlighted, useElementGhostOpacity } from "@/store/project-store";
 import { isExtrudedIBeam, type ProjectElementMm } from "@/types/project";
@@ -26,11 +28,12 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
   if (!isElementRenderable(element)) {
     return null;
   }
-  const baseColor =
-    viewportTheme.steel.colors[element.shape_type] ?? viewportTheme.steel.default;
+  const baseColor = elementDisplayColor(element);
   const color = isSelected ? viewportTheme.steel.selected : baseColor;
   const matProps = {
     color,
+    metalness: viewportTheme.steel.schematicMetalness,
+    roughness: viewportTheme.steel.schematicRoughness,
     transparent: ghostOpacity < 1,
     opacity: ghostOpacity,
   };
@@ -82,6 +85,7 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
           {...matProps}
           depthWrite={ghostOpacity > 0.5}
         />
+        {ghostOpacity > 0.5 && <MeshSchematicEdges />}
       </mesh>
     </ElementMeshGroup>
   );

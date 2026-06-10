@@ -103,11 +103,11 @@ function locationSubtitle(
   if (parentAssembly === "truss" && parsed.frameZ) {
     parts.push("Truss");
   }
-  if (parentAssembly === "purlin_run") {
-    parts.push("All purlins");
+  if (parentAssembly === "purlin_run" && parsed.purlinIndex !== null) {
+    parts.push(`Purlin ${parsed.purlinIndex + 1}`);
   }
-  if (parentAssembly === "girt_run") {
-    parts.push("All wall girts");
+  if (parentAssembly === "girt_run" && parsed.girtWall) {
+    parts.push(`Wall ${parsed.girtWall}`);
   }
   if (parts.length === 0 && parsed.gridX) {
     parts.push(`Grid ${parsed.gridX}`);
@@ -165,7 +165,7 @@ export function resolveSelectionContext(
 
   const parentAssembly = parentAssemblyFor(element, parsed);
   const frameIdx = frameIndexFromZLabel(parsed.frameZ);
-  const highlightIds = computeHighlightIds(element, allElements);
+  const highlightIds = computeHighlightIds(element);
   const frameTrussed = isFrameTrussed(parsed.frameZ, allElements);
 
   return {

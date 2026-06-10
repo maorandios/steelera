@@ -8,9 +8,14 @@ from typing import Iterable
 
 from catalog_loader import get_profile, has_profile
 from core.geometry_engine import macro_member_to_project_element
+from core.grid_member_catalog import _column_top_for_frame
 from core.member_resolver import member_from_grid_nodes
+from core.spatial_grid import StructuralGridEngine
 from schemas.elements import ProjectElementMm, SectionDimensionsMm
-from schemas.spatial_grid import GridNodeReference, StructuralMember
+from schemas.model_edit import GridPlacementContext
+from schemas.spatial_grid import GridDefinition, GridNodeReference, StructuralMember
+
+_AXIS_SAFE_RE = re.compile(r"[^A-Za-z0-9]+")
 
 _BRACE_PAIR_RE = re.compile(r"^(?P<prefix>.+)-([ab])$", re.IGNORECASE)
 
@@ -317,6 +322,160 @@ def place_bracing_cross(
         end=end_b,
     )
     return [*elements, leg_a, leg_b], [leg_a.id, leg_b.id]
+
+
+def _grid_axis_token(value: str) -> str:
+    """Encode grid axis for element ids (2+1/2 → 2p1p2)."""
+    return _AXIS_SAFE_RE.sub("p", value.strip())
+
+
+def _grid_engine_from_context(ctx: GridPlacementContext) -> StructuralGridEngine:
+    style = ctx.roof_style if ctx.roof_style in ("duo_pitch", "mono_pitch", "flat") else "duo_pitch"
+    pitch = 0.0 if style == "flat" else float(ctx.roof_pitch_deg)
+    gd = GridDefinition(
+        x_spans=list(ctx.x_spans),
+        z_spans=list(ctx.z_spans),
+        height_mm=float(ctx.height_mm),
+        roof_pitch_deg=pitch,
+        roof_style=style,  # type: ignore[arg-type]
+        mono_high_side=ctx.mono_high_side if ctx.mono_high_side in ("A", "B") else "B",  # type: ignore[arg-type]
+    )
+    return StructuralGridEngine.from_definition(gd)
+
+
+def _infer_assembly_id(elements: list[ProjectElementMm], fallback: str) -> str:
+    for element in elements:
+        if element.assembly_id:
+            return str(element.assembly_id)
+    return fallback
+
+
+def _member_to_element(
+    member: StructuralMember,
+    *,
+    assembly_id: str,
+    grid: StructuralGridEngine,
+) -> ProjectElementMm:
+    start = grid.resolve_node(member.start_node)
+    end = grid.resolve_node(member.end_node)
+    macro = member_from_grid_nodes(
+        member,
+        assembly_id=assembly_id,
+        start=start,
+        end=end,
+        grid=grid,
+    )
+    if macro is None:
+        raise ValueError(f"Member {member.id} is too short to place")
+    return macro_member_to_project_element(macro)
+
+
+def place_grid_column(
+    elements: list[ProjectElementMm],
+    *,
+    x_axis: str,
+    z_axis: str,
+    profile: str,
+    grid: GridPlacementContext,
+    trussed_z_labels: Iterable[str] | None = None,
+    assembly_id: str | None = None,
+) -> tuple[list[ProjectElementMm], list[str]]:
+    if not has_profile(profile):
+        raise ValueError(f"Unknown profile: {profile}")
+    engine = _grid_engine_from_context(grid)
+    x = x_axis.strip().upper()
+    z = z_axis.strip()
+    try:
+        engine.resolve_x_mm(x)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    try:
+        engine.resolve_z_mm(z)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    trussed = set(trussed_z_labels or [])
+    top = _column_top_for_frame(engine, x, z, trussed)
+    aid = assembly_id or _infer_assembly_id(elements, "shed_1")
+    eid = f"{aid}-col-{x}-{_grid_axis_token(z)}"
+
+    start_ref = GridNodeReference(x_axis=x, z_axis=z, elevation="ground")
+    end_ref = GridNodeReference(x_axis=x, z_axis=z, elevation=top)
+    member = StructuralMember(
+        id=eid,
+        element_type="column",
+        profile=profile,
+        start_node=start_ref,
+        end_node=end_ref,
+    )
+    new_el = _member_to_element(member, assembly_id=aid, grid=engine)
+
+    replaced = False
+    out: list[ProjectElementMm] = []
+    for element in elements:
+        if element.id == eid:
+            out.append(new_el)
+            replaced = True
+        else:
+            out.append(element)
+    if not replaced:
+        out.append(new_el)
+    return out, [eid]
+
+
+def place_grid_tie_beam(
+    elements: list[ProjectElementMm],
+    *,
+    x_axis: str,
+    z_start: str,
+    z_end: str,
+    profile: str,
+    elevation: str = "eave",
+    grid: GridPlacementContext,
+    assembly_id: str | None = None,
+) -> tuple[list[ProjectElementMm], list[str]]:
+    if not has_profile(profile):
+        raise ValueError(f"Unknown profile: {profile}")
+    engine = _grid_engine_from_context(grid)
+    x = x_axis.strip().upper()
+    zs = z_start.strip()
+    ze = z_end.strip()
+    try:
+        engine.resolve_x_mm(x)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    for label in (zs, ze):
+        try:
+            engine.resolve_z_mm(label)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+    aid = assembly_id or _infer_assembly_id(elements, "shed_1")
+    elev = elevation.strip().lower()
+    eid = f"{aid}-tie-bay-{x}-{_grid_axis_token(zs)}-{_grid_axis_token(ze)}-{elev}"
+
+    start_ref = GridNodeReference(x_axis=x, z_axis=zs, elevation=elev)
+    end_ref = GridNodeReference(x_axis=x, z_axis=ze, elevation=elev)
+    member = StructuralMember(
+        id=eid,
+        element_type="tie_beam",
+        profile=profile,
+        start_node=start_ref,
+        end_node=end_ref,
+    )
+    new_el = _member_to_element(member, assembly_id=aid, grid=engine)
+
+    replaced = False
+    out: list[ProjectElementMm] = []
+    for element in elements:
+        if element.id == eid:
+            out.append(new_el)
+            replaced = True
+        else:
+            out.append(element)
+    if not replaced:
+        out.append(new_el)
+    return out, [eid]
 
 
 def collect_snap_nodes(

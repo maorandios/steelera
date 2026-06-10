@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -6,7 +6,6 @@ from schemas.elements import ProjectElementMm
 from schemas.project import ProjectState
 
 RoofStyleLiteral = Literal["duo_pitch", "mono_pitch", "flat"]
-UiBlockType = Literal["show_component_checklist"]
 
 
 class ShedChecklistPayload(BaseModel):
@@ -31,9 +30,23 @@ class ShedChecklistPayload(BaseModel):
         return None
 
 
+class SelectionContextPayload(BaseModel):
+    """Rich viewport selection sent with workspace chat."""
+
+    element_id: str
+    element_type: str = ""
+    label: str = ""
+    location_subtitle: str = ""
+    profile: str | None = None
+    assembly_id: str | None = None
+    parent_assembly: str = "member"
+    frame_index: int | None = None
+    is_bracing: bool = False
+
+
 class ChatUiBlock(BaseModel):
-    type: UiBlockType
-    payload: ShedChecklistPayload
+    type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class ChatMessage(BaseModel):
@@ -47,6 +60,7 @@ class ChatRequest(BaseModel):
     projectElements: list[ProjectElementMm] = Field(default_factory=list)
     projectState: ProjectState | None = None
     target_element_id: str | None = None
+    selection_context: SelectionContextPayload | None = None
 
     def resolved_state(self) -> ProjectState:
         if self.projectState is not None:

@@ -122,6 +122,9 @@ export function StructuralGrid({
   extentMaxZ,
 }: StructuralGridProps) {
   const gridPickMode = useProjectStore((s) => s.viewportMode === "pick_grid");
+  const selectedBayIndex = useProjectStore(
+    (s) => s.gridSelectionContext?.bayIndex ?? null,
+  );
   const xCoordsM = useMemo(
     () => xCoordsMm.map((value) => value * MM_TO_M),
     [xCoordsMm],
@@ -154,6 +157,41 @@ export function StructuralGrid({
         <planeGeometry args={[pickPlaneSize, pickPlaneSize]} />
         <meshBasicMaterial visible={false} side={THREE.DoubleSide} />
       </mesh>
+
+      {zCoordsM.length > 1
+        ? zCoordsM.slice(0, -1).map((z0, bayIndex) => {
+            const z1 = zCoordsM[bayIndex + 1] ?? z0;
+            const cx = (lineX0 + lineX1) / 2;
+            const cz = (z0 + z1) / 2;
+            const depth = Math.max(z1 - z0, 0.5);
+            const selected = selectedBayIndex === bayIndex;
+            return (
+              <group key={`grid-bay-pick-${bayIndex}`}>
+                <mesh
+                  position={[cx, GROUND_Y + 0.03, cz]}
+                  userData={{
+                    viewportPickRole: VIEWPORT_PICK_ROLE.GRID_BAY,
+                    bayIndex,
+                  }}
+                >
+                  <boxGeometry args={[lineX1 - lineX0, 0.06, depth]} />
+                  <meshBasicMaterial visible={false} />
+                </mesh>
+                {selected ? (
+                  <mesh position={[cx, GROUND_Y + 0.04, cz]}>
+                    <boxGeometry args={[lineX1 - lineX0, 0.06, depth]} />
+                    <meshBasicMaterial
+                      transparent
+                      opacity={0.2}
+                      color="#3b82f6"
+                      depthWrite={false}
+                    />
+                  </mesh>
+                ) : null}
+              </group>
+            );
+          })
+        : null}
 
       {xCoordsM.map((x, index) => (
         <group key={`grid-x-line-${index}-${x}`}>

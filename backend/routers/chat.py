@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from core.openai_client import run_chat_turn
+from core.openai_client import build_system_prompt, run_chat_turn
 from schemas.chat import ChatRequest, ChatResponse, ChatResponseMessage
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -11,11 +11,20 @@ async def chat(request: ChatRequest) -> ChatResponse:
     if not request.messages:
         raise HTTPException(status_code=400, detail="messages must not be empty")
 
+    state = request.resolved_state()
+    spatial_context = build_system_prompt(
+        state.projectElements,
+        target_element_id=request.target_element_id,
+        selection_context=request.selection_context,
+    )
+
     try:
         content, statuses, project_state, ui_block, shed_config = run_chat_turn(
             request.messages,
-            request.resolved_state(),
+            state,
+            spatial_context=spatial_context,
             target_element_id=request.target_element_id,
+            selection_context=request.selection_context,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e

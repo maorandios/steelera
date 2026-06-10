@@ -88,7 +88,10 @@ export function SceneContent({ projectElements }: SceneContentProps) {
         extentMaxZ={maxZ}
       />
       {renderableElements.map((element) => (
-        <StructuralElementMesh key={element.id} element={element} />
+        <StructuralElementMesh
+          key={`${element.id}:${element.profile_name ?? ""}:${element.depth_mm}x${element.width_mm}`}
+          element={element}
+        />
       ))}
       <SchematicOverlay projectElements={renderableElements} />
       {renderableElements.length === 0 && (

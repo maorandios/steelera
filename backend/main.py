@@ -67,6 +67,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     spatial_context = build_system_prompt(
         state.projectElements,
         target_element_id=request.target_element_id,
+        selection_context=request.selection_context,
     )
 
     try:

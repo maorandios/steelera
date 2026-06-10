@@ -5,6 +5,8 @@ from core.model_edit import (
     delete_members,
     place_brace_leg,
     place_bracing_cross,
+    place_grid_column,
+    place_grid_tie_beam,
     update_member_profiles,
 )
 from schemas.model_edit import (
@@ -13,6 +15,8 @@ from schemas.model_edit import (
     ModelEditResponse,
     PlaceBraceLegRequest,
     PlaceBracingCrossRequest,
+    PlaceGridColumnRequest,
+    PlaceGridTieBeamRequest,
     UpdateProfileRequest,
 )
 
@@ -32,6 +36,14 @@ class PlaceBraceLegBody(PlaceBraceLegRequest, ModelEditBody):
 
 
 class PlaceBracingCrossBody(PlaceBracingCrossRequest, ModelEditBody):
+    pass
+
+
+class PlaceGridColumnBody(PlaceGridColumnRequest, ModelEditBody):
+    pass
+
+
+class PlaceGridTieBeamBody(PlaceGridTieBeamRequest, ModelEditBody):
     pass
 
 
@@ -110,6 +122,52 @@ async def api_place_bracing_cross(body: PlaceBracingCrossBody) -> ModelEditRespo
         projectElements=updated,
         changed_ids=created,
         message=f"Added X-bracing ({len(created)} members).",
+    )
+
+
+@router.post("/place-grid-column", response_model=ModelEditResponse)
+async def api_place_grid_column(body: PlaceGridColumnBody) -> ModelEditResponse:
+    try:
+        updated, created = place_grid_column(
+            body.project_elements,
+            x_axis=body.x_axis,
+            z_axis=body.z_axis,
+            profile=body.profile,
+            grid=body.grid,
+            trussed_z_labels=body.trussed_z_labels,
+            assembly_id=body.assembly_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return ModelEditResponse(
+        projectElements=updated,
+        changed_ids=created,
+        message=f"Placed column {body.profile} at {body.x_axis} · {body.z_axis}.",
+    )
+
+
+@router.post("/place-grid-tie-beam", response_model=ModelEditResponse)
+async def api_place_grid_tie_beam(body: PlaceGridTieBeamBody) -> ModelEditResponse:
+    try:
+        updated, created = place_grid_tie_beam(
+            body.project_elements,
+            x_axis=body.x_axis,
+            z_start=body.z_start,
+            z_end=body.z_end,
+            profile=body.profile,
+            elevation=body.elevation,
+            grid=body.grid,
+            assembly_id=body.assembly_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return ModelEditResponse(
+        projectElements=updated,
+        changed_ids=created,
+        message=(
+            f"Placed tie beam {body.profile} at {body.x_axis} "
+            f"({body.z_start} → {body.z_end}, {body.elevation})."
+        ),
     )
 
 
