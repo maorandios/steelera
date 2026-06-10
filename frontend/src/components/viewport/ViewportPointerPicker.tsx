@@ -19,8 +19,10 @@ const PICK_MOVE_THRESHOLD_PX = 10;
  */
 export function ViewportPointerPicker() {
   const { camera, gl, scene } = useThree();
+  const viewportMode = useProjectStore((state) => state.viewportMode);
   const selectElement = useProjectStore((state) => state.selectElement);
   const clearSelection = useProjectStore((state) => state.clearSelection);
+  const pickGridFrameLine = useProjectStore((state) => state.pickGridFrameLine);
   const raycaster = useMemo(() => {
     const caster = new THREE.Raycaster();
     caster.params.Line.threshold = 0.02;
@@ -78,8 +80,21 @@ export function ViewportPointerPicker() {
         return;
       }
 
+      const mode = useProjectStore.getState().viewportMode;
+      if (mode === "pick_nodes") {
+        return;
+      }
+
       const hits = raycastHits(down.x, down.y);
       const target = viewportPickTargetFromHits(hits);
+
+      if (mode === "pick_grid") {
+        if (target?.type === VIEWPORT_PICK_ROLE.GRID_FRAME) {
+          void pickGridFrameLine(target.frameIndex);
+        }
+        return;
+      }
+
       if (target?.type === VIEWPORT_PICK_ROLE.ELEMENT) {
         selectElement(target.elementId);
         return;
@@ -100,7 +115,17 @@ export function ViewportPointerPicker() {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, [camera, clearSelection, gl, pointer, raycaster, scene, selectElement]);
+  }, [
+    camera,
+    clearSelection,
+    gl,
+    pickGridFrameLine,
+    pointer,
+    raycaster,
+    scene,
+    selectElement,
+    viewportMode,
+  ]);
 
   return null;
 }

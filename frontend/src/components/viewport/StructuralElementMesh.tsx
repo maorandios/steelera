@@ -12,7 +12,7 @@ import { geometryExtentsM, memberLengthM } from "@/lib/coordinates";
 import { isElementRenderable } from "@/lib/elementValidation";
 import { hasNodeDrivenFrame } from "@/lib/memberFrame";
 import { viewportTheme } from "@/lib/viewport-theme";
-import { useIsElementHighlighted } from "@/store/project-store";
+import { useIsElementHighlighted, useElementGhostOpacity } from "@/store/project-store";
 import { isExtrudedIBeam, type ProjectElementMm } from "@/types/project";
 
 interface StructuralElementMeshProps {
@@ -20,14 +20,20 @@ interface StructuralElementMeshProps {
 }
 
 export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
+  const isSelected = useIsElementHighlighted(element.id);
+  const ghostOpacity = useElementGhostOpacity(element.id);
+
   if (!isElementRenderable(element)) {
     return null;
   }
-
-  const isSelected = useIsElementHighlighted(element.id);
   const baseColor =
     viewportTheme.steel.colors[element.shape_type] ?? viewportTheme.steel.default;
   const color = isSelected ? viewportTheme.steel.selected : baseColor;
+  const matProps = {
+    color,
+    transparent: ghostOpacity < 1,
+    opacity: ghostOpacity,
+  };
 
   if (isExtrudedIBeam(element) && element.section_mm) {
     return (
@@ -35,7 +41,7 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
         <IBeamExtrudedMesh
           element={element}
           section={element.section_mm}
-          color={color}
+          {...matProps}
         />
       </ElementMeshGroup>
     );
@@ -44,7 +50,7 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
   if (element.shape_type === "Haunch") {
     return (
       <ElementMeshGroup element={element}>
-        <HaunchMesh element={element} color={color} />
+        <HaunchMesh element={element} {...matProps} />
       </ElementMeshGroup>
     );
   }
@@ -55,7 +61,7 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
         <SectionExtrudedMesh
           element={element}
           section={element.section_mm}
-          color={color}
+          {...matProps}
         />
       </ElementMeshGroup>
     );
@@ -72,7 +78,10 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
     <ElementMeshGroup element={element}>
       <mesh position={centered ? [0, 0, 0] : [length / 2, 0, 0]}>
         <boxGeometry args={[length, height, width]} />
-        <SteelMeshMaterial color={color} />
+        <SteelMeshMaterial
+          {...matProps}
+          depthWrite={ghostOpacity > 0.5}
+        />
       </mesh>
     </ElementMeshGroup>
   );

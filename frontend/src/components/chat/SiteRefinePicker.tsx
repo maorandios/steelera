@@ -4,6 +4,7 @@ import { Building2, Factory, MapPinned } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isSiteClimatePending } from "@/lib/placeholder-site";
 import {
   SITE_BUILT_UP,
   SITE_OPEN_INDUSTRIAL,
@@ -20,7 +21,8 @@ export function SiteRefinePicker({ active }: SiteRefinePickerProps) {
   const isProposing = useProjectStore((s) => s.isProposing);
   const siteContext = useProjectStore((s) => s.siteContext);
   const disabled = !active || isProposing;
-  const alreadyOpen = siteContext?.exposure === "open";
+  const alreadyOpen =
+    !isSiteClimatePending(siteContext) && siteContext?.exposure === "open";
 
   return (
     <div className="mt-3 flex flex-col gap-2">

@@ -5,6 +5,7 @@ import { useMemo } from "react";
 
 import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { StructuralGrid } from "@/components/viewport/StructuralGrid";
+import { SchematicOverlay } from "@/components/viewport/SchematicOverlay";
 import { StructuralElementMesh } from "@/components/viewport/StructuralElementMesh";
 import { ViewportOrbitControls } from "@/components/viewport/ViewportOrbitControls";
 import { ViewportPointerPicker } from "@/components/viewport/ViewportPointerPicker";
@@ -89,6 +90,7 @@ export function SceneContent({ projectElements }: SceneContentProps) {
       {renderableElements.map((element) => (
         <StructuralElementMesh key={element.id} element={element} />
       ))}
+      <SchematicOverlay projectElements={renderableElements} />
       {renderableElements.length === 0 && (
         <mesh position={[0, 0, 0]}>
           <boxGeometry args={[1, 0.05, 1]} />

@@ -14,12 +14,16 @@ interface IBeamExtrudedMeshProps {
   element: ProjectElementMm;
   section: SectionDimensionsMm;
   color: string;
+  opacity?: number;
+  transparent?: boolean;
 }
 
 export function IBeamExtrudedMesh({
   element,
   section,
   color,
+  opacity = 1,
+  transparent = false,
 }: IBeamExtrudedMeshProps) {
   const lengthM = memberLengthM(element);
   if (!isFiniteNumber(lengthM) || lengthM < 1e-6) {
@@ -37,7 +41,12 @@ export function IBeamExtrudedMesh({
 
   return (
     <mesh geometry={geometry}>
-      <SteelMeshMaterial color={color} />
+      <SteelMeshMaterial
+        color={color}
+        transparent={transparent}
+        opacity={opacity}
+        depthWrite={opacity > 0.5}
+      />
     </mesh>
   );
 }

@@ -13,6 +13,8 @@ const MM_TO_M = 0.001;
 interface HaunchMeshProps {
   element: ProjectElementMm;
   color: string;
+  opacity?: number;
+  transparent?: boolean;
 }
 
 /**
@@ -20,7 +22,12 @@ interface HaunchMeshProps {
  *   top face at y = 0 (seated on rafter bottom flange),
  *   depth grows downward (negative y), deep at start, shallow at end.
  */
-export function HaunchMesh({ element, color }: HaunchMeshProps) {
+export function HaunchMesh({
+  element,
+  color,
+  opacity = 1,
+  transparent = false,
+}: HaunchMeshProps) {
   const lengthM = memberLengthM(element);
   const startDepthM = (element.depth_mm ?? 0) * MM_TO_M;
   const endDepthM = (element.taper_end_depth_mm ?? element.depth_mm ?? 0) * MM_TO_M;
@@ -70,7 +77,12 @@ export function HaunchMesh({ element, color }: HaunchMeshProps) {
 
   return (
     <mesh geometry={geometry}>
-      <SteelMeshMaterial color={color} />
+      <SteelMeshMaterial
+        color={color}
+        transparent={transparent}
+        opacity={opacity}
+        depthWrite={opacity > 0.5}
+      />
     </mesh>
   );
 }

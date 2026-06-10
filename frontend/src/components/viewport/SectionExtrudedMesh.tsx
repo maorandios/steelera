@@ -24,6 +24,8 @@ interface SectionExtrudedMeshProps {
   element: ProjectElementMm;
   section: SectionDimensionsMm;
   color: string;
+  opacity?: number;
+  transparent?: boolean;
 }
 
 /** True cross-section extrusion for RHS/SHS, CHS, Angle (L) and Tee (T) sections. */
@@ -31,6 +33,8 @@ export function SectionExtrudedMesh({
   element,
   section,
   color,
+  opacity = 1,
+  transparent = false,
 }: SectionExtrudedMeshProps) {
   const lengthM = memberLengthM(element);
 
@@ -89,7 +93,12 @@ export function SectionExtrudedMesh({
 
   return (
     <mesh geometry={geometry}>
-      <SteelMeshMaterial color={color} />
+      <SteelMeshMaterial
+        color={color}
+        transparent={transparent}
+        opacity={opacity}
+        depthWrite={opacity > 0.5}
+      />
     </mesh>
   );
 }

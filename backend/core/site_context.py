@@ -6,6 +6,7 @@ import json
 import math
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Any
 
@@ -53,29 +54,30 @@ def _percentile(values: list[float], pct: float) -> float:
 def _fetch_wind_stats(lat: float, lon: float) -> tuple[float, float, str]:
     """Return (mean_ms, p95_ms, source_label)."""
     end_year = date.today().year - 1
-    start_year = max(end_year - 9, 2010)
+    start_year = max(end_year - 4, 2010)
     params = urllib.parse.urlencode(
         {
             "latitude": f"{lat:.5f}",
             "longitude": f"{lon:.5f}",
             "start_date": f"{start_year}-01-01",
             "end_date": f"{end_year}-12-31",
-            "hourly": "wind_speed_10m",
+            # Daily maxima: ~1.8k points vs ~44k hourly — much faster to download.
+            "daily": "wind_speed_10m_max",
             "wind_speed_unit": "ms",
         },
     )
     try:
-        data = _http_get_json(f"{_OPEN_METEO_ARCHIVE}?{params}", timeout=45.0)
+        data = _http_get_json(f"{_OPEN_METEO_ARCHIVE}?{params}", timeout=28.0)
         speeds = [
             float(v)
-            for v in data.get("hourly", {}).get("wind_speed_10m", [])
+            for v in data.get("daily", {}).get("wind_speed_10m_max", [])
             if v is not None
         ]
         if not speeds:
             raise ValueError("no wind samples")
         mean = sum(speeds) / len(speeds)
         p95 = _percentile(speeds, 95)
-        return mean, p95, "open-meteo-era5"
+        return mean, p95, "open-meteo-era5-daily"
     except Exception:
         return 6.0, 9.0, "default-fallback"
 
@@ -113,8 +115,11 @@ way["natural"="water"](around:400,{lat},{lon});
 relation["natural"="water"](around:400,{lat},{lon});
 out count;
 """
-    buildings = _overpass_count(building_q)
-    water_hits = _overpass_count(water_q)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        building_future = pool.submit(_overpass_count, building_q)
+        water_future = pool.submit(_overpass_count, water_q)
+        buildings = building_future.result()
+        water_hits = water_future.result()
     near_water = water_hits > 0
 
     if near_water and buildings < 8:
@@ -195,8 +200,11 @@ def resolve_site_context(
     surroundings: str = "auto",
 ) -> SiteContext:
     """Build site context for structural sizing heuristics."""
-    mean_ms, p95_ms, wind_src = _fetch_wind_stats(lat, lon)
-    terrain, buildings, near_water, terrain_src = _terrain_from_osm(lat, lon)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        wind_future = pool.submit(_fetch_wind_stats, lat, lon)
+        terrain_future = pool.submit(_terrain_from_osm, lat, lon)
+        mean_ms, p95_ms, wind_src = wind_future.result()
+        terrain, buildings, near_water, terrain_src = terrain_future.result()
     design_ms = _design_wind_proxy(mean_ms, p95_ms)
     load_factor = _terrain_load_factor(terrain, near_water)
     load_index = round(design_ms * load_factor, 2)

@@ -120,7 +120,11 @@ def _selection_context(target_element_id: str | None) -> str:
         return ""
     return (
         f"\n\n---\nSelected element: '{target_element_id}'. "
-        f"For copy/array/delete, call apply_macro_action with this id."
+        f"The user may have chosen a contextual action in the UI. "
+        f"For copy/array/delete on this member, use apply_macro_action with this id. "
+        f"For profile or bracing changes on a specific member or group, prefer describing "
+        f"what changed; the UI may have already applied surgical edits via /api/model. "
+        f"For layout-wide changes (bays, dimensions, toggles), use submit_structural_grid_layout."
     )
 
 

@@ -118,6 +118,36 @@ _BRACING_CONSERVATIVE_FLOOR: list[tuple[float, str, str]] = [
     (8_000.0, "height", "L70x70x7"),
 ]
 
+# Column tier floors when preliminary util is low — same pattern as bracing/chords.
+_COLUMN_RECOMMENDED_FLOOR: list[tuple[float, str, str]] = [
+    (22_000.0, "width", "HEA360"),
+    (18_000.0, "width", "HEA320"),
+    (15_000.0, "width", "HEA300"),
+    (12_000.0, "width", "HEA280"),
+    (22_000.0, "height", "HEA400"),
+    (18_000.0, "height", "HEA360"),
+    (15_000.0, "height", "HEA320"),
+    (12_000.0, "height", "HEA300"),
+    (10_000.0, "height", "HEA280"),
+    (8_000.0, "height", "HEA260"),
+]
+
+_COLUMN_CONSERVATIVE_FLOOR: list[tuple[float, str, str]] = [
+    (22_000.0, "width", "HEA400"),
+    (18_000.0, "width", "HEA360"),
+    (15_000.0, "width", "HEA320"),
+    (12_000.0, "width", "HEA300"),
+    (22_000.0, "height", "HEA450"),
+    (18_000.0, "height", "HEA400"),
+    (15_000.0, "height", "HEA360"),
+    (12_000.0, "height", "HEA320"),
+    (10_000.0, "height", "HEA300"),
+    (8_000.0, "height", "HEA280"),
+]
+
+# Max catalog steps above recommended when util governs (prevents HEB1000 jumps).
+_MAX_TIER_STEPS_ABOVE_RECOMMENDED = 2
+
 _RAFTER_CANDIDATES = [
     "IPE180",
     "IPE200",
@@ -627,12 +657,12 @@ def _closest_util(
     return min(pool, key=lambda r: abs(r.utilization - target))
 
 
-def _tiers_by_mass_spread(
+def _tiers_by_step_spread(
     passing: list[SelectionResult],
     *,
     fallback: SelectionResult,
 ) -> dict[str, SelectionResult]:
-    """Spread tiers across mass when utilization targets are unreachable."""
+    """Spread tiers by catalog steps (not full pool range) when util is floor-dominated."""
     if not passing:
         return {"light": fallback, "recommended": fallback, "conservative": fallback}
     if len(passing) == 1:
@@ -640,11 +670,10 @@ def _tiers_by_mass_spread(
         return {"light": only, "recommended": only, "conservative": only}
 
     light = passing[0]
-    conservative = passing[-1]
-    if len(passing) >= 3:
-        recommended = passing[len(passing) // 2]
-    else:
-        recommended = passing[1]
+    recommended = passing[min(1, len(passing) - 1)]
+    if recommended.profile == light.profile:
+        recommended = _next_heavier_passing(passing, light)
+    conservative = _next_heavier_passing(passing, recommended)
 
     ordered = sorted(
         [light, recommended, conservative],
@@ -657,6 +686,36 @@ def _tiers_by_mass_spread(
             ordered[-1],
         )
     return {"light": light, "recommended": recommended, "conservative": conservative}
+
+
+def _index_in_passing(passing: list[SelectionResult], profile: str) -> int:
+    for i, pick in enumerate(passing):
+        if pick.profile == profile:
+            return i
+    masses = [_mass(p.profile) for p in passing]
+    target = _mass(profile)
+    for i, m in enumerate(masses):
+        if m >= target - 0.01:
+            return i
+    return len(passing) - 1
+
+
+def _cap_conservative_steps(
+    tiers: dict[str, SelectionResult],
+    passing: list[SelectionResult],
+    *,
+    max_steps: int = _MAX_TIER_STEPS_ABOVE_RECOMMENDED,
+) -> dict[str, SelectionResult]:
+    """Keep conservative within a few catalog steps of recommended."""
+    if not passing:
+        return tiers
+    rec_idx = _index_in_passing(passing, tiers["recommended"].profile)
+    cap_idx = min(rec_idx + max_steps, len(passing) - 1)
+    capped = passing[cap_idx]
+    if _mass(capped.profile) < _mass(tiers["conservative"].profile):
+        tiers = dict(tiers)
+        tiers["conservative"] = capped
+    return tiers
 
 
 def _tiers_from_passing_util_targets(
@@ -715,9 +774,10 @@ def _tiers_from_passing(
         return {"light": fallback, "recommended": fallback, "conservative": fallback}
 
     if max(p.utilization for p in passing) < _COLUMN_UTIL_FLOOR_DOMINATED:
-        return _tiers_by_mass_spread(passing, fallback=fallback)
+        return _tiers_by_step_spread(passing, fallback=fallback)
 
-    return _tiers_from_passing_util_targets(passing, fallback=fallback)
+    tiers = _tiers_from_passing_util_targets(passing, fallback=fallback)
+    return _cap_conservative_steps(tiers, passing)
 
 
 def _next_heavier_passing(
@@ -728,7 +788,23 @@ def _next_heavier_passing(
     return heavier[0] if heavier else pick
 
 
-def _bracing_tiers_floor_anchored(
+def _dimension_floor(
+    floors: list[tuple[float, str, str]],
+    *,
+    height_mm: float,
+    length_mm: float = 0.0,
+    width_mm: float = 0.0,
+) -> str | None:
+    best: tuple[float, str] | None = None
+    dims = {"height": height_mm, "length": length_mm, "width": width_mm}
+    for threshold, dim, profile in floors:
+        val = dims.get(dim, 0.0)
+        if val >= threshold and (best is None or threshold > best[0]):
+            best = (threshold, profile)
+    return best[1] if best else None
+
+
+def _tiers_floor_anchored(
     passing: list[SelectionResult],
     *,
     fallback: SelectionResult,
@@ -736,7 +812,7 @@ def _bracing_tiers_floor_anchored(
     con_floor: str | None,
     util_fn,
 ) -> dict[str, SelectionResult]:
-    """Bracing tiers from geometry floors when wind util is not meaningful."""
+    """Tier picks from geometry floors when utilization does not govern."""
     if not passing:
         return {"light": fallback, "recommended": fallback, "conservative": fallback}
 
@@ -790,7 +866,41 @@ def select_column_tiers(
         width_mm=width_mm,
         min_profile=min_profile,
     )
-    return _tiers_from_passing(passing, height_mm=height_mm, fallback=fallback)
+    rec_floor = _dimension_floor(
+        _COLUMN_RECOMMENDED_FLOOR,
+        height_mm=height_mm,
+        width_mm=width_mm,
+    )
+    con_floor = _dimension_floor(
+        _COLUMN_CONSERVATIVE_FLOOR,
+        height_mm=height_mm,
+        width_mm=width_mm,
+    )
+    if passing and max(p.utilization for p in passing) < _COLUMN_UTIL_FLOOR_DOMINATED:
+        tiers = _tiers_floor_anchored(
+            passing,
+            fallback=fallback,
+            rec_floor=rec_floor,
+            con_floor=con_floor,
+            util_fn=util,
+        )
+        if min_profile:
+            tiers["light"] = _apply_mass_floor(
+                tiers["light"], min_profile, util_fn=util
+            )
+            tiers["recommended"] = _apply_mass_floor(
+                tiers["recommended"], min_profile, util_fn=util
+            )
+            tiers["conservative"] = _apply_mass_floor(
+                tiers["conservative"], min_profile, util_fn=util
+            )
+        return tiers
+
+    tiers = _tiers_from_passing_util_targets(passing, fallback=fallback)
+    tier_floors = {"light": min_profile, "recommended": rec_floor, "conservative": con_floor}
+    for key in tiers:
+        tiers[key] = _apply_mass_floor(tiers[key], tier_floors.get(key), util_fn=util)
+    return _cap_conservative_steps(tiers, passing)
 
 
 def select_truss_chord_tiers(
@@ -824,7 +934,7 @@ def select_truss_chord_tiers(
     }
     for key in tiers:
         tiers[key] = _apply_mass_floor(tiers[key], tier_floors.get(key), util_fn=util)
-    return tiers
+    return _cap_conservative_steps(tiers, passing)
 
 
 def _bracing_candidates(
@@ -848,22 +958,6 @@ def _bracing_candidates(
             pool.append(name)
     pool.sort(key=lambda n: section_properties(n).mass_kg_m)
     return pool
-
-
-def _bracing_dimension_floor(
-    floors: list[tuple[float, str, str]],
-    *,
-    height_mm: float,
-    length_mm: float,
-    width_mm: float = 0.0,
-) -> str | None:
-    best: tuple[float, str] | None = None
-    dims = {"height": height_mm, "length": length_mm, "width": width_mm}
-    for threshold, dim, profile in floors:
-        val = dims.get(dim, 0.0)
-        if val >= threshold and (best is None or threshold > best[0]):
-            best = (threshold, profile)
-    return best[1] if best else None
 
 
 def select_bracing_member(
@@ -903,13 +997,13 @@ def select_bracing_tiers(
         height_mm=height_mm,
         length_mm=length_mm,
     )
-    rec_floor = _bracing_dimension_floor(
+    rec_floor = _dimension_floor(
         _BRACING_RECOMMENDED_FLOOR,
         height_mm=height_mm,
         length_mm=length_mm,
         width_mm=width_mm,
     )
-    con_floor = _bracing_dimension_floor(
+    con_floor = _dimension_floor(
         _BRACING_CONSERVATIVE_FLOOR,
         height_mm=height_mm,
         length_mm=length_mm,
@@ -917,7 +1011,7 @@ def select_bracing_tiers(
     )
 
     if passing and max(p.utilization for p in passing) < _COLUMN_UTIL_FLOOR_DOMINATED:
-        return _bracing_tiers_floor_anchored(
+        return _tiers_floor_anchored(
             passing,
             fallback=fallback,
             rec_floor=rec_floor,
@@ -992,7 +1086,7 @@ def select_tie_beam_tiers(
     con_floor = _floor_profile(_TIE_CONSERVATIVE_FLOOR, width_mm)
 
     if passing and max(p.utilization for p in passing) < _TIE_UTIL_FLOOR_DOMINATED:
-        return _bracing_tiers_floor_anchored(
+        return _tiers_floor_anchored(
             passing,
             fallback=fallback,
             rec_floor=rec_floor,

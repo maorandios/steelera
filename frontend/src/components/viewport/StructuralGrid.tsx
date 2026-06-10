@@ -10,6 +10,7 @@ import {
 } from "@/lib/structural-grid";
 import { VIEWPORT_PICK_ROLE } from "@/lib/viewport-pick";
 import { viewportTheme } from "@/lib/viewport-theme";
+import { useProjectStore } from "@/store/project-store";
 
 const MM_TO_M = 0.001;
 const GROUND_Y = 0;
@@ -120,6 +121,7 @@ export function StructuralGrid({
   extentMinZ,
   extentMaxZ,
 }: StructuralGridProps) {
+  const gridPickMode = useProjectStore((s) => s.viewportMode === "pick_grid");
   const xCoordsM = useMemo(
     () => xCoordsMm.map((value) => value * MM_TO_M),
     [xCoordsMm],
@@ -183,8 +185,21 @@ export function StructuralGrid({
             x1={lineX1}
             y1={GROUND_Y}
             z1={z}
-            variant="minor"
+            variant={gridPickMode ? "solid" : "minor"}
           />
+          {gridPickMode ? (
+            <mesh
+              position={[(lineX0 + lineX1) / 2, GROUND_Y + 0.05, z]}
+              rotation={[0, 0, Math.PI / 2]}
+              userData={{
+                viewportPickRole: VIEWPORT_PICK_ROLE.GRID_FRAME,
+                frameIndex: index,
+              }}
+            >
+              <boxGeometry args={[lineZ1 - lineZ0, 0.15, 0.35]} />
+              <meshBasicMaterial visible={false} />
+            </mesh>
+          ) : null}
           <GridLabelBubble
             position={[lineX0, GROUND_Y, z]}
             label={gridLineNumber(index)}

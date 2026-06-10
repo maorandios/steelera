@@ -33,10 +33,6 @@ const memberPickUserData = (elementId: string) => ({
  * Legacy fallback: axis origin + axis rotation + macro Euler for older payloads.
  */
 export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
-  if (!isElementRenderable(element)) {
-    return null;
-  }
-
   const isSelected = useIsElementHighlighted(element.id);
 
   const nodeFrame = useMemo(
@@ -55,6 +51,10 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
       extents: geometryExtentsM(element),
     };
   }, [element, nodeFrame]);
+
+  if (!isElementRenderable(element)) {
+    return null;
+  }
 
   const userRotation = elementRotationRad(element);
   const { height, width } = geometryExtentsM(element);

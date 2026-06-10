@@ -1,4 +1,5 @@
 import type { SiteSurroundings } from "@/lib/site-surroundings";
+import { abortAfterMs, formatApiError } from "@/lib/api-errors";
 import type { GeocodeResult, SiteContext } from "@/types/site";
 import type { ChatMessage, ChatResponse } from "@/types/chat";
 import type {
@@ -10,6 +11,7 @@ import type { ShedAssemblyConfig } from "@/types/shed-config";
 import type { StructuralGridLayout } from "@/types/spatial-grid";
 import type { StructuralTopology } from "@/types/ifc-topology";
 import type { ProjectState } from "@/types/project";
+import type { ProfileScope, SnapNode } from "@/types/interaction";
 
 export type IfcSchemaVersion = "IFC2X3" | "IFC4";
 
@@ -18,7 +20,6 @@ export type IfcSchemaVersion = "IFC2X3" | "IFC4";
  * Avoids CORS and flaky localhost resolution on Windows.
  */
 function apiBaseUrl(): string {
-  // Call FastAPI directly in the browser — Next.js rewrites time out on long chat (~30s).
   if (typeof window !== "undefined") {
     return process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
   }
@@ -30,20 +31,28 @@ function apiBaseUrl(): string {
 }
 
 const CHAT_TIMEOUT_MS = 120_000;
+const MACRO_TIMEOUT_MS = 60_000;
+const SITE_TIMEOUT_MS = 90_000;
+const PROPOSAL_TIMEOUT_MS = 120_000;
+const MODEL_EDIT_TIMEOUT_MS = 45_000;
+const EXPORT_TIMEOUT_MS = 90_000;
+
+const BACKEND_HINT =
+  "Cannot reach Steelera backend. Start it with: cd backend && python -m uvicorn main:app --reload --port 8000";
+
+export type GenerateShedBody = ShedAssemblyConfig | StructuralGridLayout;
 
 export async function postChat(
   messages: ChatMessage[],
   projectState: ProjectState,
   targetElementId?: string | null,
 ): Promise<ChatResponse> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
-
+  const { signal, clear } = abortAfterMs(CHAT_TIMEOUT_MS);
   try {
     const res = await fetch(`${apiBaseUrl()}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
+      signal,
       body: JSON.stringify({
         messages,
         projectElements: projectState.projectElements,
@@ -59,25 +68,17 @@ export async function postChat(
 
     return res.json() as Promise<ChatResponse>;
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("Chat request timed out. Try a shorter message or refresh.");
-    }
-    if (err instanceof TypeError) {
-      throw new Error(
-        "Cannot reach Steelera backend. Start it with: cd backend && python -m uvicorn main:app --reload --port 8000",
-      );
-    }
-    throw err;
+    throw new Error(
+      formatApiError(err, {
+        timeout: "Chat request timed out. Try a shorter message or refresh.",
+        network: BACKEND_HINT,
+        fallback: "Chat request failed.",
+      }),
+    );
   } finally {
-    clearTimeout(timeoutId);
+    clear();
   }
 }
-
-const MACRO_TIMEOUT_MS = 60_000;
-
-export type GenerateShedBody = ShedAssemblyConfig | StructuralGridLayout;
-
-const SITE_TIMEOUT_MS = 45_000;
 
 export async function fetchSiteContext(
   lat: number,
@@ -85,8 +86,7 @@ export async function fetchSiteContext(
   label = "",
   surroundings: SiteSurroundings = "auto",
 ): Promise<SiteContext> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), SITE_TIMEOUT_MS);
+  const { signal, clear } = abortAfterMs(SITE_TIMEOUT_MS);
   const params = new URLSearchParams({
     lat: String(lat),
     lon: String(lon),
@@ -95,62 +95,89 @@ export async function fetchSiteContext(
   });
   try {
     const res = await fetch(`${apiBaseUrl()}/api/site/context?${params}`, {
-      signal: controller.signal,
+      signal,
     });
     if (!res.ok) {
       const detail = await res.text();
       throw new Error(detail || `Site context failed (${res.status})`);
     }
     return res.json() as Promise<SiteContext>;
+  } catch (err) {
+    throw new Error(
+      formatApiError(err, {
+        timeout: "Site data request timed out. Please try again.",
+        network: BACKEND_HINT,
+        fallback: "Failed to load site data.",
+      }),
+    );
   } finally {
-    clearTimeout(timeoutId);
+    clear();
   }
 }
 
 export async function geocodeLocation(query: string): Promise<GeocodeResult> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), SITE_TIMEOUT_MS);
+  const { signal, clear } = abortAfterMs(SITE_TIMEOUT_MS);
   const params = new URLSearchParams({ q: query });
   try {
     const res = await fetch(`${apiBaseUrl()}/api/site/geocode?${params}`, {
-      signal: controller.signal,
+      signal,
     });
     if (!res.ok) {
       const detail = await res.text();
       throw new Error(detail || `Geocoding failed (${res.status})`);
     }
     return res.json() as Promise<GeocodeResult>;
+  } catch (err) {
+    throw new Error(
+      formatApiError(err, {
+        timeout: "Address lookup timed out. Try a shorter city name.",
+        network: BACKEND_HINT,
+        fallback: "Could not find that location.",
+      }),
+    );
   } finally {
-    clearTimeout(timeoutId);
+    clear();
   }
 }
 
 export async function postProposeShed(
   body: ShedProposalRequest,
 ): Promise<ShedProposalResult> {
-  const res = await fetch(`${apiBaseUrl()}/api/macro/propose-shed`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(detail || `Proposal failed (${res.status})`);
+  const { signal, clear } = abortAfterMs(PROPOSAL_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/macro/propose-shed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Proposal failed (${res.status})`);
+    }
+    return res.json() as Promise<ShedProposalResult>;
+  } catch (err) {
+    throw new Error(
+      formatApiError(err, {
+        timeout: "Proposal timed out. The backend may still be computing — try again.",
+        network: BACKEND_HINT,
+        fallback: "Failed to compute proposal.",
+      }),
+    );
+  } finally {
+    clear();
   }
-  return res.json() as Promise<ShedProposalResult>;
 }
 
 export async function postGenerateShed(
   body: GenerateShedBody,
 ): Promise<GenerateShedResponse> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), MACRO_TIMEOUT_MS);
-
+  const { signal, clear } = abortAfterMs(MACRO_TIMEOUT_MS);
   try {
     const res = await fetch(`${apiBaseUrl()}/api/macro/generate-shed`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
+      signal,
       body: JSON.stringify(body),
     });
 
@@ -170,35 +197,29 @@ export async function postGenerateShed(
 
     return res.json() as Promise<GenerateShedResponse>;
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("Shed generation timed out.");
-    }
-    if (err instanceof TypeError) {
-      throw new Error(
-        "Cannot reach Steelera backend. Start it with: cd backend && python -m uvicorn main:app --reload --port 8000",
-      );
-    }
-    throw err;
+    throw new Error(
+      formatApiError(err, {
+        timeout: "Shed generation timed out.",
+        network: BACKEND_HINT,
+        fallback: "Failed to generate shed.",
+      }),
+    );
   } finally {
-    clearTimeout(timeoutId);
+    clear();
   }
 }
-
-const EXPORT_TIMEOUT_MS = 90_000;
 
 export async function postExportIfc(
   topology: StructuralTopology,
   schemaVersion: IfcSchemaVersion = "IFC4",
   filename?: string,
 ): Promise<Blob> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXPORT_TIMEOUT_MS);
-
+  const { signal, clear } = abortAfterMs(EXPORT_TIMEOUT_MS);
   try {
     const res = await fetch(`${apiBaseUrl()}/api/export/ifc`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
+      signal,
       body: JSON.stringify({
         structural_topology: topology,
         schema_version: schemaVersion,
@@ -222,17 +243,15 @@ export async function postExportIfc(
 
     return res.blob();
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("IFC export timed out.");
-    }
-    if (err instanceof TypeError) {
-      throw new Error(
-        "Cannot reach Steelera backend. Start it with: cd backend && python -m uvicorn main:app --reload --port 8000",
-      );
-    }
-    throw err;
+    throw new Error(
+      formatApiError(err, {
+        timeout: "IFC export timed out.",
+        network: BACKEND_HINT,
+        fallback: "IFC export failed.",
+      }),
+    );
   } finally {
-    clearTimeout(timeoutId);
+    clear();
   }
 }
 
@@ -246,4 +265,143 @@ export function downloadBlob(blob: Blob, filename: string): void {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+export type ModelEditResponse = {
+  projectElements: import("@/types/project").ProjectElementMm[];
+  message: string;
+  changed_ids: string[];
+};
+
+async function postModelEdit<TBody extends Record<string, unknown>>(
+  path: string,
+  body: TBody,
+): Promise<ModelEditResponse> {
+  const { signal, clear } = abortAfterMs(MODEL_EDIT_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${apiBaseUrl()}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Model edit failed (${res.status})`);
+    }
+    const data = (await res.json()) as {
+      projectElements: import("@/types/project").ProjectElementMm[];
+      message: string;
+      changed_ids: string[];
+    };
+    return {
+      projectElements: data.projectElements,
+      message: data.message,
+      changed_ids: data.changed_ids ?? [],
+    };
+  } catch (err) {
+    throw new Error(
+      formatApiError(err, {
+        timeout: "Model update timed out.",
+        network: BACKEND_HINT,
+        fallback: "Model update failed.",
+      }),
+    );
+  } finally {
+    clear();
+  }
+}
+
+export async function fetchSnapNodes(
+  projectElements: import("@/types/project").ProjectElementMm[],
+): Promise<SnapNode[]> {
+  const { signal, clear } = abortAfterMs(MODEL_EDIT_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/model/snap-nodes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({ project_elements: projectElements }),
+    });
+    if (!res.ok) {
+      throw new Error("Failed to load snap nodes");
+    }
+    const data = (await res.json()) as { nodes: SnapNode[] };
+    return data.nodes ?? [];
+  } catch (err) {
+    throw new Error(
+      formatApiError(err, {
+        timeout: "Loading connection points timed out.",
+        network: BACKEND_HINT,
+        fallback: "Failed to load snap nodes.",
+      }),
+    );
+  } finally {
+    clear();
+  }
+}
+
+export async function postUpdateProfile(
+  projectElements: import("@/types/project").ProjectElementMm[],
+  profile: string,
+  referenceElementId: string,
+  scope: ProfileScope,
+): Promise<ModelEditResponse> {
+  return postModelEdit("/api/model/update-profile", {
+    project_elements: projectElements,
+    profile,
+    reference_element_id: referenceElementId,
+    scope,
+  });
+}
+
+export async function postDeleteMembers(
+  projectElements: import("@/types/project").ProjectElementMm[],
+  referenceElementId: string,
+  scope: ProfileScope,
+): Promise<ModelEditResponse> {
+  return postModelEdit("/api/model/delete-members", {
+    project_elements: projectElements,
+    reference_element_id: referenceElementId,
+    scope,
+  });
+}
+
+export async function postPlaceBraceLeg(
+  projectElements: import("@/types/project").ProjectElementMm[],
+  start: { x: number; y: number; z: number },
+  end: { x: number; y: number; z: number },
+  profile?: string | null,
+  assemblyId?: string | null,
+): Promise<ModelEditResponse> {
+  return postModelEdit("/api/model/place-brace-leg", {
+    project_elements: projectElements,
+    start_mm: start,
+    end_mm: end,
+    profile: profile ?? null,
+    assembly_id: assemblyId ?? null,
+  });
+}
+
+export async function postPlaceBracingCross(
+  projectElements: import("@/types/project").ProjectElementMm[],
+  points: [
+    { x: number; y: number; z: number },
+    { x: number; y: number; z: number },
+    { x: number; y: number; z: number },
+    { x: number; y: number; z: number },
+  ],
+  profile?: string | null,
+  assemblyId?: string | null,
+): Promise<ModelEditResponse> {
+  const [a, b, c, d] = points;
+  return postModelEdit("/api/model/place-bracing-cross", {
+    project_elements: projectElements,
+    start_a_mm: a,
+    end_a_mm: b,
+    start_b_mm: c,
+    end_b_mm: d,
+    profile: profile ?? null,
+    assembly_id: assemblyId ?? null,
+  });
 }

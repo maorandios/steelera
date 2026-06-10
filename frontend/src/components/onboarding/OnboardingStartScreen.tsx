@@ -14,6 +14,7 @@ import {
 import { useCallback, useState } from "react";
 
 import { SteeleraMark } from "@/components/onboarding/SteeleraMark";
+import { ClientOnly } from "@/components/ui/client-only";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 
@@ -94,7 +95,8 @@ export function OnboardingStartScreen() {
     : "Describe a portal shed, mezzanine, stairs, pipe rack…";
 
   return (
-    <div className="relative z-10 flex min-h-dvh w-full flex-col items-center justify-center px-4 py-10 sm:px-6">
+    <ClientOnly fallback={<OnboardingStartFallback />}>
+      <div className="relative z-10 flex min-h-dvh w-full flex-col items-center justify-center px-4 py-10 sm:px-6">
       <div className="flex w-full max-w-[900px] flex-col items-center">
         <SteeleraMark size="md" className="mb-8 sm:mb-10" />
 
@@ -107,8 +109,13 @@ export function OnboardingStartScreen() {
           model for you.
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-8 w-full min-w-0 sm:mt-10">
+        <form
+          onSubmit={handleSubmit}
+          suppressHydrationWarning
+          className="mt-8 w-full min-w-0 sm:mt-10"
+        >
           <div
+            suppressHydrationWarning
             className={cn(
               "mx-auto flex h-[60px] w-full min-w-0 max-w-[860px] items-center gap-2 rounded-full sm:h-[72px]",
               "border border-white/70 bg-white/75 shadow-[0_8px_40px_rgba(15,23,42,0.08)]",
@@ -119,6 +126,7 @@ export function OnboardingStartScreen() {
             <button
               type="button"
               disabled={disabled}
+              suppressHydrationWarning
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
               aria-label="Attach file"
             >
@@ -134,12 +142,17 @@ export function OnboardingStartScreen() {
               placeholder={placeholder}
               disabled={disabled}
               autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore
+              data-form-type="other"
+              suppressHydrationWarning
               className="min-w-0 flex-1 bg-transparent text-base text-slate-800 placeholder:text-slate-400 focus:outline-none sm:text-[17px]"
             />
 
             <button
               type="submit"
               disabled={disabled || !input.trim()}
+              suppressHydrationWarning
               className={cn(
                 "flex h-10 w-10 shrink-0 items-center justify-center rounded-full sm:h-11 sm:w-11",
                 "bg-blue-600 text-white shadow-md transition-all",
@@ -171,6 +184,7 @@ export function OnboardingStartScreen() {
                 key={chip.label}
                 type="button"
                 disabled={disabled}
+                suppressHydrationWarning
                 onClick={() => pickUseCase(chip.useCase)}
                 className={cn(
                   "inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm transition-all",
@@ -192,6 +206,7 @@ export function OnboardingStartScreen() {
           <button
             type="button"
             disabled={disabled}
+            suppressHydrationWarning
             onClick={useGeolocation}
             className={cn(
               "inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm",
@@ -206,6 +221,7 @@ export function OnboardingStartScreen() {
           <button
             type="button"
             disabled={disabled}
+            suppressHydrationWarning
             onClick={() => {
               clearError();
               useProjectStore.setState({
@@ -224,6 +240,24 @@ export function OnboardingStartScreen() {
             Upload IFC
           </button>
         </div>
+      </div>
+      </div>
+    </ClientOnly>
+  );
+}
+
+function OnboardingStartFallback() {
+  return (
+    <div className="relative z-10 flex min-h-dvh w-full flex-col items-center justify-center px-4 py-10 sm:px-6">
+      <div className="flex w-full max-w-[900px] flex-col items-center">
+        <SteeleraMark size="md" className="mb-8 sm:mb-10" />
+        <h1 className="max-w-2xl text-center text-[1.75rem] font-semibold leading-tight tracking-tight text-slate-900 sm:text-4xl sm:leading-tight">
+          What structure are we building today?
+        </h1>
+        <p className="mt-3 max-w-lg text-center text-sm leading-relaxed text-slate-500 sm:text-[15px]">
+          Describe your project and Steelera will create a preliminary structural
+          model for you.
+        </p>
       </div>
     </div>
   );

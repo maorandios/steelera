@@ -1,5 +1,6 @@
 import type { ChatMessage, QuickRepliesPayload } from "@/types/chat";
 import { formatSiteSummary } from "@/lib/proposal-copy";
+import { isSiteClimatePending } from "@/lib/placeholder-site";
 import type { SiteContext } from "@/types/site";
 import type { WizardStep1Data, WizardStep2Data } from "@/types/wizard";
 
@@ -73,11 +74,16 @@ export function stripInitialOnboardingWelcome(
 }
 
 export function siteConfirmedMessage(site: SiteContext): ChatMessage {
+  const intro = isSiteClimatePending(site)
+    ? `Location saved for ${site.location_label || "your site"}.\n\n` +
+      `Wind and terrain data load when we build your proposal — no wait now.\n\n` +
+      `Does this plot match built-up city land, or open/industrial land?`
+    : `${formatSiteSummary(site)}\n\n` +
+      `Initial map detection — does this match your plot? City lookups often land on the urban center; adjust if your site is on open or industrial land.`;
+
   return {
     role: "assistant",
-    content:
-      `${formatSiteSummary(site)}\n\n` +
-      `Initial map detection — does this match your plot? City lookups often land on the urban center; adjust if your site is on open or industrial land.`,
+    content: intro,
     ui_block: { type: "site_refine", payload: {} },
   };
 }
@@ -104,12 +110,16 @@ export function messagesAfterSiteSurroundingsConfirm(
   priorMessages: ChatMessage[],
   userLabel: string,
 ): { messages: ChatMessage[]; phase: OnboardingPhase } {
+  const surroundingsReply = isSiteClimatePending(site)
+    ? `Noted — ${userLabel}. We'll apply this when loading site climate for your proposal.`
+    : `${formatSiteSummary(site)}\n\nAdjusted for your site surroundings.`;
+
   const base: ChatMessage[] = [
     ...priorMessages,
     { role: "user", content: userLabel },
     {
       role: "assistant",
-      content: `${formatSiteSummary(site)}\n\nAdjusted for your site surroundings.`,
+      content: surroundingsReply,
     },
   ];
 

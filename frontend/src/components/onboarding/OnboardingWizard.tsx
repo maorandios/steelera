@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChatProposalBlock } from "@/components/chat/ChatProposalBlock";
 import { SiteMapPinPicker } from "@/components/chat/SiteMapPinPicker";
 import { SteeleraMark } from "@/components/onboarding/SteeleraMark";
+import { isSiteClimatePending } from "@/lib/placeholder-site";
 import {
   formatClimateLine,
   formatSiteTerrainLine,
@@ -159,11 +160,22 @@ function SiteInfoCard({ locationLabel }: { locationLabel: string }) {
   const site = useProjectStore((s) => s.siteContext);
   if (!site) return null;
 
+  const pending = isSiteClimatePending(site);
+
   return (
     <div className="mb-6 rounded-2xl border border-white/80 bg-white/60 p-4 text-sm leading-relaxed text-slate-600 shadow-sm backdrop-blur-sm">
       <p className="font-medium text-slate-800">{locationLabel}</p>
-      <p className="mt-2 text-[13px]">{formatClimateLine(site)}</p>
-      <p className="mt-1 text-[13px]">{formatSiteTerrainLine(site)}</p>
+      {pending ? (
+        <p className="mt-2 text-[13px]">
+          Wind and terrain load with your proposal — pick the surroundings that
+          best match your plot.
+        </p>
+      ) : (
+        <>
+          <p className="mt-2 text-[13px]">{formatClimateLine(site)}</p>
+          <p className="mt-1 text-[13px]">{formatSiteTerrainLine(site)}</p>
+        </>
+      )}
     </div>
   );
 }
@@ -224,7 +236,8 @@ function SiteRefineStep({
   const confirmSiteRefine = useProjectStore((s) => s.confirmSiteRefine);
   const siteContext = useProjectStore((s) => s.siteContext);
   const locationLabel = useProjectStore((s) => s.wizardStep1.location_label);
-  const alreadyOpen = siteContext?.exposure === "open";
+  const alreadyOpen =
+    !isSiteClimatePending(siteContext) && siteContext?.exposure === "open";
 
   return (
     <>

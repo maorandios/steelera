@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatStatus } from "@/components/chat/ChatStatus";
+import { SelectionActionBar } from "@/components/chat/SelectionActionBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +73,7 @@ export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
   const error = useProjectStore((s) => s.error);
   const clearError = useProjectStore((s) => s.clearError);
   const selectedElementId = useProjectStore((s) => s.selectedElementId);
+  const selectionContext = useProjectStore((s) => s.selectionContext);
   const clearSelection = useProjectStore((s) => s.clearSelection);
 
   const activeActionIndex = useMemo(
@@ -79,7 +81,11 @@ export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
     [messages],
   );
   const showInput = !isOnboarding || onboardingAwaitingCustom !== null;
-  const inputPlaceholder = customInputPlaceholder(messages, onboardingAwaitingCustom);
+  const inputPlaceholder = isOnboarding
+    ? customInputPlaceholder(messages, onboardingAwaitingCustom)
+    : selectionContext
+      ? `Ask about this ${selectionContext.label.toLowerCase()}…`
+      : "Describe your structure...";
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const el = scrollRef.current;
@@ -139,7 +145,8 @@ export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
                 : "border-t border-border bg-background p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
           )}
         >
-          {selectedElementId ? (
+          {isDesktop ? <SelectionActionBar /> : null}
+          {!isDesktop && selectedElementId ? (
             <div className="mb-2">
               <Badge variant="secondary" className="gap-1.5 pr-1 font-normal">
                 <span>Member: {selectedElementId}</span>
@@ -190,11 +197,7 @@ export function ChatInterface({ variant = "default" }: ChatInterfaceProps) {
                   if (error) clearError();
                   setInput(e.target.value);
                 }}
-                placeholder={
-                  isOnboarding
-                    ? inputPlaceholder
-                    : "Describe your structure..."
-                }
+                placeholder={inputPlaceholder}
                 disabled={isLoading || isProposing}
                 className={cn(
                   "flex-1 bg-card",

@@ -83,6 +83,26 @@ assert con.get("bracing_utilization") is not None
 
 assert str(rec["truss_chord_profile"]).startswith("SHS")
 
+# 18×50×8 m — conservative must step up modestly, not jump to catalog max (HEB1000).
+medium_opts = compute_section_tier_options(
+    width_mm=18_000,
+    length_mm=50_000,
+    height_mm=8_000,
+    roof_pitch_deg=10,
+    site=dubai_open,
+    bay_spacing_mm=6_000,
+    use_truss=True,
+)
+med_rec = medium_opts["recommended"]
+med_con = medium_opts["conservative"]
+assert med_con["column_profile"] != "HEB1000", med_con
+rec_col_mass = section_properties(str(med_rec["column_profile"])).mass_kg_m
+con_col_mass = section_properties(str(med_con["column_profile"])).mass_kg_m
+assert con_col_mass >= rec_col_mass - 0.01, (med_rec, med_con)
+assert con_col_mass <= rec_col_mass * 1.35 + 0.01, (med_rec, med_con)
+rec_chord_mass = section_properties(str(med_rec["truss_chord_profile"])).mass_kg_m
+con_chord_mass = section_properties(str(med_con["truss_chord_profile"])).mass_kg_m
+assert con_chord_mass <= rec_chord_mass * 1.35 + 0.01, (med_rec, med_con)
 
 
 resp = propose_shed_configuration(
