@@ -455,17 +455,23 @@ export async function postPlaceGridColumn(
 export async function postPlaceGridTieBeam(
   projectElements: import("@/types/project").ProjectElementMm[],
   body: {
-    x_axis: string;
-    z_start: string;
-    z_end: string;
+    orientation?: "along_z" | "along_x";
+    x_axis?: string;
+    z_start?: string;
+    z_end?: string;
+    z_axis?: string | null;
+    x_start?: string | null;
+    x_end?: string | null;
     profile: string;
     elevation?: string;
+    placement_label?: string | null;
     grid: import("@/types/grid-selection").GridPlacementContext;
     assembly_id?: string | null;
   },
 ): Promise<ModelEditResponse> {
   return postModelEdit("/api/model/place-grid-tie-beam", {
     project_elements: projectElements,
+    orientation: "along_z",
     elevation: body.elevation ?? "eave",
     ...body,
   });

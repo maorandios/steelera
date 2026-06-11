@@ -82,6 +82,32 @@ export function shedParamsToGridPlacement(
   };
 }
 
+/** Grid context from viewport cumulative coords (matches panel pick refs). */
+export function gridPlacementFromStructuralGrid(
+  grid: StructuralGridState,
+  params: Pick<
+    ShedAssemblyParams,
+    "height" | "roof_pitch_deg" | "roof_style" | "mono_high_side"
+  >,
+): GridPlacementContext {
+  const xSpans: number[] = [];
+  for (let i = 1; i < grid.xCoordsMm.length; i += 1) {
+    xSpans.push(grid.xCoordsMm[i] - grid.xCoordsMm[i - 1]);
+  }
+  const zSpans: number[] = [];
+  for (let i = 1; i < grid.zCoordsMm.length; i += 1) {
+    zSpans.push(grid.zCoordsMm[i] - grid.zCoordsMm[i - 1]);
+  }
+  return {
+    x_spans: xSpans.length > 0 ? xSpans : [15000],
+    z_spans: zSpans.length > 0 ? zSpans : [10000],
+    height_mm: params.height,
+    roof_pitch_deg: params.roof_pitch_deg,
+    roof_style: params.roof_style,
+    mono_high_side: params.mono_high_side ?? "B",
+  };
+}
+
 export function resolveBaySelection(
   bayIndex: number,
   grid: StructuralGridState,

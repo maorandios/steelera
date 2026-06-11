@@ -11,18 +11,32 @@ import type {
   GableEnd,
   GableWallPanel,
   LongWallPanel,
+  PickablePanel,
   RoofPanel,
   RoofSlopeSide,
+  TieBeamPanel,
+  TrussBcPanel,
+  TrussTcPanel,
   WallPanelSide,
 } from "@/types/add-element";
-export function bracingPanelKey(panel: BracingPanel): string {
+export function pickPanelKey(panel: PickablePanel): string {
   if (panel.kind === "long_wall") {
     return `long:${panel.wallXLabel}:${panel.z0Mm}:${panel.z1Mm}`;
   }
   if (panel.kind === "roof") {
     return `roof:${panel.slopeSide}:${panel.z0Mm}:${panel.z1Mm}`;
   }
+  if (panel.kind === "truss_tc") {
+    return `truss-tc:${panel.z0Mm}:${panel.z1Mm}:${panel.x0Mm}:${panel.x1Mm}`;
+  }
+  if (panel.kind === "truss_bc") {
+    return `truss-bc:${panel.z0Mm}:${panel.z1Mm}:${panel.x0Mm}:${panel.x1Mm}`;
+  }
   return `gable:${panel.end}:${panel.x0Mm}:${panel.x1Mm}`;
+}
+
+export function bracingPanelKey(panel: BracingPanel): string {
+  return pickPanelKey(panel);
 }
 /** @deprecated use bracingPanelKey */
 export const wallPanelKey = bracingPanelKey;
@@ -139,7 +153,114 @@ export type WallPanelPickData = {
   slopeSide?: RoofSlopeSide;
   slopeIndex?: number;
   roofBayIndex?: number;
+  trussChord?: "tc" | "bc";
+  trussZBayIndex?: number;
+  trussXPanelIndex?: number;
 };
+
+function trussPanelFromPick(
+  chord: "tc" | "bc",
+  zBayIndex: number,
+  xPanelIndex: number,
+  z0Mm: number,
+  z1Mm: number,
+  x0Mm: number,
+  x1Mm: number,
+  grid: StructuralGridState,
+): TrussTcPanel | TrussBcPanel | null {
+  const [zStart, zEnd] = zPanelGridRefs(z0Mm, z1Mm, grid);
+  const [xStart, xEnd] = xPanelGridRefs(x0Mm, x1Mm, grid);
+  const xCenter = (x0Mm + x1Mm) / 2;
+  const [xAxis] = xPanelGridRefs(xCenter, xCenter, grid);
+  const chordLabel = chord === "tc" ? "TC truss" : "BC truss";
+  const base = {
+    zBayIndex,
+    zStart,
+    zEnd,
+    z0Mm,
+    z1Mm,
+    xPanelIndex,
+    xStart,
+    xEnd,
+    x0Mm,
+    x1Mm,
+    xAxis,
+    label: `${chordLabel} · ${xStart} → ${xEnd} · Frame ${zStart} → ${zEnd}`,
+  };
+  if (chord === "tc") {
+    return { kind: "truss_tc", ...base, elevation: "roof" as const };
+  }
+  return { kind: "truss_bc", ...base, elevation: "eave" as const };
+}
+
+export function tiePanelFromPickData(
+  data: WallPanelPickData,
+  grid: StructuralGridState,
+): TieBeamPanel | null {
+  if (data.panelKind === "truss_tc" || data.panelKind === "truss_bc") {
+    const chord = data.panelKind === "truss_tc" ? "tc" : "bc";
+    if (
+      typeof data.trussZBayIndex !== "number" ||
+      typeof data.trussXPanelIndex !== "number" ||
+      typeof data.z0Mm !== "number" ||
+      typeof data.z1Mm !== "number" ||
+      typeof data.x0Mm !== "number" ||
+      typeof data.x1Mm !== "number"
+    ) {
+      return null;
+    }
+    return trussPanelFromPick(
+      chord,
+      data.trussZBayIndex,
+      data.trussXPanelIndex,
+      data.z0Mm,
+      data.z1Mm,
+      data.x0Mm,
+      data.x1Mm,
+      grid,
+    );
+  }
+  if (data.panelKind === "gable_wall") {
+    if (
+      (data.gableEnd !== "near" && data.gableEnd !== "far") ||
+      typeof data.frameIndex !== "number" ||
+      typeof data.xBayIndex !== "number" ||
+      typeof data.x0Mm !== "number" ||
+      typeof data.x1Mm !== "number" ||
+      typeof data.zMm !== "number"
+    ) {
+      return null;
+    }
+    return gableWallPanelFromPick(
+      data.gableEnd,
+      data.frameIndex,
+      data.xBayIndex,
+      data.x0Mm,
+      data.x1Mm,
+      data.zMm,
+      grid,
+    );
+  }
+  if (
+    (data.side !== "A" && data.side !== "B") ||
+    typeof data.wallXLabel !== "string" ||
+    typeof data.bayIndex !== "number" ||
+    typeof data.z0Mm !== "number" ||
+    typeof data.z1Mm !== "number" ||
+    typeof data.xMm !== "number"
+  ) {
+    return null;
+  }
+  return longWallPanelFromPick(
+    data.side,
+    data.wallXLabel,
+    data.bayIndex,
+    data.z0Mm,
+    data.z1Mm,
+    data.xMm,
+    grid,
+  );
+}
 
 export function bracingPanelFromPickData(
   data: WallPanelPickData,
@@ -253,4 +374,13 @@ export function defaultBracingProfile(
     (e) => e.element_type === "bracing" && e.profile_name,
   );
   return hit?.profile_name ?? "L60x60x6";
+}
+
+export function defaultTieBeamProfile(
+  elements: { element_type?: string | null; profile_name?: string | null }[],
+): string {
+  const hit = elements.find(
+    (e) => e.element_type === "tie_beam" && e.profile_name,
+  );
+  return hit?.profile_name ?? "IPE200";
 }

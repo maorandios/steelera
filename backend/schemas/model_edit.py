@@ -111,11 +111,31 @@ class GroundPlacementNodesRequest(BaseModel):
 
 
 class PlaceGridTieBeamRequest(BaseModel):
-    x_axis: str
-    z_start: str = Field(..., description='Start frame e.g. "2"')
-    z_end: str = Field(..., description='End frame e.g. "3"')
+    orientation: Literal["along_z", "along_x"] = Field(
+        default="along_z",
+        description="along_z: tie on a wall/truss X line between frames; along_x: gable tie along X at fixed Z.",
+    )
+    x_axis: str = Field(default="", description='Wall/truss grid line for along_z ties e.g. "A".')
+    z_start: str = Field(default="", description='Start frame for along_z e.g. "2".')
+    z_end: str = Field(default="", description='End frame for along_z e.g. "3".')
+    z_axis: str | None = Field(
+        default=None,
+        description='Gable frame line for along_x ties e.g. "1".',
+    )
+    x_start: str | None = Field(
+        default=None,
+        description='Gable tie start X line for along_x.',
+    )
+    x_end: str | None = Field(
+        default=None,
+        description='Gable tie end X line for along_x.',
+    )
     profile: str = Field(default="IPE200")
     elevation: str = Field(default="eave", description="eave | roof | apex")
+    placement_label: str | None = Field(
+        default=None,
+        description="Optional disambiguator for multiple ties in one bay (e.g. start, middle).",
+    )
     assembly_id: str | None = None
     grid: GridPlacementContext
 

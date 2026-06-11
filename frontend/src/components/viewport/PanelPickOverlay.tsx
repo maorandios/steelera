@@ -10,15 +10,29 @@ import {
   roofPanelCornersMm,
   type RoofPanelCornerMm,
 } from "@/lib/roof-panel-layout";
+import { buildTieBeamPanels } from "@/lib/tie-panel-layout";
+import {
+  collectTrussSegments,
+  trussPanelCornersMm,
+  type TrussPanelCornerMm,
+} from "@/lib/truss-panel-layout";
 import type { ShedAssemblyParams } from "@/lib/shed-assembly";
 import {
   bracingPanelFromPickData,
-  bracingPanelKey,
+  pickPanelKey,
+  tiePanelFromPickData,
   type WallPanelPickData,
 } from "@/lib/wall-panel";
 import { VIEWPORT_PICK_ROLE } from "@/lib/viewport-pick";
 import { useProjectStore } from "@/store/project-store";
-import type { BracingPanel, RoofPanel } from "@/types/add-element";
+import type {
+  BracingPanel,
+  PickablePanel,
+  RoofPanel,
+  TieBeamPanel,
+  TrussBcPanel,
+  TrussTcPanel,
+} from "@/types/add-element";
 
 const MM_TO_M = 0.001;
 const PICK_DEPTH_M = 0.15;
@@ -37,25 +51,25 @@ type PanelPickOverlayProps = {
 type WallPickMeshSpec = {
   kind: "wall";
   key: string;
-  panel: BracingPanel;
+  panel: PickablePanel;
   position: [number, number, number];
   size: [number, number, number];
   pickData: WallPanelPickData;
 };
 
-type RoofPickMeshSpec = {
-  kind: "roof";
+type OrientedPickMeshSpec = {
+  kind: "oriented";
   key: string;
-  panel: RoofPanel;
+  panel: PickablePanel;
   position: [number, number, number];
   quaternion: THREE.Quaternion;
   size: [number, number, number];
   pickData: WallPanelPickData;
 };
 
-type PickMeshSpec = WallPickMeshSpec | RoofPickMeshSpec;
+type PickMeshSpec = WallPickMeshSpec | OrientedPickMeshSpec;
 
-function pickDataFromPanel(panel: BracingPanel): WallPanelPickData {
+function pickDataFromPanel(panel: PickablePanel): WallPanelPickData {
   if (panel.kind === "roof") {
     return {
       panelKind: "roof",
@@ -64,6 +78,28 @@ function pickDataFromPanel(panel: BracingPanel): WallPanelPickData {
       roofBayIndex: panel.bayIndex,
       z0Mm: panel.z0Mm,
       z1Mm: panel.z1Mm,
+    };
+  }
+  if (panel.kind === "truss_tc") {
+    return {
+      panelKind: "truss_tc",
+      trussZBayIndex: panel.zBayIndex,
+      trussXPanelIndex: panel.xPanelIndex,
+      z0Mm: panel.z0Mm,
+      z1Mm: panel.z1Mm,
+      x0Mm: panel.x0Mm,
+      x1Mm: panel.x1Mm,
+    };
+  }
+  if (panel.kind === "truss_bc") {
+    return {
+      panelKind: "truss_bc",
+      trussZBayIndex: panel.zBayIndex,
+      trussXPanelIndex: panel.xPanelIndex,
+      z0Mm: panel.z0Mm,
+      z1Mm: panel.z1Mm,
+      x0Mm: panel.x0Mm,
+      x1Mm: panel.x1Mm,
     };
   }
   if (panel.kind === "gable_wall") {
@@ -88,17 +124,19 @@ function pickDataFromPanel(panel: BracingPanel): WallPanelPickData {
   };
 }
 
-function roofPickTransform(corners: [
-  RoofPanelCornerMm,
-  RoofPanelCornerMm,
-  RoofPanelCornerMm,
-  RoofPanelCornerMm,
-]): {
+function orientedPickTransform(
+  corners: [
+    RoofPanelCornerMm | TrussPanelCornerMm,
+    RoofPanelCornerMm | TrussPanelCornerMm,
+    RoofPanelCornerMm | TrussPanelCornerMm,
+    RoofPanelCornerMm | TrussPanelCornerMm,
+  ],
+): {
   position: [number, number, number];
   quaternion: THREE.Quaternion;
   size: [number, number, number];
 } {
-  const toM = (point: RoofPanelCornerMm) =>
+  const toM = (point: RoofPanelCornerMm | TrussPanelCornerMm) =>
     new THREE.Vector3(point.x * MM_TO_M, point.y * MM_TO_M, point.z * MM_TO_M);
 
   const p0 = toM(corners[0]);
@@ -134,11 +172,16 @@ function panelFromUserData(
   userData: THREE.Object3D["userData"],
   grid: ReturnType<typeof useProjectStore.getState>["structuralGrid"],
   roofParams: PanelPickOverlayProps["roofParams"],
-): BracingPanel | null {
+  pickMode: "bracing" | "tie_beam",
+): PickablePanel | null {
   if (userData?.viewportPickRole !== VIEWPORT_PICK_ROLE.WALL_PANEL) {
     return null;
   }
-  return bracingPanelFromPickData(userData as WallPanelPickData, grid, roofParams);
+  const data = userData as WallPanelPickData;
+  if (pickMode === "tie_beam") {
+    return tiePanelFromPickData(data, grid);
+  }
+  return bracingPanelFromPickData(data, grid, roofParams);
 }
 
 export function PanelPickOverlay({
@@ -148,25 +191,40 @@ export function PanelPickOverlay({
   roofParams,
 }: PanelPickOverlayProps) {
   const viewportMode = useProjectStore((s) => s.viewportMode);
+  const addElementSession = useProjectStore((s) => s.addElementSession);
   const projectElements = useProjectStore((s) => s.projectElements);
   const hoveredWallPanel = useProjectStore((s) => s.hoveredWallPanel);
   const setHoveredWallPanel = useProjectStore((s) => s.setHoveredWallPanel);
   const structuralGrid = useProjectStore((s) => s.structuralGrid);
   const { gl, camera, scene } = useThree();
 
+  const pickMode =
+    addElementSession && "type" in addElementSession
+      ? addElementSession.type
+      : "bracing";
+
   const active = viewportMode === "pick_panel";
   const eaveM = Math.max(eaveHeightMm * MM_TO_M, 0.5);
 
   const panels = useMemo((): PickMeshSpec[] => {
     const gridState = { ...structuralGrid, xCoordsMm, zCoordsMm };
-    const bracingPanels = buildBracingPanelsFromColumns(
-      projectElements,
-      gridState,
-      roofParams ?? null,
-    );
-    const roof = roofParams ? computeRoofGeometry(gridState, roofParams) : null;
+    const pickPanels: PickablePanel[] =
+      pickMode === "tie_beam"
+        ? buildTieBeamPanels(projectElements, gridState)
+        : buildBracingPanelsFromColumns(
+            projectElements,
+            gridState,
+            roofParams ?? null,
+          );
 
-    return bracingPanels.flatMap((panel): PickMeshSpec[] => {
+    const roof =
+      pickMode === "bracing" && roofParams
+        ? computeRoofGeometry(gridState, roofParams)
+        : null;
+    const trussSegments =
+      pickMode === "tie_beam" ? collectTrussSegments(projectElements) : [];
+
+    return pickPanels.flatMap((panel): PickMeshSpec[] => {
       if (panel.kind === "long_wall") {
         const z0M = panel.z0Mm * MM_TO_M;
         const z1M = panel.z1Mm * MM_TO_M;
@@ -174,7 +232,7 @@ export function PanelPickOverlay({
         return [
           {
             kind: "wall",
-            key: bracingPanelKey(panel),
+            key: pickPanelKey(panel),
             panel,
             position: [panel.xMm * MM_TO_M, eaveM / 2, (z0M + z1M) / 2],
             size: [PICK_DEPTH_M, eaveM, depth],
@@ -190,7 +248,7 @@ export function PanelPickOverlay({
         return [
           {
             kind: "wall",
-            key: bracingPanelKey(panel),
+            key: pickPanelKey(panel),
             panel,
             position: [(x0M + x1M) / 2, eaveM / 2, panel.zMm * MM_TO_M],
             size: [width, eaveM, PICK_DEPTH_M],
@@ -199,25 +257,53 @@ export function PanelPickOverlay({
         ];
       }
 
-      if (!roof) {
-        return [];
+      if (panel.kind === "roof") {
+        if (!roof) return [];
+        const corners = roofPanelCornersMm(panel as RoofPanel, gridState, roof);
+        const transform = orientedPickTransform(corners);
+        return [
+          {
+            kind: "oriented",
+            key: pickPanelKey(panel),
+            panel,
+            position: transform.position,
+            quaternion: transform.quaternion,
+            size: transform.size,
+            pickData: pickDataFromPanel(panel),
+          },
+        ];
       }
 
-      const corners = roofPanelCornersMm(panel, gridState, roof);
-      const transform = roofPickTransform(corners);
-      return [
-        {
-          kind: "roof",
-          key: bracingPanelKey(panel),
-          panel,
-          position: transform.position,
-          quaternion: transform.quaternion,
-          size: transform.size,
-          pickData: pickDataFromPanel(panel),
-        },
-      ];
+      if (panel.kind === "truss_tc" || panel.kind === "truss_bc") {
+        const corners = trussPanelCornersMm(
+          panel as TrussTcPanel | TrussBcPanel,
+          trussSegments,
+        );
+        const transform = orientedPickTransform(corners);
+        return [
+          {
+            kind: "oriented",
+            key: pickPanelKey(panel),
+            panel,
+            position: transform.position,
+            quaternion: transform.quaternion,
+            size: transform.size,
+            pickData: pickDataFromPanel(panel),
+          },
+        ];
+      }
+
+      return [];
     });
-  }, [projectElements, structuralGrid, xCoordsMm, zCoordsMm, eaveM, roofParams]);
+  }, [
+    projectElements,
+    structuralGrid,
+    xCoordsMm,
+    zCoordsMm,
+    eaveM,
+    roofParams,
+    pickMode,
+  ]);
 
   useEffect(() => {
     if (!active) {
@@ -229,6 +315,9 @@ export function PanelPickOverlay({
     raycaster.params.Line.threshold = 0.02;
     const pointer = new THREE.Vector2();
     const gridState = useProjectStore.getState().structuralGrid;
+    const session = useProjectStore.getState().addElementSession;
+    const mode =
+      session && "type" in session ? session.type : ("bracing" as const);
 
     const onPointerMove = (event: PointerEvent) => {
       const rect = gl.domElement.getBoundingClientRect();
@@ -239,11 +328,16 @@ export function PanelPickOverlay({
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObjects(scene.children, true);
-      let found: BracingPanel | null = null;
+      let found: PickablePanel | null = null;
       for (const hit of hits) {
         let current: THREE.Object3D | null = hit.object;
         while (current) {
-          const panel = panelFromUserData(current.userData, gridState, roofParams);
+          const panel = panelFromUserData(
+            current.userData,
+            gridState,
+            roofParams,
+            mode,
+          );
           if (panel) {
             found = panel;
             break;
@@ -253,8 +347,8 @@ export function PanelPickOverlay({
         if (found) break;
       }
       const prev = useProjectStore.getState().hoveredWallPanel;
-      const nextKey = found ? bracingPanelKey(found) : null;
-      const prevKey = prev ? bracingPanelKey(prev) : null;
+      const nextKey = found ? pickPanelKey(found) : null;
+      const prevKey = prev ? pickPanelKey(prev) : null;
       if (nextKey !== prevKey) {
         setHoveredWallPanel(found);
       }
@@ -278,13 +372,14 @@ export function PanelPickOverlay({
     return null;
   }
 
-  const hoveredKey = hoveredWallPanel ? bracingPanelKey(hoveredWallPanel) : null;
+  const hoveredKey = hoveredWallPanel ? pickPanelKey(hoveredWallPanel) : null;
+  const highlightColor = pickMode === "tie_beam" ? "#10b981" : "#3b82f6";
 
   return (
     <group>
       {panels.map((entry) => {
         const highlighted = hoveredKey === entry.key;
-        if (entry.kind === "roof") {
+        if (entry.kind === "oriented") {
           return (
             <group key={entry.key} position={entry.position} quaternion={entry.quaternion}>
               <mesh
@@ -308,7 +403,7 @@ export function PanelPickOverlay({
                   <meshBasicMaterial
                     transparent
                     opacity={0.25}
-                    color="#3b82f6"
+                    color={highlightColor}
                     depthWrite={false}
                   />
                 </mesh>
@@ -341,7 +436,7 @@ export function PanelPickOverlay({
                 <meshBasicMaterial
                   transparent
                   opacity={0.25}
-                  color="#3b82f6"
+                  color={highlightColor}
                   depthWrite={false}
                 />
               </mesh>

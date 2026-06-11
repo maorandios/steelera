@@ -43,6 +43,7 @@ import { resolveSelectionContext } from "@/lib/selection-context";
 import { selectionContextToPayload } from "@/lib/selection-context-payload";
 import {
   assemblyIdFromElements,
+  gridPlacementFromStructuralGrid,
   inferTrussedZLabels,
   resolveBaySelection,
   shedParamsToGridPlacement,
@@ -150,15 +151,20 @@ import {
 } from "@/lib/structural-intent";
 import type {
   AddBracingScope,
+  AddElementKind,
   AddElementSession,
   BracingPanel,
+  PickablePanel,
+  TieBeamLocation,
+  TieBeamPanel,
 } from "@/types/add-element";
 import type {
   ColumnPickMode,
   GridSelectionContext,
   GroundPlacementNode,
 } from "@/types/grid-selection";
-import { defaultBracingProfile } from "@/lib/wall-panel";
+import { resolveTieBeamPlacement } from "@/lib/tie-panel-placement";
+import { defaultBracingProfile, defaultTieBeamProfile } from "@/lib/wall-panel";
 import type {
   EnrichedSnapNode,
   SketchApplyScope,
@@ -329,9 +335,13 @@ function applyElementsFromApi(
   incoming: ProjectElementMm[],
   existing: ProjectElementMm[],
 ): ProjectElementMm[] {
-  const byId = new Map(existing.map((element) => [element.id, element]));
-  return incoming.map((element) => {
-    const prior = byId.get(element.id);
+  if (incoming.length === 0) {
+    return existing;
+  }
+
+  const priorById = new Map(existing.map((element) => [element.id, element]));
+  const normalizeFromApi = (element: ProjectElementMm): ProjectElementMm => {
+    const prior = priorById.get(element.id);
     return normalizeElement({
       ...element,
       rotation: prior?.rotation ?? element.rotation,
@@ -339,10 +349,23 @@ function applyElementsFromApi(
       rotation_euler_deg:
         element.rotation_euler_deg ?? prior?.rotation_euler_deg ?? null,
     });
-  }).filter((element, index, array) => {
-    const first = array.findIndex((item) => item.id === element.id);
-    return first === index;
-  });
+  };
+
+  const dedupeById = (elements: ProjectElementMm[]) =>
+    elements.filter((element, index, array) => {
+      const first = array.findIndex((item) => item.id === element.id);
+      return first === index;
+    });
+
+  if (incoming.length >= existing.length) {
+    return dedupeById(incoming.map(normalizeFromApi));
+  }
+
+  const merged = new Map(existing.map((element) => [element.id, element]));
+  for (const element of incoming) {
+    merged.set(element.id, normalizeFromApi(element));
+  }
+  return Array.from(merged.values());
 }
 
 function resolveSketchOperationKind(
@@ -419,12 +442,17 @@ interface ProjectStore {
   sketchSession: SketchSession;
   sketchSnapNodes: EnrichedSnapNode[];
   addElementSession: AddElementSession | null;
-  hoveredWallPanel: BracingPanel | null;
+  hoveredWallPanel: PickablePanel | null;
+  startAddElement: () => void;
+  /** @deprecated use startAddElement */
   startAddBracing: () => void;
+  selectAddElementKind: (kind: AddElementKind) => void;
   cancelAddElement: () => void;
-  selectWallPanel: (panel: BracingPanel) => void;
-  setHoveredWallPanel: (panel: BracingPanel | null) => void;
+  selectWallPanel: (panel: PickablePanel) => void;
+  setHoveredWallPanel: (panel: PickablePanel | null) => void;
   setAddBracingProfile: (profile: string) => void;
+  setAddTieBeamProfile: (profile: string) => void;
+  commitAddTieBeam: (location: TieBeamLocation) => Promise<void>;
   setAddBracingBraceCount: (count: number) => void;
   commitAddBracing: (scope: AddBracingScope) => Promise<void>;
   startSketchMode: () => void;
@@ -560,21 +588,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   addElementSession: null,
   hoveredWallPanel: null,
 
-  startAddBracing: () => {
+  startAddElement: () => {
     const elements = get().projectElements;
     if (elements.length === 0) {
-      set({ error: "Generate a structure before adding bracing." });
+      set({ error: "Generate a structure before adding elements." });
       return;
     }
     set({
-      viewportMode: "pick_panel",
-      addElementSession: {
-        type: "bracing",
-        step: "pick_panel",
-        panel: null,
-        profile: defaultBracingProfile(elements),
-        braceCount: 1,
-      },
+      viewportMode: "inspect",
+      addElementSession: { step: "choose_kind" },
       hoveredWallPanel: null,
       selectedElementId: null,
       selectionContext: null,
@@ -582,7 +604,46 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       placementIntent: null,
       pickedNodes: [],
       error: null,
-      statuses: ["Click a wall, gable, or roof panel in the viewport."],
+      statuses: ["Choose what to add — bracing or tie beam."],
+    });
+  },
+
+  startAddBracing: () => {
+    get().startAddElement();
+  },
+
+  selectAddElementKind: (kind) => {
+    const session = get().addElementSession;
+    if (!session || session.step !== "choose_kind") return;
+    const elements = get().projectElements;
+    const profile =
+      kind === "bracing"
+        ? defaultBracingProfile(elements)
+        : defaultTieBeamProfile(elements);
+    set({
+      viewportMode: "pick_panel",
+      addElementSession:
+        kind === "bracing"
+          ? {
+              type: "bracing",
+              step: "pick_panel",
+              panel: null,
+              profile,
+              braceCount: 1,
+            }
+          : {
+              type: "tie_beam",
+              step: "pick_panel",
+              panel: null,
+              profile,
+              location: null,
+            },
+      hoveredWallPanel: null,
+      statuses: [
+        kind === "bracing"
+          ? "Click a wall, gable, or roof panel in the viewport."
+          : "Click a wall, gable, or truss panel in the viewport.",
+      ],
     });
   },
 
@@ -596,9 +657,36 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   selectWallPanel: (panel) => {
     const session = get().addElementSession;
-    if (!session || session.type !== "bracing") return;
+    if (!session || !("type" in session) || session.step !== "pick_panel") {
+      return;
+    }
+    if (session.type === "bracing") {
+      if (
+        panel.kind !== "long_wall" &&
+        panel.kind !== "gable_wall" &&
+        panel.kind !== "roof"
+      ) {
+        return;
+      }
+      set({
+        addElementSession: {
+          ...session,
+          panel: panel as BracingPanel,
+          step: "profile",
+        },
+        viewportMode: "inspect",
+        hoveredWallPanel: null,
+        statuses: [],
+      });
+      return;
+    }
+    if (panel.kind === "roof") return;
     set({
-      addElementSession: { ...session, panel, step: "profile" },
+      addElementSession: {
+        ...session,
+        panel: panel as TieBeamPanel,
+        step: "profile",
+      },
       viewportMode: "inspect",
       hoveredWallPanel: null,
       statuses: [],
@@ -609,7 +697,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   setAddBracingProfile: (profile) => {
     const session = get().addElementSession;
-    if (!session || session.type !== "bracing") return;
+    if (!session || !("type" in session) || session.type !== "bracing") return;
     set({
       addElementSession: {
         ...session,
@@ -621,7 +709,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   setAddBracingBraceCount: (count) => {
     const session = get().addElementSession;
-    if (!session || session.type !== "bracing") return;
+    if (!session || !("type" in session) || session.type !== "bracing") return;
     const braceCount = Math.min(5, Math.max(1, Math.round(count)));
     set({
       addElementSession: {
@@ -632,9 +720,98 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
   },
 
+  setAddTieBeamProfile: (profile) => {
+    const session = get().addElementSession;
+    if (!session || !("type" in session) || session.type !== "tie_beam") return;
+    set({
+      addElementSession: {
+        ...session,
+        profile: profile.trim().toUpperCase(),
+        step: "location",
+      },
+    });
+  },
+
+  commitAddTieBeam: async (location: TieBeamLocation) => {
+    const session = get().addElementSession;
+    if (
+      !session ||
+      !("type" in session) ||
+      session.type !== "tie_beam" ||
+      !session.panel
+    ) {
+      return;
+    }
+    const params =
+      get().shedAssemblyParams ??
+      inferShedParamsFromElements(get().projectElements);
+    if (!params) {
+      set({ error: "Generate a shed before placing tie beams." });
+      return;
+    }
+    const panel = session.panel;
+    const profile = session.profile.trim().toUpperCase();
+    if (!profile) return;
+
+    const placement = resolveTieBeamPlacement(
+      panel,
+      location,
+      get().structuralGrid,
+    );
+    const gridCtx = gridPlacementFromStructuralGrid(
+      get().structuralGrid,
+      params,
+    );
+    const body: Parameters<typeof postPlaceGridTieBeam>[1] = {
+      orientation: placement.orientation,
+      x_axis: placement.x_axis,
+      z_start: placement.z_start,
+      z_end: placement.z_end,
+      z_axis: placement.z_axis,
+      x_start: placement.x_start,
+      x_end: placement.x_end,
+      profile,
+      elevation: placement.elevation,
+      placement_label: location,
+      grid: gridCtx,
+      assembly_id: assemblyIdFromElements(get().projectElements),
+    };
+
+    set({ isLoading: true, error: null, statuses: ["Placing tie beam…"] });
+    try {
+      const result = await postPlaceGridTieBeam(
+        get().projectElements,
+        body,
+      );
+      const elements = applyElementsFromApi(
+        result.projectElements,
+        get().projectElements,
+      );
+      set({
+        projectElements: elements,
+        isLoading: false,
+        viewportMode: "inspect",
+        addElementSession: null,
+        hoveredWallPanel: null,
+        statuses: [result.message],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to place tie beam";
+      set({ isLoading: false, statuses: [], error: message });
+    }
+  },
+
   commitAddBracing: async (scope) => {
     const session = get().addElementSession;
-    if (!session || session.type !== "bracing" || !session.panel) return;
+    if (
+      !session ||
+      !("type" in session) ||
+      session.type !== "bracing" ||
+      !session.panel
+    ) {
+      return;
+    }
     const params =
       get().shedAssemblyParams ??
       inferShedParamsFromElements(get().projectElements);

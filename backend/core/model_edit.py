@@ -27,6 +27,11 @@ _ENDPOINT_ROUND_MM = 1.0
 _MIN_MEMBER_LENGTH_MM = 50.0
 
 
+def _grid_axis_token(label: str) -> str:
+    """Safe token for element ids (fractional grid refs like 2+4/120)."""
+    return str(label).strip().replace("+", "p").replace("/", "_")
+
+
 def _brace_pair_prefix(element_id: str) -> str | None:
     match = _BRACE_PAIR_RE.match(element_id)
     if not match:
@@ -1510,36 +1515,74 @@ def place_wall_x_brace(
 def place_grid_tie_beam(
     elements: list[ProjectElementMm],
     *,
-    x_axis: str,
-    z_start: str,
-    z_end: str,
+    x_axis: str = "",
+    z_start: str = "",
+    z_end: str = "",
+    orientation: Literal["along_z", "along_x"] = "along_z",
+    z_axis: str | None = None,
+    x_start: str | None = None,
+    x_end: str | None = None,
     profile: str,
     elevation: str = "eave",
+    placement_label: str | None = None,
     grid: GridPlacementContext,
     assembly_id: str | None = None,
 ) -> tuple[list[ProjectElementMm], list[str]]:
     if not has_profile(profile):
         raise ValueError(f"Unknown profile: {profile}")
     engine = _grid_engine_from_context(grid)
-    x = x_axis.strip().upper()
-    zs = z_start.strip()
-    ze = z_end.strip()
-    try:
-        engine.resolve_x_mm(x)
-    except ValueError as exc:
-        raise ValueError(str(exc)) from exc
-    for label in (zs, ze):
-        try:
-            engine.resolve_z_mm(label)
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
-
     aid = assembly_id or _infer_assembly_id(elements, "shed_1")
     elev = elevation.strip().lower()
-    eid = f"{aid}-tie-bay-{x}-{_grid_axis_token(zs)}-{_grid_axis_token(ze)}-{elev}"
+    label_suffix = ""
+    if placement_label and placement_label.strip():
+        label_suffix = f"-{_grid_axis_token(placement_label.strip().lower())}"
 
-    start_ref = GridNodeReference(x_axis=x, z_axis=zs, elevation=elev)
-    end_ref = GridNodeReference(x_axis=x, z_axis=ze, elevation=elev)
+    if orientation == "along_x":
+        if not z_axis or not x_start or not x_end:
+            raise ValueError(
+                "Gable tie beam requires z_axis, x_start, and x_end."
+            )
+        zs = z_axis.strip()
+        xa = x_start.strip().upper()
+        xb = x_end.strip().upper()
+        for label in (xa, xb):
+            try:
+                engine.resolve_x_mm(label)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+        try:
+            engine.resolve_z_mm(zs)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        eid = (
+            f"{aid}-tie-gable-{_grid_axis_token(zs)}-"
+            f"{_grid_axis_token(xa)}-{_grid_axis_token(xb)}-{elev}{label_suffix}"
+        )
+        start_ref = GridNodeReference(x_axis=xa, z_axis=zs, elevation=elev)
+        end_ref = GridNodeReference(x_axis=xb, z_axis=zs, elevation=elev)
+    else:
+        x = x_axis.strip().upper()
+        zs = z_start.strip()
+        ze = z_end.strip()
+        if not x or not zs or not ze:
+            raise ValueError(
+                "Tie beam along Z requires x_axis, z_start, and z_end."
+            )
+        try:
+            engine.resolve_x_mm(x)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        for label in (zs, ze):
+            try:
+                engine.resolve_z_mm(label)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+        eid = (
+            f"{aid}-tie-bay-{x}-{_grid_axis_token(zs)}-"
+            f"{_grid_axis_token(ze)}-{elev}{label_suffix}"
+        )
+        start_ref = GridNodeReference(x_axis=x, z_axis=zs, elevation=elev)
+        end_ref = GridNodeReference(x_axis=x, z_axis=ze, elevation=elev)
     member = StructuralMember(
         id=eid,
         element_type="tie_beam",

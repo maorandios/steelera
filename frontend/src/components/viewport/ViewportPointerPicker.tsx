@@ -12,6 +12,7 @@ import {
 import { isColumnElement } from "@/lib/column-member-scope";
 import {
   bracingPanelFromPickData,
+  tiePanelFromPickData,
   type WallPanelPickData,
 } from "@/lib/wall-panel";
 import { useProjectStore } from "@/store/project-store";
@@ -141,11 +142,20 @@ export function ViewportPointerPicker() {
                     mono_high_side: params.mono_high_side,
                   }
                 : null;
-              const panel = bracingPanelFromPickData(
-                node.userData as WallPanelPickData,
-                grid,
-                roofParams,
-              );
+              const session = useProjectStore.getState().addElementSession;
+              const pickMode =
+                session && "type" in session ? session.type : "bracing";
+              const panel =
+                pickMode === "tie_beam"
+                  ? tiePanelFromPickData(
+                      node.userData as WallPanelPickData,
+                      grid,
+                    )
+                  : bracingPanelFromPickData(
+                      node.userData as WallPanelPickData,
+                      grid,
+                      roofParams,
+                    );
               if (panel) {
                 selectWallPanel(panel);
               }

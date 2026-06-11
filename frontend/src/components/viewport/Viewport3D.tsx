@@ -137,7 +137,7 @@ export function Viewport3D() {
       {viewportMode === "pick_panel" ? (
         <div className="pointer-events-auto absolute inset-x-3 top-12 z-10 flex items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50/95 px-3 py-2 text-xs text-sky-900 shadow-sm backdrop-blur-sm">
           <span>
-            Add bracing — hover a long-side or gable-end panel, then click to select.
+            Pick a panel — walls, gables, roof slopes, or truss panels highlight on hover.
           </span>
           <button
             type="button"

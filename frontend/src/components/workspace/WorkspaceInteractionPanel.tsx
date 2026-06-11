@@ -7,7 +7,7 @@ import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatStatus } from "@/components/chat/ChatStatus";
 import { SelectionActionBar } from "@/components/chat/SelectionActionBar";
 import { SketchIntentPanel } from "@/components/viewport/SketchIntentPanel";
-import { AddBracingPanel } from "@/components/workspace/AddBracingPanel";
+import { AddElementPanel } from "@/components/workspace/AddElementPanel";
 import { ColumnSelectionPanel } from "@/components/workspace/ColumnSelectionPanel";
 import { GridSelectionPanel } from "@/components/workspace/GridSelectionPanel";
 import { MemberPickBanner } from "@/components/workspace/MemberPickBanner";
@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { useProjectStore, useSelectedElement } from "@/store/project-store";
 
 function WorkspaceEmptyState() {
-  const startAddBracing = useProjectStore((s) => s.startAddBracing);
+  const startAddElement = useProjectStore((s) => s.startAddElement);
   const busy = useProjectStore((s) => s.isLoading || s.isMacroLoading);
   const hasStructure = useProjectStore((s) => s.projectElements.length > 0);
 
@@ -38,10 +38,10 @@ function WorkspaceEmptyState() {
           size="sm"
           className="mt-1 h-9 gap-1.5"
           disabled={busy}
-          onClick={startAddBracing}
+          onClick={startAddElement}
         >
           <Plus className="h-3.5 w-3.5" />
-          Add bracing
+          Add
         </Button>
       ) : null}
     </div>
@@ -79,20 +79,20 @@ export function WorkspaceInteractionPanel() {
     selectionContext?.elementType === "column" &&
     (selected || deletePickActive) &&
     (!memberPickMode || deletePickActive);
-  const inAddBracing =
-    Boolean(addElementSession?.type === "bracing") && !inSketchDialogue;
+  const inAddElement =
+    Boolean(addElementSession) && !inSketchDialogue;
   const showGridSelection =
     Boolean(gridSelectionContext) &&
     !memberPickMode &&
     !inSpecialMode &&
-    !inAddBracing;
+    !inAddElement;
   const showGenericSelection =
     Boolean(selectedElementId && selectionContext && !isColumn && !memberPickMode) ||
     (inSpecialMode &&
       !memberPickMode &&
       viewportMode !== "pick_members_profile" &&
       viewportMode !== "pick_panel" &&
-      !inAddBracing);
+      !inAddElement);
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -125,7 +125,7 @@ export function WorkspaceInteractionPanel() {
 
           {inSketchDialogue ? <SketchIntentPanel /> : null}
 
-          {inAddBracing ? <AddBracingPanel /> : null}
+          {inAddElement ? <AddElementPanel /> : null}
 
           {showGridSelection && gridSelectionContext && !inSketchDialogue ? (
             <GridSelectionPanel
@@ -142,7 +142,7 @@ export function WorkspaceInteractionPanel() {
           ) : !memberPickMode &&
             !showGridSelection &&
             !inSketchDialogue &&
-            !inAddBracing ? (
+            !inAddElement ? (
             <WorkspaceEmptyState />
           ) : null}
 

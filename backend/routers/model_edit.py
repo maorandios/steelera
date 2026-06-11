@@ -225,11 +225,16 @@ async def api_place_grid_tie_beam(body: PlaceGridTieBeamBody) -> ModelEditRespon
     try:
         updated, created = place_grid_tie_beam(
             body.project_elements,
+            orientation=body.orientation,
             x_axis=body.x_axis,
             z_start=body.z_start,
             z_end=body.z_end,
+            z_axis=body.z_axis,
+            x_start=body.x_start,
+            x_end=body.x_end,
             profile=body.profile,
             elevation=body.elevation,
+            placement_label=body.placement_label,
             grid=body.grid,
             assembly_id=body.assembly_id,
         )
@@ -239,8 +244,12 @@ async def api_place_grid_tie_beam(body: PlaceGridTieBeamBody) -> ModelEditRespon
         projectElements=updated,
         changed_ids=created,
         message=(
-            f"Placed tie beam {body.profile} at {body.x_axis} "
-            f"({body.z_start} → {body.z_end}, {body.elevation})."
+            f"Placed tie beam {body.profile} "
+            + (
+                f"on gable frame {body.z_axis} ({body.x_start} → {body.x_end}, {body.elevation})."
+                if body.orientation == "along_x"
+                else f"at {body.x_axis} ({body.z_start} → {body.z_end}, {body.elevation})."
+            )
         ),
     )
 

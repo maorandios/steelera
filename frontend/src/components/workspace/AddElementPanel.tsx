@@ -5,8 +5,16 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { BRACING_PROFILE_OPTIONS } from "@/lib/element-registry";
-import { oppositeGableEnd, oppositeRoofSlope, oppositeSideWallLabel } from "@/lib/wall-panel";
+import {
+  BRACING_PROFILE_OPTIONS,
+  RAFTER_PROFILE_OPTIONS,
+} from "@/lib/element-registry";
+import {
+  oppositeGableEnd,
+  oppositeRoofSlope,
+  oppositeSideWallLabel,
+} from "@/lib/wall-panel";
+import { TIE_BEAM_LOCATION_OPTIONS } from "@/lib/tie-panel-placement";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import type { AddBracingScope } from "@/types/add-element";
@@ -43,37 +51,53 @@ function OptionRow({
   );
 }
 
-export function AddBracingPanel() {
+export function AddElementPanel() {
   const session = useProjectStore((s) => s.addElementSession);
   const structuralGrid = useProjectStore((s) => s.structuralGrid);
   const busy = useProjectStore((s) => s.isLoading || s.isMacroLoading);
   const cancelAddElement = useProjectStore((s) => s.cancelAddElement);
+  const selectAddElementKind = useProjectStore((s) => s.selectAddElementKind);
   const setAddBracingProfile = useProjectStore((s) => s.setAddBracingProfile);
+  const setAddTieBeamProfile = useProjectStore((s) => s.setAddTieBeamProfile);
   const setAddBracingBraceCount = useProjectStore((s) => s.setAddBracingBraceCount);
   const commitAddBracing = useProjectStore((s) => s.commitAddBracing);
+  const commitAddTieBeam = useProjectStore((s) => s.commitAddTieBeam);
   const [profileInput, setProfileInput] = useState("");
   const [braceCountDraft, setBraceCountDraft] = useState(1);
 
-  const quickProfiles = useMemo(() => BRACING_PROFILE_OPTIONS.slice(0, 3), []);
+  const quickBracingProfiles = useMemo(() => BRACING_PROFILE_OPTIONS.slice(0, 3), []);
+  const quickTieProfiles = useMemo(() => RAFTER_PROFILE_OPTIONS.slice(0, 3), []);
 
   useEffect(() => {
-    if (session?.type === "bracing" && session.step === "profile") {
+    if (
+      session &&
+      "type" in session &&
+      session.step === "profile"
+    ) {
       setProfileInput(session.profile);
     }
-  }, [session?.step, session?.type, session?.profile]);
+  }, [session]);
 
   useEffect(() => {
-    if (session?.type === "bracing" && session.step === "brace_count") {
+    if (
+      session &&
+      "type" in session &&
+      session.type === "bracing" &&
+      session.step === "brace_count"
+    ) {
       setBraceCountDraft(session.braceCount);
     }
-  }, [session?.step, session?.type, session?.braceCount]);
+  }, [session]);
 
   const scopeOptions = useMemo((): {
     id: AddBracingScope;
     label: string;
     detail: string;
   }[] => {
-    const panel = session?.type === "bracing" ? session.panel : null;
+    const panel =
+      session && "type" in session && session.type === "bracing"
+        ? session.panel
+        : null;
     if (!panel) return [];
 
     if (panel.kind === "gable_wall") {
@@ -173,32 +197,93 @@ export function AddBracingPanel() {
     ];
   }, [session, structuralGrid]);
 
-  if (!session || session.type !== "bracing") {
+  if (!session) {
     return null;
   }
 
-  const stepTitle =
-    session.step === "pick_panel"
+  if (session.step === "choose_kind") {
+    return (
+      <div
+        className={cn(
+          "overflow-hidden rounded-lg border border-border bg-card shadow-sm",
+          busy && "pointer-events-none opacity-60",
+        )}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Add element
+            </p>
+            <p className="truncate text-sm font-medium">What do you want to add?</p>
+          </div>
+          <button
+            type="button"
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+            onClick={cancelAddElement}
+            aria-label="Cancel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <OptionRow
+          label="Bracing"
+          detail="X-braces on wall, gable, or roof panels"
+          onClick={() => selectAddElementKind("bracing")}
+        />
+        <OptionRow
+          label="Tie beam"
+          detail="Longitudinal tie on wall, gable, or truss panels"
+          onClick={() => selectAddElementKind("tie_beam")}
+        />
+      </div>
+    );
+  }
+
+  if (!("type" in session)) {
+    return null;
+  }
+
+  const isBracing = session.type === "bracing";
+  const isTie = session.type === "tie_beam";
+
+  const stepTitle = isBracing
+    ? session.step === "pick_panel"
       ? "Pick bracing panel"
       : session.step === "profile"
         ? "Section profile"
         : session.step === "brace_count"
           ? "X-braces per panel"
-          : "Apply scope";
-
-  const stepNum =
-    session.step === "pick_panel"
-      ? 1
+          : "Apply scope"
+    : session.step === "pick_panel"
+      ? "Pick tie beam panel"
       : session.step === "profile"
-        ? 2
+        ? "Section profile"
+        : "Pick location";
+
+  const stepNum = isBracing
+    ? session.step === "pick_panel"
+      ? 2
+      : session.step === "profile"
+        ? 3
         : session.step === "brace_count"
-          ? 3
-          : 4;
+          ? 4
+          : 5
+    : session.step === "pick_panel"
+      ? 2
+      : session.step === "profile"
+        ? 3
+        : 4;
+
+  const totalSteps = isBracing ? 5 : 4;
 
   const applyProfileInput = () => {
     const value = profileInput.trim().toUpperCase();
     if (!value) return;
-    setAddBracingProfile(value);
+    if (isBracing) {
+      setAddBracingProfile(value);
+    } else {
+      setAddTieBeamProfile(value);
+    }
   };
 
   return (
@@ -211,15 +296,19 @@ export function AddBracingPanel() {
       <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Add bracing · step {stepNum}/4
+            Add {isBracing ? "bracing" : "tie beam"} · step {stepNum}/{totalSteps}
           </p>
           <p className="truncate text-sm font-medium">{stepTitle}</p>
           {session.panel ? (
             <p className="truncate text-xs text-muted-foreground">
               {session.panel.label}
-              {session.step === "scope"
+              {isBracing && session.step === "scope"
                 ? ` · ${session.braceCount} X${session.braceCount > 1 ? "s" : ""} · ${session.profile}`
-                : " · Full X"}
+                : isTie && session.step === "profile"
+                  ? ""
+                  : isBracing
+                    ? " · Full X"
+                    : ""}
             </p>
           ) : null}
         </div>
@@ -235,8 +324,9 @@ export function AddBracingPanel() {
 
       {session.step === "pick_panel" ? (
         <p className="px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-          Hover a panel on side walls, gable ends, or roof slopes — they
-          highlight blue. Click to select one bay.
+          {isBracing
+            ? "Hover a panel on side walls, gable ends, or roof slopes — they highlight blue. Click to select one bay."
+            : "Hover a wall, gable, or truss panel between columns or truss frames. Click to select the tie span."}
         </p>
       ) : null}
 
@@ -245,12 +335,16 @@ export function AddBracingPanel() {
           <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Common sections
           </p>
-          {quickProfiles.map((profile) => (
+          {(isBracing ? quickBracingProfiles : quickTieProfiles).map((profile) => (
             <OptionRow
               key={profile}
               label={profile}
               active={session.profile === profile}
-              onClick={() => setAddBracingProfile(profile)}
+              onClick={() =>
+                isBracing
+                  ? setAddBracingProfile(profile)
+                  : setAddTieBeamProfile(profile)
+              }
             />
           ))}
           <div className="space-y-2 border-t border-border/60 px-3 py-3">
@@ -258,7 +352,9 @@ export function AddBracingPanel() {
               Custom section
             </p>
             <p className="text-xs text-muted-foreground">
-              Type any catalog designation (e.g. L80x80x8, SHS100x100x5)
+              {isBracing
+                ? "Type any catalog designation (e.g. L80x80x8, SHS100x100x5)"
+                : "Type any catalog designation (e.g. IPE200, IPE240)"}
             </p>
             <div className="flex gap-2">
               <Input
@@ -288,7 +384,24 @@ export function AddBracingPanel() {
         </div>
       ) : null}
 
-      {session.step === "brace_count" ? (
+      {isTie && session.step === "location" ? (
+        <div>
+          <p className="px-3 pt-2 pb-1 text-xs leading-relaxed text-muted-foreground">
+            Choose height along the column — tie spans the full bay between columns
+            at ground, 33%, middle, 66%, or eave level.
+          </p>
+          {TIE_BEAM_LOCATION_OPTIONS.map((opt) => (
+            <OptionRow
+              key={opt.id}
+              label={opt.label}
+              detail={opt.detail}
+              onClick={() => void commitAddTieBeam(opt.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {isBracing && session.step === "brace_count" ? (
         <div className="space-y-3 px-3 py-3">
           <p className="text-xs leading-relaxed text-muted-foreground">
             Split tall walls, gable ends, or wide roof panels into stacked X-braces
@@ -323,7 +436,7 @@ export function AddBracingPanel() {
         </div>
       ) : null}
 
-      {session.step === "scope" ? (
+      {isBracing && session.step === "scope" ? (
         <div>
           {scopeOptions.map((opt) => (
             <OptionRow
