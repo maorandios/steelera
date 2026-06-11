@@ -19,7 +19,9 @@ export function OnboardingShell() {
   return (
     <div className="relative flex h-dvh w-full flex-col overflow-hidden">
       <WizardBackground minimal />
-      {showStart ? <OnboardingStartScreen /> : <OnboardingWizard />}
+      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto">
+        {showStart ? <OnboardingStartScreen /> : <OnboardingWizard />}
+      </div>
     </div>
   );
 }

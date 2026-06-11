@@ -2,6 +2,7 @@ export type ViewportMode =
   | "inspect"
   | "pick_nodes"
   | "pick_grid"
+  | "pick_panel"
   | "pick_members_profile"
   | "pick_column_nodes"
   | "sketch";

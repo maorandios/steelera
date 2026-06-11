@@ -6,7 +6,6 @@ import { useCallback, useState } from "react";
 import * as THREE from "three";
 
 import { CanvasErrorBoundary } from "@/components/viewport/CanvasErrorBoundary";
-import { SketchIntentPanel } from "@/components/viewport/SketchIntentPanel";
 import { SceneContent } from "@/components/viewport/SceneContent";
 import { WebGLContextGuard } from "@/components/viewport/WebGLContextGuard";
 import { viewportTheme } from "@/lib/viewport-theme";
@@ -41,7 +40,7 @@ export function Viewport3D() {
   const cancelColumnPickMode = useProjectStore((s) => s.cancelColumnPickMode);
   const startSketchMode = useProjectStore((s) => s.startSketchMode);
   const cancelSketchMode = useProjectStore((s) => s.cancelSketchMode);
-  const sketchPhase = useProjectStore((s) => s.sketchSession.phase);
+  const cancelAddElement = useProjectStore((s) => s.cancelAddElement);
   const count = projectElements.length;
   const pickLabel =
     placementIntent === "full_x"
@@ -135,10 +134,24 @@ export function Viewport3D() {
           </button>
         </div>
       ) : null}
+      {viewportMode === "pick_panel" ? (
+        <div className="pointer-events-auto absolute inset-x-3 top-12 z-10 flex items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50/95 px-3 py-2 text-xs text-sky-900 shadow-sm backdrop-blur-sm">
+          <span>
+            Add bracing — hover a long-side or gable-end panel, then click to select.
+          </span>
+          <button
+            type="button"
+            className="shrink-0 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm"
+            onClick={cancelAddElement}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
       {viewportMode === "sketch" ? (
         <div className="pointer-events-auto absolute inset-x-3 top-12 z-10 flex items-center justify-between gap-2 rounded-md border border-indigo-200 bg-indigo-50/95 px-3 py-2 text-xs text-indigo-900 shadow-sm backdrop-blur-sm">
           <span>
-            Sketch mode — click two nodes (blue = joint, green = mid-span).
+            Sketch mode — click two blue snap nodes to define a line.
           </span>
           <button
             type="button"
@@ -147,11 +160,6 @@ export function Viewport3D() {
           >
             Cancel
           </button>
-        </div>
-      ) : null}
-      {viewportMode === "sketch" && sketchPhase === "dialogue" ? (
-        <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 max-h-[55vh] overflow-y-auto">
-          <SketchIntentPanel />
         </div>
       ) : null}
       {viewportMode === "inspect" && count > 0 ? (

@@ -9,6 +9,7 @@ from core.model_edit import (
     place_grid_column,
     place_grid_tie_beam,
     place_member_between_points,
+    place_wall_x_brace,
     place_x_brace_from_leg,
     update_member_profiles,
 )
@@ -23,6 +24,7 @@ from schemas.model_edit import (
     GroundPlacementNodesRequest,
     PlaceGridColumnRequest,
     PlaceGridTieBeamRequest,
+    PlaceWallXBraceRequest,
     UpdateProfileRequest,
 )
 
@@ -58,6 +60,10 @@ class PlaceGridColumnBody(PlaceGridColumnRequest, ModelEditBody):
 
 
 class PlaceGridTieBeamBody(PlaceGridTieBeamRequest, ModelEditBody):
+    pass
+
+
+class PlaceWallXBraceBody(PlaceWallXBraceRequest, ModelEditBody):
     pass
 
 
@@ -172,6 +178,8 @@ async def api_place_x_brace_from_leg(body: PlaceXBraceFromLegBody) -> ModelEditR
             body.project_elements,
             start_mm=(body.start_mm.x, body.start_mm.y, body.start_mm.z),
             end_mm=(body.end_mm.x, body.end_mm.y, body.end_mm.z),
+            start_element_id=body.start_element_id,
+            end_element_id=body.end_element_id,
             profile=body.profile,
             assembly_id=body.assembly_id,
         )
@@ -233,6 +241,36 @@ async def api_place_grid_tie_beam(body: PlaceGridTieBeamBody) -> ModelEditRespon
         message=(
             f"Placed tie beam {body.profile} at {body.x_axis} "
             f"({body.z_start} → {body.z_end}, {body.elevation})."
+        ),
+    )
+
+
+@router.post("/place-wall-x-brace", response_model=ModelEditResponse)
+async def api_place_wall_x_brace(body: PlaceWallXBraceBody) -> ModelEditResponse:
+    try:
+        updated, created = place_wall_x_brace(
+            body.project_elements,
+            wall_x=body.wall_x,
+            bay_index=body.bay_index,
+            panel_kind=body.panel_kind,
+            frame_z=body.frame_z,
+            z_start=body.z_start,
+            z_end=body.z_end,
+            x_start=body.x_start,
+            x_end=body.x_end,
+            profile=body.profile,
+            assembly_id=body.assembly_id,
+            grid=body.grid,
+            scope=body.scope,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    scope_label = body.scope.replace("_", " ")
+    return ModelEditResponse(
+        projectElements=updated,
+        changed_ids=created,
+        message=(
+            f"Added wall X-bracing ({len(created)} members, {scope_label})."
         ),
     )
 

@@ -10,6 +10,10 @@ import {
   viewportPickTargetFromHits,
 } from "@/lib/viewport-pick";
 import { isColumnElement } from "@/lib/column-member-scope";
+import {
+  bracingPanelFromPickData,
+  type WallPanelPickData,
+} from "@/lib/wall-panel";
 import { useProjectStore } from "@/store/project-store";
 
 const PICK_MOVE_THRESHOLD_PX = 10;
@@ -24,6 +28,7 @@ export function ViewportPointerPicker() {
   const viewportMode = useProjectStore((state) => state.viewportMode);
   const selectElement = useProjectStore((state) => state.selectElement);
   const selectGridBay = useProjectStore((state) => state.selectGridBay);
+  const selectWallPanel = useProjectStore((state) => state.selectWallPanel);
   const applyMemberPick = useProjectStore((state) => state.applyMemberPick);
   const memberPickMode = useProjectStore((state) => state.memberPickMode);
   const clearSelection = useProjectStore((state) => state.clearSelection);
@@ -42,7 +47,7 @@ export function ViewportPointerPicker() {
 
   useEffect(() => {
     const canvas = gl.domElement;
-    if (memberPickMode || viewportMode === "sketch") {
+    if (memberPickMode || viewportMode === "sketch" || viewportMode === "pick_panel") {
       canvas.style.cursor = "crosshair";
       return () => {
         canvas.style.cursor = "";
@@ -119,6 +124,29 @@ export function ViewportPointerPicker() {
         return;
       }
 
+      if (mode === "pick_panel") {
+        for (const hit of hits) {
+          let node: THREE.Object3D | null = hit.object;
+          while (node) {
+            if (
+              node.userData?.viewportPickRole === VIEWPORT_PICK_ROLE.WALL_PANEL
+            ) {
+              const grid = useProjectStore.getState().structuralGrid;
+              const panel = bracingPanelFromPickData(
+                node.userData as WallPanelPickData,
+                grid,
+              );
+              if (panel) {
+                selectWallPanel(panel);
+              }
+              return;
+            }
+            node = node.parent;
+          }
+        }
+        return;
+      }
+
       if (mode === "pick_members_profile") {
         const elementHit = viewportPickElementFromHits(hits);
         if (elementHit) {
@@ -167,6 +195,7 @@ export function ViewportPointerPicker() {
     scene,
     selectElement,
     selectGridBay,
+    selectWallPanel,
     memberPickMode,
   ]);
 

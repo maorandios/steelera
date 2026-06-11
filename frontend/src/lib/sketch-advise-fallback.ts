@@ -4,6 +4,7 @@ import {
   recognizeStructuralIntent,
   recommendProfiles,
 } from "@/lib/structural-intent";
+import { inferWallXBraceCorners, xBraceLegsAreDistinct } from "@/lib/brace-corners";
 import type { ProjectElementMm } from "@/types/project";
 import type {
   EnrichedSnapNode,
@@ -37,16 +38,37 @@ function bracingOperations(
   start: EnrichedSnapNode,
   end: EnrichedSnapNode,
   scope: SketchApplyScope,
+  elements: ProjectElementMm[],
 ): OperationProposal[] {
   const span = intent.spanMm;
   const profiles = profileOptions(span, "bracing");
   const base = leg(start, end);
+  const startPt = { x: start.x, y: start.y, z: start.z };
+  const endPt = { x: end.x, y: end.y, z: end.z };
+  const xCorners = inferWallXBraceCorners(
+    startPt,
+    endPt,
+    elements,
+    start.elementId,
+    end.elementId,
+  );
+  const xCornersField =
+    xCorners && xBraceLegsAreDistinct(xCorners)
+      ? {
+          x_corners_mm: xCorners.map((pt) => ({ x: pt.x, y: pt.y, z: pt.z })),
+        }
+      : {};
   const truss =
-    /truss/i.test(start.elementId) ||
-    /truss/i.test(end.elementId) ||
+    /-truss-(tc|bc|web)/i.test(start.elementId) ||
+    /-truss-(tc|bc|web)/i.test(end.elementId) ||
     start.elementType === "truss_chord" ||
     end.elementType === "truss_chord";
-  const longSlope = span >= MULTI_PANEL_SLOPE_MM && truss;
+  const onColumn =
+    /-col-/i.test(start.elementId) ||
+    /-col-/i.test(end.elementId) ||
+    start.elementType === "column" ||
+    end.elementType === "column";
+  const longSlope = span >= MULTI_PANEL_SLOPE_MM && truss && !onColumn;
   const panelCount = longSlope ? Math.max(2, Math.round(span / 4000)) : 1;
 
   const ops: OperationProposal[] = [];
@@ -65,6 +87,7 @@ function bracingOperations(
       panel_count: panelCount,
       profile_suggestions: profiles,
       ...base,
+      ...xCornersField,
     });
   }
 
@@ -82,6 +105,7 @@ function bracingOperations(
     panel_count: 1,
     profile_suggestions: profiles,
     ...base,
+    ...xCornersField,
   });
 
   ops.push({
@@ -151,7 +175,7 @@ export function buildFallbackSketchAnalysis(
       (Math.abs(dz) > 500 || Math.abs(dx) > 500));
 
   const operations = isBracing
-    ? bracingOperations(intent, start, end, scope)
+    ? bracingOperations(intent, start, end, scope, elements)
     : memberOperations(intent.kind, intent, start, end, scope);
 
   const rec = operations.find((o) => o.recommended) ?? operations[0];

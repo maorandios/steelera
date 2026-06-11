@@ -28,6 +28,7 @@ export function StructuralElementMesh({ element }: StructuralElementMeshProps) {
   if (!isElementRenderable(element)) {
     return null;
   }
+
   const baseColor = elementDisplayColor(element);
   const color = isSelected ? viewportTheme.steel.selected : baseColor;
   const matProps = {

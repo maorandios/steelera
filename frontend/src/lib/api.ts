@@ -684,13 +684,45 @@ export async function postPlaceXBraceFromLeg(
   projectElements: import("@/types/project").ProjectElementMm[],
   start: { x: number; y: number; z: number },
   end: { x: number; y: number; z: number },
-  options?: { profile?: string | null; assemblyId?: string | null },
+  options?: {
+    profile?: string | null;
+    assemblyId?: string | null;
+    startElementId?: string | null;
+    endElementId?: string | null;
+  },
 ): Promise<ModelEditResponse> {
   return postModelEdit("/api/model/place-x-brace-from-leg", {
     project_elements: projectElements,
     start_mm: start,
     end_mm: end,
+    start_element_id: options?.startElementId ?? null,
+    end_element_id: options?.endElementId ?? null,
     profile: options?.profile ?? null,
     assembly_id: options?.assemblyId ?? null,
+  });
+}
+
+export async function postPlaceWallXBrace(
+  projectElements: import("@/types/project").ProjectElementMm[],
+  body: {
+    panel_kind?: "long_wall" | "gable_wall";
+    wall_x: string;
+    bay_index: number;
+    frame_z?: string | null;
+    z_start?: string | null;
+    z_end?: string | null;
+    x_start?: string | null;
+    x_end?: string | null;
+    profile?: string | null;
+    assembly_id?: string | null;
+    scope?: "this_panel" | "all_bays_wall" | "both_walls" | "parallel_bay" | "portal_bay";
+    grid: import("@/types/grid-selection").GridPlacementContext;
+  },
+): Promise<ModelEditResponse> {
+  return postModelEdit("/api/model/place-wall-x-brace", {
+    project_elements: projectElements,
+    panel_kind: "long_wall",
+    scope: "this_panel",
+    ...body,
   });
 }

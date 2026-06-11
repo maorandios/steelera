@@ -62,6 +62,8 @@ class PlaceXBraceFromLegRequest(BaseModel):
     """Infer complementary diagonal and place a full X from one sketched leg."""
     start_mm: Point3Mm
     end_mm: Point3Mm
+    start_element_id: str | None = None
+    end_element_id: str | None = None
     profile: str | None = None
     assembly_id: str | None = None
 
@@ -115,6 +117,51 @@ class PlaceGridTieBeamRequest(BaseModel):
     profile: str = Field(default="IPE200")
     elevation: str = Field(default="eave", description="eave | roof | apex")
     assembly_id: str | None = None
+    grid: GridPlacementContext
+
+
+class PlaceWallXBraceRequest(BaseModel):
+    """Full X-brace in a wall panel — long side wall or gable end wall."""
+
+    panel_kind: Literal["long_wall", "gable_wall"] = "long_wall"
+    wall_x: str = Field(
+        ...,
+        description='Long wall: grid line e.g. "A". Gable: X-bay start line e.g. "A".',
+    )
+    bay_index: int = Field(
+        ...,
+        ge=0,
+        description="Long wall: zero-based Z bay. Gable: zero-based X bay.",
+    )
+    frame_z: str | None = Field(
+        default=None,
+        description='Gable end frame e.g. "1" (required when panel_kind is gable_wall).',
+    )
+    z_start: str | None = Field(
+        default=None,
+        description="Long-wall bay start frame (overrides bay_index lookup).",
+    )
+    z_end: str | None = Field(
+        default=None,
+        description="Long-wall bay end frame (overrides bay_index lookup).",
+    )
+    x_start: str | None = Field(
+        default=None,
+        description="Gable panel start grid line (overrides X bay lookup).",
+    )
+    x_end: str | None = Field(
+        default=None,
+        description="Gable panel end grid line (overrides X bay lookup).",
+    )
+    profile: str | None = None
+    assembly_id: str | None = None
+    scope: Literal[
+        "this_panel",
+        "all_bays_wall",
+        "both_walls",
+        "parallel_bay",
+        "portal_bay",
+    ] = "this_panel"
     grid: GridPlacementContext
 
 

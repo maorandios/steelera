@@ -1,11 +1,13 @@
 "use client";
 
-import { MousePointerClick, Send } from "lucide-react";
+import { MousePointerClick, Plus, Send } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { ChatStatus } from "@/components/chat/ChatStatus";
 import { SelectionActionBar } from "@/components/chat/SelectionActionBar";
+import { SketchIntentPanel } from "@/components/viewport/SketchIntentPanel";
+import { AddBracingPanel } from "@/components/workspace/AddBracingPanel";
 import { ColumnSelectionPanel } from "@/components/workspace/ColumnSelectionPanel";
 import { GridSelectionPanel } from "@/components/workspace/GridSelectionPanel";
 import { MemberPickBanner } from "@/components/workspace/MemberPickBanner";
@@ -14,6 +16,10 @@ import { Input } from "@/components/ui/input";
 import { useProjectStore, useSelectedElement } from "@/store/project-store";
 
 function WorkspaceEmptyState() {
+  const startAddBracing = useProjectStore((s) => s.startAddBracing);
+  const busy = useProjectStore((s) => s.isLoading || s.isMacroLoading);
+  const hasStructure = useProjectStore((s) => s.projectElements.length > 0);
+
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
       <MousePointerClick className="h-10 w-10 text-muted-foreground/50" />
@@ -26,6 +32,18 @@ function WorkspaceEmptyState() {
           and tie beams.
         </p>
       </div>
+      {hasStructure ? (
+        <Button
+          type="button"
+          size="sm"
+          className="mt-1 h-9 gap-1.5"
+          disabled={busy}
+          onClick={startAddBracing}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add bracing
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -40,7 +58,10 @@ export function WorkspaceInteractionPanel() {
   const selectionContext = useProjectStore((s) => s.selectionContext);
   const gridSelectionContext = useProjectStore((s) => s.gridSelectionContext);
   const viewportMode = useProjectStore((s) => s.viewportMode);
+  const sketchPhase = useProjectStore((s) => s.sketchSession.phase);
+  const sketchDialogueStep = useProjectStore((s) => s.sketchSession.dialogueStep);
   const memberPickMode = useProjectStore((s) => s.memberPickMode);
+  const addElementSession = useProjectStore((s) => s.addElementSession);
   const storeError = useProjectStore((s) => s.error);
   const clearError = useProjectStore((s) => s.clearError);
   const selected = useSelectedElement();
@@ -48,6 +69,8 @@ export function WorkspaceInteractionPanel() {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const inSketchDialogue =
+    viewportMode === "sketch" && sketchPhase === "dialogue";
   const inSpecialMode =
     viewportMode !== "inspect" || memberPickMode !== null;
   const deletePickActive =
@@ -56,11 +79,20 @@ export function WorkspaceInteractionPanel() {
     selectionContext?.elementType === "column" &&
     (selected || deletePickActive) &&
     (!memberPickMode || deletePickActive);
+  const inAddBracing =
+    Boolean(addElementSession?.type === "bracing") && !inSketchDialogue;
   const showGridSelection =
-    Boolean(gridSelectionContext) && !memberPickMode && !inSpecialMode;
+    Boolean(gridSelectionContext) &&
+    !memberPickMode &&
+    !inSpecialMode &&
+    !inAddBracing;
   const showGenericSelection =
     Boolean(selectedElementId && selectionContext && !isColumn && !memberPickMode) ||
-    (inSpecialMode && !memberPickMode && viewportMode !== "pick_members_profile");
+    (inSpecialMode &&
+      !memberPickMode &&
+      viewportMode !== "pick_members_profile" &&
+      viewportMode !== "pick_panel" &&
+      !inAddBracing);
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -70,7 +102,7 @@ export function WorkspaceInteractionPanel() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, statuses, selectedElementId, scrollToBottom]);
+  }, [messages, statuses, selectedElementId, sketchDialogueStep, scrollToBottom]);
 
   const handleAdviceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,19 +123,26 @@ export function WorkspaceInteractionPanel() {
             <MemberPickBanner />
           ) : null}
 
-          {showGridSelection && gridSelectionContext ? (
+          {inSketchDialogue ? <SketchIntentPanel /> : null}
+
+          {inAddBracing ? <AddBracingPanel /> : null}
+
+          {showGridSelection && gridSelectionContext && !inSketchDialogue ? (
             <GridSelectionPanel
               key={gridSelectionContext.gridId}
               context={gridSelectionContext}
             />
-          ) : isColumn && selectionContext ? (
+          ) : isColumn && selectionContext && !inSketchDialogue ? (
             <ColumnSelectionPanel
               key={selectionContext.elementId}
               context={selectionContext}
             />
-          ) : showGenericSelection ? (
+          ) : showGenericSelection && !inSketchDialogue ? (
             <SelectionActionBar layout="panel" />
-          ) : !memberPickMode && !showGridSelection ? (
+          ) : !memberPickMode &&
+            !showGridSelection &&
+            !inSketchDialogue &&
+            !inAddBracing ? (
             <WorkspaceEmptyState />
           ) : null}
 

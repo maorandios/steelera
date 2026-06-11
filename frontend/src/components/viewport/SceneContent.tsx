@@ -4,6 +4,7 @@ import { Environment, PerspectiveCamera } from "@react-three/drei";
 import { useMemo } from "react";
 
 import { GroundPlacementOverlay } from "@/components/viewport/GroundPlacementOverlay";
+import { PanelPickOverlay } from "@/components/viewport/PanelPickOverlay";
 import { SketchOverlay } from "@/components/viewport/SketchOverlay";
 import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { StructuralGrid } from "@/components/viewport/StructuralGrid";
@@ -23,6 +24,7 @@ interface SceneContentProps {
 
 export function SceneContent({ projectElements }: SceneContentProps) {
   const structuralGrid = useProjectStore((state) => state.structuralGrid);
+  const shedAssemblyParams = useProjectStore((state) => state.shedAssemblyParams);
   const { lighting, environment, placeholder, performance } = viewportTheme;
 
   const renderableElements = useMemo(
@@ -88,6 +90,11 @@ export function SceneContent({ projectElements }: SceneContentProps) {
         extentMaxX={maxX}
         extentMinZ={minZ}
         extentMaxZ={maxZ}
+      />
+      <PanelPickOverlay
+        xCoordsMm={structuralGrid.xCoordsMm}
+        zCoordsMm={structuralGrid.zCoordsMm}
+        eaveHeightMm={shedAssemblyParams?.height ?? 6000}
       />
       {renderableElements.map((element) => (
         <StructuralElementMesh

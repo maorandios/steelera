@@ -84,25 +84,26 @@ export function recognizeStructuralIntent(
 
   if (angleClass === "diagonal") {
     const low = isLowNode(start) || isLowNode(end);
-    const high = isHighNode(start) || isHighNode(end);
     const joint =
       start.paramAlongMember === 0 ||
       start.paramAlongMember === 1 ||
       end.paramAlongMember === 0 ||
       end.paramAlongMember === 1;
     const truss =
-      /truss/i.test(start.elementId) ||
-      /truss/i.test(end.elementId) ||
+      /-truss-(tc|bc|web)/i.test(start.elementId) ||
+      /-truss-(tc|bc|web)/i.test(end.elementId) ||
       start.elementType === "truss_chord" ||
       end.elementType === "truss_chord";
+    const onColumn =
+      isColumnElement(startEl) || isColumnElement(endEl);
     const spansBay =
       Math.abs(end.z - start.z) > 500 || Math.abs(end.x - start.x) > 500;
-    if ((low && joint) || (high && (truss || joint)) || (joint && spansBay)) {
+    if ((low && joint) || truss || (onColumn && spansBay) || (joint && spansBay)) {
       return {
         ...base,
         kind: "bracing",
-        label: high && truss ? "Roof Bracing" : "Bracing",
-        confidence: high && truss ? 0.85 : 0.82,
+        label: truss ? "Roof Bracing" : onColumn ? "Wall Bracing" : "Bracing",
+        confidence: truss ? 0.85 : 0.82,
       };
     }
   }

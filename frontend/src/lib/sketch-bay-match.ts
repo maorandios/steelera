@@ -101,6 +101,161 @@ function inferBayFromNodes(
   return { zStart: zLabels[lo], zEnd: zLabels[hi] };
 }
 
+function isTrussChordElement(element: ProjectElementMm): boolean {
+  const et = (element.element_type ?? "").toLowerCase();
+  const id = element.id.toLowerCase();
+  return et === "truss_chord" || id.includes("-truss-tc-") || id.includes("-truss-bc-");
+}
+
+function isTrussRoofBracing(
+  start: EnrichedSnapNode,
+  end: EnrichedSnapNode,
+): boolean {
+  const onTruss =
+    isTrussChordElement({ id: start.elementId, element_type: start.elementType } as ProjectElementMm) ||
+    isTrussChordElement({ id: end.elementId, element_type: end.elementType } as ProjectElementMm) ||
+    /-truss-(tc|bc)/i.test(start.elementId) ||
+    /-truss-(tc|bc)/i.test(end.elementId);
+  const onColumn =
+    start.elementType === "column" ||
+    end.elementType === "column" ||
+    /-col-/i.test(start.elementId) ||
+    /-col-/i.test(end.elementId);
+  if (onColumn && !onTruss) return false;
+  const spansFrame = Math.abs(end.z - start.z) > 200;
+  return onTruss && spansFrame;
+}
+
+const FRAME_Z_TOL_MM = 200;
+const PANEL_X_TOL_MM = 350;
+
+type Point3 = { x: number; y: number; z: number };
+
+function trussSegments(
+  elements: ProjectElementMm[],
+): Array<{ start: Point3; end: Point3 }> {
+  const out: Array<{ start: Point3; end: Point3 }> = [];
+  for (const el of elements) {
+    if (!isTrussChordElement(el)) continue;
+    const ep = memberEndpointsMm(el);
+    if (!ep) continue;
+    out.push({
+      start: { x: ep.start.x, y: ep.start.y, z: ep.start.z },
+      end: { x: ep.end.x, y: ep.end.y, z: ep.end.z },
+    });
+  }
+  return out;
+}
+
+function pointOnFrameAtX(
+  segments: Array<{ start: Point3; end: Point3 }>,
+  frameZ: number,
+  xMm: number,
+  referenceY?: number,
+): Point3 | null {
+  let best: Point3 | null = null;
+  let bestScore = Infinity;
+
+  for (const seg of segments) {
+    for (const pt of [seg.start, seg.end]) {
+      if (Math.abs(pt.z - frameZ) > FRAME_Z_TOL_MM) continue;
+      const dx = Math.abs(pt.x - xMm);
+      if (dx > PANEL_X_TOL_MM) continue;
+      const score = dx + (referenceY !== undefined ? Math.abs(pt.y - referenceY) * 0.01 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = pt;
+      }
+    }
+    const { start: s, end: e } = seg;
+    if (Math.abs(s.z - frameZ) > FRAME_Z_TOL_MM && Math.abs(e.z - frameZ) > FRAME_Z_TOL_MM) {
+      continue;
+    }
+    const lo = Math.min(s.x, e.x);
+    const hi = Math.max(s.x, e.x);
+    if (xMm < lo - PANEL_X_TOL_MM || xMm > hi + PANEL_X_TOL_MM) continue;
+    const t =
+      Math.abs(e.x - s.x) < 1
+        ? 0.5
+        : Math.max(0, Math.min(1, (xMm - s.x) / (e.x - s.x)));
+    const interp = {
+      x: s.x + t * (e.x - s.x),
+      y: s.y + t * (e.y - s.y),
+      z: s.z + t * (e.z - s.z),
+    };
+    if (Math.abs(interp.z - frameZ) > FRAME_Z_TOL_MM) continue;
+    const dx = Math.abs(interp.x - xMm);
+    const score = dx + (referenceY !== undefined ? Math.abs(interp.y - referenceY) * 0.01 : 0);
+    if (score < bestScore) {
+      bestScore = score;
+      best = interp;
+    }
+  }
+  return best;
+}
+
+/** Roof X-brace legs between truss panel nodes on adjacent frames. */
+export function findMatchingRoofXBraceLegs(
+  elements: ProjectElementMm[],
+  template: BracingPlacement,
+  scope: SketchApplyScope,
+  grid: StructuralGridState,
+  startNode: EnrichedSnapNode,
+  endNode: EnrichedSnapNode,
+): BracingPlacement[] {
+  if (scope === "single") return [template];
+
+  const segments = trussSegments(elements);
+  if (segments.length === 0) return [template];
+
+  const zA = template.start.z;
+  const zB = template.end.z;
+  const xA = template.start.x;
+  const xB = template.end.x;
+  const yA = template.start.y;
+  const yB = template.end.y;
+
+  const zLabels = grid.zCoordsMm.map((_, i) => gridLineNumber(i));
+  const rowBay = inferBayFromNodes(startNode, endNode, grid);
+  const bays = bayPairsForScope(grid, scope, rowBay ?? undefined);
+
+  const placements: BracingPlacement[] = [];
+
+  for (const bay of bays) {
+    const si = zLabels.indexOf(bay.zStart);
+    const ei = zLabels.indexOf(bay.zEnd);
+    if (si < 0 || ei < 0) continue;
+    const zLo = grid.zCoordsMm[si];
+    const zHi = grid.zCoordsMm[ei];
+
+    const isSketchBay =
+      rowBay &&
+      bay.zStart === rowBay.zStart &&
+      bay.zEnd === rowBay.zEnd;
+
+    if (isSketchBay) {
+      placements.push(template);
+      continue;
+    }
+
+    const startOnLo = pointOnFrameAtX(segments, zLo, xA, yA);
+    const endOnHi = pointOnFrameAtX(segments, zHi, xB, yB);
+    if (!startOnLo || !endOnHi) continue;
+
+    const candidate: BracingPlacement = {
+      start: { x: startOnLo.x, y: startOnLo.y, z: startOnLo.z },
+      end: { x: endOnHi.x, y: endOnHi.y, z: endOnHi.z },
+    };
+    if (!placements.some((p) => isSameSpan(p, candidate))) {
+      placements.push(candidate);
+    }
+  }
+
+  return placements.length > 0 ? dedupePlacements(placements) : [template];
+}
+
+export { isTrussRoofBracing };
+
 /** Find bracing placements matching the template line geometry. */
 export function findMatchingBracingPlacements(
   elements: ProjectElementMm[],

@@ -143,16 +143,19 @@ def classify_intent_rules(
         truss = _is_truss_member(start.element_id, start.element_type) or _is_truss_member(
             end.element_id, end.element_type
         )
+        on_column = _is_column(start_el) or _is_column(end_el)
         spans_bay = abs(end.z - start.z) > 500 or abs(end.x - start.x) > 500
-        if (low and joint) or (high and (truss or joint)) or (joint and spans_bay):
+        if (low and joint) or (high and truss) or (on_column and spans_bay) or (joint and spans_bay):
             label = _INTENT_LABELS["bracing"]
-            if high and truss:
+            if truss:
                 label = "Roof Bracing"
+            elif on_column:
+                label = "Wall Bracing"
             return SketchIntentResult(
                 **base,
                 kind="bracing",
                 label=label,
-                confidence=0.85 if high and truss else 0.82,
+                confidence=0.85 if truss else 0.82,
             )
 
     if angle_class == "horizontal" and (high_start or high_end):

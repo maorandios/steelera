@@ -135,7 +135,7 @@ export function stepContent(phase: OnboardingPhase, step1: WizardStep1Data) {
     case "proposal":
       return {
         title: "Your preliminary model",
-        description: "Pick a package and build — you can refine sections later.",
+        description: "Review the layout, pick a steel package, then build.",
       };
     default:
       return { title: "", description: "" };

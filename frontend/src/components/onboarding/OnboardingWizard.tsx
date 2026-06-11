@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ChatProposalBlock } from "@/components/chat/ChatProposalBlock";
 import { SiteMapPinPicker } from "@/components/chat/SiteMapPinPicker";
+import { OnboardingLoader } from "@/components/onboarding/OnboardingLoader";
 import { SteeleraMark } from "@/components/onboarding/SteeleraMark";
 import { isSiteClimatePending } from "@/lib/placeholder-site";
 import {
@@ -64,13 +65,13 @@ function WizardOption({
         "flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left text-[15px] transition-all",
         "border bg-white/70 shadow-sm backdrop-blur-sm",
         selected
-          ? "border-blue-300 bg-blue-50/90 text-blue-950 ring-1 ring-blue-200"
-          : "border-white/80 text-slate-700 hover:border-slate-200 hover:bg-white hover:shadow-md",
+          ? "border-slate-300 bg-white text-slate-900 ring-1 ring-slate-200"
+          : "border-slate-200/80 text-slate-700 hover:border-slate-300 hover:bg-white hover:shadow-md",
         disabled && "cursor-not-allowed opacity-50",
       )}
     >
       {icon ? (
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
           {icon}
         </span>
       ) : null}
@@ -100,8 +101,8 @@ function WizardChip({
         "inline-flex h-10 items-center rounded-full px-5 text-sm font-medium transition-all",
         "border bg-white/70 shadow-sm backdrop-blur-sm",
         selected
-          ? "border-blue-300 bg-blue-600 text-white shadow-md"
-          : "border-white/80 text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-900",
+          ? "border-slate-800 bg-slate-900 text-white shadow-md"
+          : "border-slate-200/80 text-slate-600 hover:border-slate-300 hover:bg-white hover:text-slate-900",
         disabled && "opacity-50",
       )}
     >
@@ -139,7 +140,7 @@ function StepIndicator({
             onClick={() => clickable && onJump(step.phase)}
             className={cn(
               "rounded-full px-3 py-1 text-xs font-medium transition-all sm:px-3.5 sm:py-1.5 sm:text-[13px]",
-              active && "bg-blue-600 text-white shadow-sm",
+              active && "bg-slate-900 text-white shadow-sm",
               done &&
                 !active &&
                 "bg-white/80 text-slate-600 shadow-sm hover:bg-white hover:text-slate-900",
@@ -209,15 +210,15 @@ function CustomMetresInput({
         disabled={disabled}
         className={cn(
           "min-w-0 flex-1 rounded-full border border-white/80 bg-white/80 px-4 py-2.5 text-sm text-slate-800",
-          "shadow-sm placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100",
+          "shadow-sm placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200",
         )}
       />
       <button
         type="submit"
         disabled={disabled || !value.trim()}
         className={cn(
-          "shrink-0 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm",
-          "hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400",
+          "shrink-0 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm",
+          "hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400",
         )}
       >
         Continue
@@ -373,14 +374,28 @@ export function OnboardingWizard() {
   const pinLon = step1.longitude ?? 0;
 
   return (
-    <div className="relative z-10 flex min-h-dvh w-full flex-col items-center justify-center overflow-y-auto px-4 py-8 sm:px-6 sm:py-10">
+    <div
+      className={cn(
+        "flex w-full flex-col items-center px-4 sm:px-6",
+        isProposal
+          ? "min-h-0 justify-start py-6 sm:py-8"
+          : "min-h-full justify-center py-8 sm:py-10",
+      )}
+    >
       <div
         className={cn(
           "flex w-full flex-col items-center",
-          wide ? "max-w-3xl" : "max-w-[640px]",
+          wide ? "max-w-2xl" : "max-w-[640px]",
         )}
       >
-        <SteeleraMark size="md" className="mb-6 sm:mb-8" />
+        {!isProposal ? (
+          <SteeleraMark
+            size="md"
+            className="animate-onboarding-fade-up mb-6 sm:mb-8"
+          />
+        ) : (
+          <SteeleraMark size="sm" className="mb-4 sm:mb-5" />
+        )}
 
         {!isProposal ? (
           <StepIndicator
@@ -390,7 +405,7 @@ export function OnboardingWizard() {
           />
         ) : null}
 
-        <div className="w-full text-center">
+        <div className="animate-onboarding-fade-up onboarding-delay-1 w-full text-center">
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
             {mapPinMode ? "Pin your site" : title}
           </h2>
@@ -401,7 +416,7 @@ export function OnboardingWizard() {
           </p>
         </div>
 
-        <div className="mt-8 w-full">
+        <div className="animate-onboarding-fade-up onboarding-delay-2 mt-8 w-full">
           {phase === "site_refine" && !mapPinMode ? (
             <SiteRefineStep
               disabled={disabled}
@@ -511,11 +526,11 @@ export function OnboardingWizard() {
           {phase === "proposal" ? (
             <div className="mt-2">
               {isProposing ? (
-                <div className="flex flex-col items-center gap-3 py-12 text-slate-500">
-                  <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-                  <p className="text-sm">
-                    {statuses[0] ?? "Building your preliminary model…"}
-                  </p>
+                <div className="py-12">
+                  <OnboardingLoader
+                    label="Building your model"
+                    sublabel={statuses[0] ?? "Generating preliminary structure…"}
+                  />
                 </div>
               ) : (
                 <ChatProposalBlock active variant="wizard" />
@@ -525,7 +540,7 @@ export function OnboardingWizard() {
 
           {statuses.length > 0 && phase !== "proposal" ? (
             <div className="mt-6 flex items-center justify-center gap-2 text-sm text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              <Loader2 className="h-4 w-4 animate-spin text-slate-700" />
               {statuses[0]}
             </div>
           ) : null}

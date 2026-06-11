@@ -1,18 +1,59 @@
 "use client";
 
+import { ChevronRight, Loader2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { intentLabel, recommendProfiles } from "@/lib/structural-intent";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import { SKETCH_INTENT_OPTIONS } from "@/types/sketch";
 
-const SCOPE_LABELS = {
-  all_bays: "Apply to All Bays",
-  row: "This Row Only",
-  single: "Just Here",
-} as const;
+const SCOPE_OPTIONS = [
+  { id: "all_bays" as const, label: "All bays" },
+  { id: "row" as const, label: "This row" },
+  { id: "single" as const, label: "Just here" },
+];
+
+function OptionRow({
+  label,
+  detail,
+  active,
+  recommended,
+  onClick,
+}: {
+  label: string;
+  detail?: string;
+  active?: boolean;
+  recommended?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5 text-left text-sm transition-colors",
+        "hover:bg-muted/40",
+        active && "bg-muted/50",
+      )}
+    >
+      <span className="min-w-0">
+        <span className="font-medium">{label}</span>
+        {recommended ? (
+          <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-600">
+            suggested
+          </span>
+        ) : null}
+        {detail ? (
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+            {detail}
+          </span>
+        ) : null}
+      </span>
+      <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-40" />
+    </button>
+  );
+}
 
 export function SketchIntentPanel() {
   const sketchSession = useProjectStore((s) => s.sketchSession);
@@ -53,212 +94,178 @@ export function SketchIntentPanel() {
 
   if (sketchSession.phase !== "dialogue") return null;
 
-  const summary =
-    analysis?.summary ??
-    analysis?.message ??
-    `I detected a ${intentLabel(kind as "unknown").toLowerCase()}.`;
-
+  const detected =
+    sketchSession.intent?.label ??
+    intentLabel(kind as "unknown");
   const suggestedScope =
     selectedOp?.scope_suggestion ?? analysis?.scope_suggestion ?? "single";
-  const scopeReason = analysis?.scope_reason;
+
+  const stepTitle =
+    sketchSession.dialogueStep === 1
+      ? "What to place?"
+      : sketchSession.dialogueStep === 2
+        ? "Profile"
+        : "Where?";
 
   return (
     <div
       className={cn(
-        "rounded-t-2xl border border-slate-200 bg-white px-4 py-4 shadow-2xl",
+        "overflow-hidden rounded-lg border border-border bg-card shadow-sm",
         (busy || sketchSession.analysisLoading) && "pointer-events-none opacity-60",
       )}
     >
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Sketch · step {sketchSession.dialogueStep}/3
+          </p>
+          <p className="truncate text-sm font-medium text-foreground">
+            {sketchSession.analysisLoading ? "Analyzing…" : stepTitle}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={cancelSketchMode}
+          aria-label="Cancel sketch"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
       {sketchSession.analysisLoading ? (
-        <p className="text-base text-slate-600">Analyzing sketch…</p>
+        <div className="flex items-center gap-2 px-3 py-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Reading your line…
+        </div>
       ) : null}
 
       {sketchSession.dialogueStep === 1 && !sketchSession.analysisLoading ? (
         <>
-          <p className="text-base leading-relaxed text-slate-800">{summary}</p>
-          {analysis?.ai_available ? (
-            <p className="mt-1 text-xs text-slate-500">AI-assisted advice</p>
-          ) : analysis ? (
-            <p className="mt-1 text-xs text-slate-500">Engineering recommendations</p>
-          ) : null}
-          <p className="mt-3 text-sm font-medium text-slate-700">
-            What should we do?
+          <p className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">
+            Detected: <span className="font-medium text-foreground">{detected}</span>
           </p>
           {operations.length === 0 ? (
-            <p className="mt-2 text-sm text-amber-700">
-              No operations available — check that the backend is running on port 8000.
+            <p className="px-3 py-3 text-xs text-amber-700">
+              No options — is the backend running?
             </p>
           ) : (
-            <div className="mt-2 flex flex-col gap-2">
+            <div>
               {operations.map((op) => (
-                <Button
+                <OptionRow
                   key={op.id}
-                  type="button"
-                  variant={
-                    op.id === sketchSession.selectedOperationId || op.recommended
-                      ? "default"
-                      : "outline"
-                  }
-                  className="h-auto min-h-11 flex-col items-start gap-0.5 py-2 text-left text-sm"
+                  label={op.label}
+                  active={op.id === sketchSession.selectedOperationId}
+                  recommended={op.recommended}
                   onClick={() => selectSketchOperation(op.id)}
-                >
-                  <span className="font-medium">
-                    {op.label}
-                    {op.recommended ? " (Recommended)" : ""}
-                  </span>
-                  <span className="text-xs opacity-80">{op.description}</span>
-                  {op.warnings.length > 0 ? (
-                    <span className="text-xs text-amber-700">{op.warnings[0]}</span>
-                  ) : null}
-                </Button>
+                />
               ))}
             </div>
           )}
           {sketchSession.selectedOperationId && operations.length > 0 ? (
-            <Button
-              type="button"
-              className="mt-3 h-11 w-full text-sm"
-              onClick={() => selectSketchOperation(sketchSession.selectedOperationId!)}
-            >
-              Continue with selected option
-            </Button>
-          ) : null}
-          <button
-            type="button"
-            className="mt-3 text-sm text-slate-500 underline hover:text-slate-700"
-            onClick={() => setShowTypePicker((v) => !v)}
-          >
-            Wrong element type?
-          </button>
-          {showTypePicker ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {SKETCH_INTENT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.kind}
-                  type="button"
-                  className="rounded-full border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50"
-                  onClick={() => {
-                    void setSketchIntentOverride(opt.kind);
-                    setShowTypePicker(false);
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div className="border-t border-border/60 p-2">
+              <button
+                type="button"
+                className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+                onClick={() => selectSketchOperation(sketchSession.selectedOperationId!)}
+              >
+                Continue
+              </button>
             </div>
           ) : null}
+          <div className="border-t border-border/60 px-3 py-2">
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline hover:text-foreground"
+              onClick={() => setShowTypePicker((v) => !v)}
+            >
+              Wrong type?
+            </button>
+            {showTypePicker ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {SKETCH_INTENT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.kind}
+                    type="button"
+                    className="rounded-full border border-border px-2.5 py-1 text-xs hover:bg-muted"
+                    onClick={() => {
+                      void setSketchIntentOverride(opt.kind);
+                      setShowTypePicker(false);
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </>
       ) : null}
 
       {sketchSession.dialogueStep === 2 && !sketchSession.analysisLoading ? (
         <>
-          <p className="text-base leading-relaxed text-slate-800">
-            <span className="font-semibold">{label}</span>
-            {" — "}
-            pick profile for {Math.round(spanMm).toLocaleString()} mm span:
+          <p className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">
+            {label} · {Math.round(spanMm).toLocaleString()} mm
           </p>
-          <div className="mt-3 flex flex-col gap-2">
+          <div>
             {profiles.map((option) => (
-              <Button
+              <OptionRow
                 key={option.profile}
-                type="button"
-                variant={option.tier === "recommended" ? "default" : "outline"}
-                className="h-11 justify-start text-sm"
+                label={option.profile}
+                detail={option.tier_label ?? undefined}
+                recommended={option.tier === "recommended"}
                 onClick={() => selectSketchProfile(option.profile)}
-              >
-                <span className="flex flex-col items-start gap-0.5">
-                  <span>
-                    {option.profile}
-                    {option.tier_label ? ` (${option.tier_label})` : ""}
-                  </span>
-                  {option.utilization > 0 ? (
-                    <span className="text-xs opacity-80">
-                      {Math.round(option.utilization * 100)}% util · {option.governing}
-                    </span>
-                  ) : null}
-                </span>
-              </Button>
+              />
             ))}
           </div>
-          <button
-            type="button"
-            className="mt-3 text-sm text-slate-500 hover:text-slate-700"
-            onClick={() =>
-              useProjectStore.setState({
-                sketchSession: {
-                  ...sketchSession,
-                  dialogueStep: 1,
-                },
-              })
-            }
-          >
-            ← Change operation
-          </button>
+          <div className="border-t border-border/60 p-2">
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() =>
+                useProjectStore.setState({
+                  sketchSession: { ...sketchSession, dialogueStep: 1 },
+                })
+              }
+            >
+              ← Back
+            </button>
+          </div>
         </>
       ) : null}
 
       {sketchSession.dialogueStep === 3 && !sketchSession.analysisLoading ? (
         <>
-          <p className="text-base leading-relaxed text-slate-800">
-            Apply <span className="font-semibold">{sketchSession.selectedProfile}</span>{" "}
-            {label} across matching layout?
+          <p className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">
+            {sketchSession.selectedProfile} · {label}
           </p>
-          {scopeReason ? (
-            <p className="mt-1 text-sm text-slate-500">{scopeReason}</p>
-          ) : null}
-          <div className="mt-3 flex flex-col gap-2">
-            <Button
+          <div>
+            {SCOPE_OPTIONS.map((opt) => (
+              <OptionRow
+                key={opt.id}
+                label={opt.label}
+                recommended={opt.id === suggestedScope}
+                onClick={() => {
+                  void commitSketchElement(opt.id);
+                }}
+              />
+            ))}
+          </div>
+          <div className="border-t border-border/60 p-2">
+            <button
               type="button"
-              className={cn(
-                "h-11 text-sm",
-                suggestedScope === "all_bays" && "ring-2 ring-slate-300",
-              )}
-              onClick={() => {
-                setSketchApplyScope("all_bays");
-                void commitSketchElement();
-              }}
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() =>
+                useProjectStore.setState({
+                  sketchSession: { ...sketchSession, dialogueStep: 2 },
+                })
+              }
             >
-              {SCOPE_LABELS.all_bays}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className={cn(
-                "h-11 text-sm",
-                suggestedScope === "row" && "ring-2 ring-slate-300",
-              )}
-              onClick={() => {
-                setSketchApplyScope("row");
-                void commitSketchElement();
-              }}
-            >
-              {SCOPE_LABELS.row}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className={cn(
-                "h-11 text-sm",
-                suggestedScope === "single" && "ring-2 ring-slate-300",
-              )}
-              onClick={() => {
-                setSketchApplyScope("single");
-                void commitSketchElement();
-              }}
-            >
-              {SCOPE_LABELS.single}
-            </Button>
+              ← Back
+            </button>
           </div>
         </>
       ) : null}
-
-      <button
-        type="button"
-        className="mt-4 w-full py-1 text-center text-sm text-slate-500 hover:text-slate-700"
-        onClick={cancelSketchMode}
-      >
-        Cancel sketch
-      </button>
     </div>
   );
 }

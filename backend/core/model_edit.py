@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Iterable
+from typing import Iterable, Literal
 
 from catalog_loader import get_profile, has_profile
 from core.geometry_engine import macro_member_to_project_element
@@ -428,6 +428,10 @@ def place_bracing_cross(
         start=start_a,
         end=end_a,
     )
+    if _span_key(start_a, end_a) == _span_key(start_b, end_b):
+        raise ValueError(
+            "X-brace complement matches the sketched leg — pick corners on opposite diagonals."
+        )
     leg_b = _member_between_points(
         element_id=f"{aid}-brace-custom-{idx}-b",
         assembly_id=aid,
@@ -435,19 +439,16 @@ def place_bracing_cross(
         start=start_b,
         end=end_b,
     )
-    out, changed_a = _insert_member_replace_by_span(
-        elements,
-        leg_a,
-        start=start_a,
-        end=end_a,
-    )
-    out, changed_b = _insert_member_replace_by_span(
-        out,
-        leg_b,
-        start=start_b,
-        end=end_b,
-    )
-    return out, list(dict.fromkeys(changed_a + changed_b))
+    out = list(elements)
+    removed: list[str] = []
+    out, removed_a = _remove_members_at_span(out, start_a, end_a)
+    removed.extend(removed_a)
+    out, removed_b = _remove_members_at_span(out, start_b, end_b)
+    removed.extend(removed_b)
+    out.append(leg_a)
+    out.append(leg_b)
+    changed = list(dict.fromkeys(removed + [leg_a.id, leg_b.id]))
+    return out, changed
 
 
 def place_x_brace_from_leg(
@@ -455,12 +456,20 @@ def place_x_brace_from_leg(
     *,
     start_mm: tuple[float, float, float],
     end_mm: tuple[float, float, float],
+    start_element_id: str | None = None,
+    end_element_id: str | None = None,
     profile: str | None = None,
     assembly_id: str | None = None,
 ) -> tuple[list[ProjectElementMm], list[str]]:
     from core.brace_geometry import infer_x_brace_corners
 
-    corners = infer_x_brace_corners(start_mm, end_mm, elements)
+    corners = infer_x_brace_corners(
+        start_mm,
+        end_mm,
+        elements,
+        start_element_id=start_element_id,
+        end_element_id=end_element_id,
+    )
     if corners is None:
         raise ValueError(
             "Could not infer X-brace corners from the sketched leg — try picking grid joints."
@@ -475,8 +484,6 @@ def place_x_brace_from_leg(
         profile=profile,
         assembly_id=assembly_id,
     )
-    """Encode grid axis for element ids (2+1/2 → 2p1p2)."""
-    return _AXIS_SAFE_RE.sub("p", value.strip())
 
 
 def _grid_engine_from_context(ctx: GridPlacementContext) -> StructuralGridEngine:
@@ -603,6 +610,329 @@ def place_grid_column(
             changed.extend(tie_ids)
 
     return out, changed
+
+
+def _trussed_frame_z_labels(elements: list[ProjectElementMm]) -> set[str]:
+    trussed: set[str] = set()
+    for element in elements:
+        match = _TRUSS_RE.match(element.id)
+        if match:
+            trussed.add(match.group("z"))
+    return trussed
+
+
+def _place_roof_x_for_bay(
+    elements: list[ProjectElementMm],
+    *,
+    engine: StructuralGridEngine,
+    bay_index: int,
+    profile: str | None,
+    assembly_id: str,
+) -> tuple[list[ProjectElementMm], list[str]]:
+    from core.grid_member_catalog import _ridge_label, _roof_bracing
+
+    z_labels = engine.z_labels
+    z0 = z_labels[bay_index]
+    z1 = z_labels[bay_index + 1]
+    trussed = _trussed_frame_z_labels(elements)
+    use_truss = z0 in trussed or z1 in trussed
+    ridge = _ridge_label(engine)
+    members = _roof_bracing(
+        engine,
+        assembly_id,
+        bay_index,
+        z0,
+        z1,
+        ridge,
+        profile or "L70x70x7",
+        truss_type="pratt",
+        use_truss=use_truss,
+    )
+    out = list(elements)
+    changed: list[str] = []
+    for i in range(0, len(members), 2):
+        if i + 1 >= len(members):
+            break
+        leg_a, leg_b = members[i], members[i + 1]
+        start_a = engine.resolve_node(leg_a.start_node)
+        end_a = engine.resolve_node(leg_a.end_node)
+        start_b = engine.resolve_node(leg_b.start_node)
+        end_b = engine.resolve_node(leg_b.end_node)
+        out, cross_changed = place_bracing_cross(
+            out,
+            start_a=start_a,
+            end_a=end_a,
+            start_b=start_b,
+            end_b=end_b,
+            profile=profile,
+            assembly_id=assembly_id,
+        )
+        changed.extend(cross_changed)
+    return out, changed
+
+
+def _place_gable_x_brace(
+    elements: list[ProjectElementMm],
+    *,
+    x_bay_index: int,
+    frame_z: str,
+    x_start: str | None = None,
+    x_end: str | None = None,
+    profile: str | None = None,
+    assembly_id: str | None = None,
+    grid: GridPlacementContext,
+    scope: Literal[
+        "this_panel",
+        "all_bays_wall",
+        "both_walls",
+        "parallel_bay",
+        "portal_bay",
+    ] = "this_panel",
+) -> tuple[list[ProjectElementMm], list[str]]:
+    """Place vertical X-bracing on gable end-wall panel(s) at a fixed Z frame."""
+    engine = _grid_engine_from_context(grid)
+    x_labels = engine.x_labels
+    z_labels = engine.z_labels
+    if len(x_labels) < 2:
+        raise ValueError("Grid must have at least two X lines for gable bracing")
+
+    z_label = frame_z.strip()
+    try:
+        engine.resolve_z_mm(z_label)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    if z_label not in z_labels:
+        raise ValueError(f"Unknown frame {z_label}")
+
+    if x_start and x_end:
+        xa = x_start.strip().upper()
+        xb = x_end.strip().upper()
+    elif 0 <= x_bay_index < len(x_labels) - 1:
+        xa = x_labels[x_bay_index]
+        xb = x_labels[x_bay_index + 1]
+    else:
+        raise ValueError(f"Invalid X bay index {x_bay_index}")
+
+    for label in (xa, xb):
+        try:
+            engine.resolve_x_mm(label)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def corners_for_gable(x_left: str, x_right: str, z: str) -> tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]:
+        a = engine.resolve_node(
+            GridNodeReference(x_axis=x_left, z_axis=z, elevation="ground")
+        )
+        b = engine.resolve_node(
+            GridNodeReference(x_axis=x_right, z_axis=z, elevation="eave")
+        )
+        c = engine.resolve_node(
+            GridNodeReference(x_axis=x_left, z_axis=z, elevation="eave")
+        )
+        d = engine.resolve_node(
+            GridNodeReference(x_axis=x_right, z_axis=z, elevation="ground")
+        )
+        return a, b, c, d
+
+    def panels_to_place() -> list[tuple[str, str, str]]:
+        near_z, far_z = z_labels[0], z_labels[-1]
+        if scope == "this_panel" or scope == "portal_bay":
+            return [(xa, xb, z_label)]
+        if scope == "parallel_bay":
+            other = far_z if z_label == near_z else near_z
+            if other == z_label:
+                return [(xa, xb, z_label)]
+            return list(dict.fromkeys([(xa, xb, z_label), (xa, xb, other)]))
+        if scope == "all_bays_wall":
+            return [
+                (x_labels[bi], x_labels[bi + 1], z_label)
+                for bi in range(len(x_labels) - 1)
+            ]
+        return [
+            (x_labels[bi], x_labels[bi + 1], zl)
+            for zl in (near_z, far_z)
+            for bi in range(len(x_labels) - 1)
+        ]
+
+    out = list(elements)
+    changed: list[str] = []
+    aid = assembly_id or _infer_assembly_id(elements, "shed_1")
+    for x_left, x_right, zl in panels_to_place():
+        a, b, c, d = corners_for_gable(x_left, x_right, zl)
+        out, panel_changed = place_bracing_cross(
+            out,
+            start_a=a,
+            end_a=b,
+            start_b=c,
+            end_b=d,
+            profile=profile,
+            assembly_id=aid,
+        )
+        changed.extend(panel_changed)
+    if not changed:
+        raise ValueError(
+            f"Could not place gable bracing at frame {z_label} — "
+            "check the selected panel and grid references."
+        )
+    return out, list(dict.fromkeys(changed))
+
+
+def place_wall_x_brace(
+    elements: list[ProjectElementMm],
+    *,
+    wall_x: str,
+    bay_index: int,
+    profile: str | None = None,
+    assembly_id: str | None = None,
+    grid: GridPlacementContext,
+    scope: Literal[
+        "this_panel",
+        "all_bays_wall",
+        "both_walls",
+        "parallel_bay",
+        "portal_bay",
+    ] = "this_panel",
+    panel_kind: Literal["long_wall", "gable_wall"] = "long_wall",
+    frame_z: str | None = None,
+    z_start: str | None = None,
+    z_end: str | None = None,
+    x_start: str | None = None,
+    x_end: str | None = None,
+) -> tuple[list[ProjectElementMm], list[str]]:
+    """Place vertical X-bracing on long-side or gable end-wall panel(s)."""
+    if panel_kind == "gable_wall":
+        if not frame_z:
+            raise ValueError("frame_z is required for gable wall bracing")
+        return _place_gable_x_brace(
+            elements,
+            x_bay_index=bay_index,
+            frame_z=frame_z,
+            x_start=x_start,
+            x_end=x_end,
+            profile=profile,
+            assembly_id=assembly_id,
+            grid=grid,
+            scope=scope,
+        )
+
+    from core.grid_member_catalog import _column_top_elev
+
+    engine = _grid_engine_from_context(grid)
+    z_labels = engine.z_labels
+    x_labels = engine.x_labels
+    if len(x_labels) < 2:
+        raise ValueError("Grid must have at least two X lines for wall bracing")
+
+    wall = wall_x.strip().upper()
+    try:
+        engine.resolve_x_mm(wall)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    if z_start and z_end:
+        z0_label = z_start.strip()
+        z1_label = z_end.strip()
+    elif 0 <= bay_index < len(z_labels) - 1:
+        z0_label = z_labels[bay_index]
+        z1_label = z_labels[bay_index + 1]
+    else:
+        raise ValueError(f"Invalid bay_index {bay_index}")
+
+    for label in (z0_label, z1_label):
+        try:
+            engine.resolve_z_mm(label)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def corners_for_bay(
+        wall_label: str,
+        z0_label: str,
+        z1_label: str,
+    ) -> tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]:
+        top = _column_top_elev(engine, wall_label)
+        a = engine.resolve_node(
+            GridNodeReference(x_axis=wall_label, z_axis=z0_label, elevation="ground")
+        )
+        b = engine.resolve_node(
+            GridNodeReference(x_axis=wall_label, z_axis=z1_label, elevation=top)
+        )
+        c = engine.resolve_node(
+            GridNodeReference(x_axis=wall_label, z_axis=z0_label, elevation=top)
+        )
+        d = engine.resolve_node(
+            GridNodeReference(x_axis=wall_label, z_axis=z1_label, elevation="ground")
+        )
+        return a, b, c, d
+
+    def panels_to_place() -> list[tuple[str, str, str]]:
+        if scope == "this_panel":
+            return [(wall, z0_label, z1_label)]
+        if scope == "parallel_bay":
+            opposite = (
+                x_labels[-1] if wall == x_labels[0] else x_labels[0]
+            )
+            if opposite == wall:
+                return [(wall, z0_label, z1_label)]
+            return list(
+                dict.fromkeys(
+                    [
+                        (wall, z0_label, z1_label),
+                        (opposite, z0_label, z1_label),
+                    ]
+                )
+            )
+        if scope == "portal_bay":
+            return [
+                (x_labels[0], z0_label, z1_label),
+                (x_labels[-1], z0_label, z1_label),
+            ]
+        if scope == "all_bays_wall":
+            return [
+                (wall, z_labels[bi], z_labels[bi + 1])
+                for bi in range(len(z_labels) - 1)
+            ]
+        side_walls = [x_labels[0], x_labels[-1]]
+        return [
+            (wall_label, z_labels[bi], z_labels[bi + 1])
+            for wall_label in side_walls
+            for bi in range(len(z_labels) - 1)
+        ]
+
+    out = list(elements)
+    changed: list[str] = []
+    aid = assembly_id or _infer_assembly_id(elements, "shed_1")
+    for wall_label, zs, ze in panels_to_place():
+        a, b, c, d = corners_for_bay(wall_label, zs, ze)
+        out, panel_changed = place_bracing_cross(
+            out,
+            start_a=a,
+            end_a=b,
+            start_b=c,
+            end_b=d,
+            profile=profile,
+            assembly_id=aid,
+        )
+        changed.extend(panel_changed)
+    if scope == "portal_bay":
+        out, roof_changed = _place_roof_x_for_bay(
+            out,
+            engine=engine,
+            bay_index=bay_index,
+            profile=profile,
+            assembly_id=aid,
+        )
+        changed.extend(roof_changed)
+    return out, list(dict.fromkeys(changed))
 
 
 def place_grid_tie_beam(

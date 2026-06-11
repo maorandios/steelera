@@ -5,13 +5,20 @@ export const VIEWPORT_PICK_ROLE = {
   BACKGROUND: "background",
   GRID_FRAME: "grid_frame",
   GRID_BAY: "grid_bay",
+  WALL_PANEL: "wall_panel",
 } as const;
 
 export type ViewportPickTarget =
   | { type: typeof VIEWPORT_PICK_ROLE.ELEMENT; elementId: string }
   | { type: typeof VIEWPORT_PICK_ROLE.BACKGROUND }
   | { type: typeof VIEWPORT_PICK_ROLE.GRID_FRAME; frameIndex: number }
-  | { type: typeof VIEWPORT_PICK_ROLE.GRID_BAY; bayIndex: number };
+  | { type: typeof VIEWPORT_PICK_ROLE.GRID_BAY; bayIndex: number }
+  | {
+      type: typeof VIEWPORT_PICK_ROLE.WALL_PANEL;
+      wallXLabel: string;
+      bayIndex: number;
+      side: "A" | "B";
+    };
 
 export function viewportPickTargetFromObject(
   object: THREE.Object3D,
@@ -37,6 +44,23 @@ export function viewportPickTargetFromObject(
         return { type: VIEWPORT_PICK_ROLE.GRID_BAY, bayIndex };
       }
     }
+    if (current.userData?.viewportPickRole === VIEWPORT_PICK_ROLE.WALL_PANEL) {
+      const wallXLabel = current.userData?.wallXLabel;
+      const bayIndex = current.userData?.bayIndex;
+      const side = current.userData?.side;
+      if (
+        typeof wallXLabel === "string" &&
+        typeof bayIndex === "number" &&
+        (side === "A" || side === "B")
+      ) {
+        return {
+          type: VIEWPORT_PICK_ROLE.WALL_PANEL,
+          wallXLabel,
+          bayIndex,
+          side,
+        };
+      }
+    }
     current = current.parent;
   }
   return null;
@@ -57,7 +81,16 @@ export function viewportPickElementFromHits(
 
 export function viewportPickTargetFromHits(
   hits: THREE.Intersection[],
+  options?: { preferWallPanel?: boolean },
 ): ViewportPickTarget | null {
+  if (options?.preferWallPanel) {
+    for (const hit of hits) {
+      const target = viewportPickTargetFromObject(hit.object);
+      if (target?.type === VIEWPORT_PICK_ROLE.WALL_PANEL) {
+        return target;
+      }
+    }
+  }
   for (const hit of hits) {
     const target = viewportPickTargetFromObject(hit.object);
     if (target?.type === VIEWPORT_PICK_ROLE.GRID_FRAME) {

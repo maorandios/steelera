@@ -14,6 +14,7 @@ import {
   postPlaceGridColumn,
   postPlaceGridTieBeam,
   postPlaceMemberBetweenPoints,
+  postPlaceWallXBrace,
   postPlaceXBraceFromLeg,
   postProposeShed,
   postUpdateProfile,
@@ -125,17 +126,39 @@ import type {
 import {
   dedupePlacements,
   findMatchingBracingPlacements,
+  findMatchingRoofXBraceLegs,
   findMatchingTieBeamSegments,
+  isTrussRoofBracing,
 } from "@/lib/sketch-bay-match";
 import { buildFallbackSketchAnalysis } from "@/lib/sketch-advise-fallback";
-import { buildSketchSnapNodes, findSketchNodeById } from "@/lib/sketch-nodes";
+import {
+  inferWallXBraceCorners,
+  resolveXBraceCorners,
+  verifyXBraceLegsInModel,
+} from "@/lib/brace-corners";
+import {
+  buildSketchSnapNodes,
+  findSketchNodeById,
+  isSketchableElement,
+} from "@/lib/sketch-nodes";
+import { SKETCH_GHOST_FACE_OPACITY } from "@/lib/sketch-viewport";
 import {
   intentLabel,
   normalizeProfile,
   recognizeStructuralIntent,
   recommendProfiles,
 } from "@/lib/structural-intent";
-import type { ColumnPickMode, GridSelectionContext, GroundPlacementNode } from "@/types/grid-selection";
+import type {
+  AddBracingScope,
+  AddElementSession,
+  BracingPanel,
+} from "@/types/add-element";
+import type {
+  ColumnPickMode,
+  GridSelectionContext,
+  GroundPlacementNode,
+} from "@/types/grid-selection";
+import { defaultBracingProfile } from "@/lib/wall-panel";
 import type {
   EnrichedSnapNode,
   SketchApplyScope,
@@ -143,6 +166,7 @@ import type {
   StructuralIntentKind,
 } from "@/types/sketch";
 import type { TrussType } from "@/types/shed-config";
+import type { OperationProposal, StructuralOperationKind } from "@/types/structural-advise";
 import { emptyProjectState, normalizeElement } from "@/types/project";
 
 function emptySketchSession(): SketchSession {
@@ -305,8 +329,9 @@ function applyElementsFromApi(
   incoming: ProjectElementMm[],
   existing: ProjectElementMm[],
 ): ProjectElementMm[] {
+  const byId = new Map(existing.map((element) => [element.id, element]));
   return incoming.map((element) => {
-    const prior = existing.find((item) => item.id === element.id);
+    const prior = byId.get(element.id);
     return normalizeElement({
       ...element,
       rotation: prior?.rotation ?? element.rotation,
@@ -315,6 +340,18 @@ function applyElementsFromApi(
         element.rotation_euler_deg ?? prior?.rotation_euler_deg ?? null,
     });
   });
+}
+
+function resolveSketchOperationKind(
+  op: OperationProposal | undefined,
+  selectedOperationId: string | null,
+): StructuralOperationKind {
+  if (op?.kind) return op.kind;
+  const id = op?.id ?? selectedOperationId;
+  if (id === "full_x") return "place_x_brace";
+  if (id === "multi_panel_x") return "place_multi_panel_x";
+  if (id === "single_leg") return "place_single_member";
+  return "place_single_member";
 }
 
 const DEFAULT_WIZARD_STEP1: WizardStep1Data = {
@@ -378,6 +415,14 @@ interface ProjectStore {
   memberPickMode: MemberPickMode | null;
   sketchSession: SketchSession;
   sketchSnapNodes: EnrichedSnapNode[];
+  addElementSession: AddElementSession | null;
+  hoveredWallPanel: BracingPanel | null;
+  startAddBracing: () => void;
+  cancelAddElement: () => void;
+  selectWallPanel: (panel: BracingPanel) => void;
+  setHoveredWallPanel: (panel: BracingPanel | null) => void;
+  setAddBracingProfile: (profile: string) => void;
+  commitAddBracing: (scope: AddBracingScope) => Promise<void>;
   startSketchMode: () => void;
   cancelSketchMode: () => void;
   pickSketchNode: (node: EnrichedSnapNode) => Promise<void>;
@@ -386,7 +431,7 @@ interface ProjectStore {
   setSketchIntentOverride: (kind: StructuralIntentKind) => Promise<void>;
   selectSketchProfile: (profile: string) => void;
   setSketchApplyScope: (scope: SketchApplyScope) => void;
-  commitSketchElement: () => Promise<void>;
+  commitSketchElement: (scopeOverride?: SketchApplyScope) => Promise<void>;
   startMemberPickMode: (start: MemberPickStart) => void;
   applyMemberPick: (elementId: string) => Promise<void>;
   commitDeleteMemberPick: () => Promise<void>;
@@ -508,6 +553,113 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   memberPickMode: null,
   sketchSession: emptySketchSession(),
   sketchSnapNodes: [],
+  addElementSession: null,
+  hoveredWallPanel: null,
+
+  startAddBracing: () => {
+    const elements = get().projectElements;
+    if (elements.length === 0) {
+      set({ error: "Generate a structure before adding bracing." });
+      return;
+    }
+    set({
+      viewportMode: "pick_panel",
+      addElementSession: {
+        type: "bracing",
+        step: "pick_panel",
+        panel: null,
+        profile: defaultBracingProfile(elements),
+      },
+      hoveredWallPanel: null,
+      selectedElementId: null,
+      selectionContext: null,
+      gridSelectionContext: null,
+      placementIntent: null,
+      pickedNodes: [],
+      error: null,
+      statuses: ["Click a side-wall panel in the viewport."],
+    });
+  },
+
+  cancelAddElement: () =>
+    set({
+      viewportMode: "inspect",
+      addElementSession: null,
+      hoveredWallPanel: null,
+      statuses: [],
+    }),
+
+  selectWallPanel: (panel) => {
+    const session = get().addElementSession;
+    if (!session || session.type !== "bracing") return;
+    set({
+      addElementSession: { ...session, panel, step: "profile" },
+      viewportMode: "inspect",
+      hoveredWallPanel: null,
+      statuses: [],
+    });
+  },
+
+  setHoveredWallPanel: (panel) => set({ hoveredWallPanel: panel }),
+
+  setAddBracingProfile: (profile) => {
+    const session = get().addElementSession;
+    if (!session || session.type !== "bracing") return;
+    set({
+      addElementSession: {
+        ...session,
+        profile: profile.trim().toUpperCase(),
+        step: "scope",
+      },
+    });
+  },
+
+  commitAddBracing: async (scope) => {
+    const session = get().addElementSession;
+    if (!session || session.type !== "bracing" || !session.panel) return;
+    const params =
+      get().shedAssemblyParams ??
+      inferShedParamsFromElements(get().projectElements);
+    if (!params) {
+      set({ error: "Generate a shed before placing bracing." });
+      return;
+    }
+    set({ isLoading: true, error: null, statuses: ["Placing wall X-bracing…"] });
+    try {
+      const panel = session.panel;
+      const result = await postPlaceWallXBrace(get().projectElements, {
+        panel_kind: panel.kind === "gable_wall" ? "gable_wall" : "long_wall",
+        wall_x:
+          panel.kind === "gable_wall" ? panel.xStart : panel.wallXLabel,
+        bay_index: panel.kind === "gable_wall" ? 0 : panel.bayIndex,
+        frame_z: panel.kind === "gable_wall" ? panel.frameZ : null,
+        x_start: panel.kind === "gable_wall" ? panel.xStart : null,
+        x_end: panel.kind === "gable_wall" ? panel.xEnd : null,
+        z_start: panel.kind === "long_wall" ? panel.zStart : null,
+        z_end: panel.kind === "long_wall" ? panel.zEnd : null,
+        profile: session.profile,
+        scope,
+        grid: shedParamsToGridPlacement(params),
+        assembly_id: assemblyIdFromElements(get().projectElements),
+      });
+      const elements = applyElementsFromApi(
+        result.projectElements,
+        get().projectElements,
+      );
+      set({
+        projectElements: elements,
+        isLoading: false,
+        viewportMode: "inspect",
+        addElementSession: null,
+        hoveredWallPanel: null,
+        statuses: [result.message],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to place wall bracing";
+      set({ isLoading: false, statuses: [], error: message });
+    }
+  },
 
   startSketchMode: () => {
     const elements = get().projectElements;
@@ -515,7 +667,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({ error: "Generate a structure before sketching elements." });
       return;
     }
-    const nodes = buildSketchSnapNodes(elements);
+    const nodes = buildSketchSnapNodes(elements, get().structuralGrid);
     if (nodes.length < 2) {
       set({ error: "Not enough connection points to sketch." });
       return;
@@ -531,7 +683,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       pickedNodes: [],
       error: null,
       statuses: [
-        "Sketch mode — click a blue (joint) or green (mid-span) node, then click a second node.",
+        "Sketch mode — click two blue snap nodes to define a line.",
       ],
     });
   },
@@ -572,7 +724,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({
         sketchSession: emptySketchSession(),
         statuses: [
-          "Sketch mode — click a blue (joint) or green (mid-span) node, then click a second node.",
+          "Sketch mode — click two blue snap nodes to define a line.",
         ],
       });
       return;
@@ -711,10 +863,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
   },
 
-  commitSketchElement: async () => {
+  commitSketchElement: async (scopeOverride) => {
     const session = get().sketchSession;
     const locked = session.lockedLine;
-    const scope = session.applyScope ?? "single";
+    const scope = scopeOverride ?? session.applyScope ?? "single";
     const op = session.analysis?.operations?.find(
       (o) => o.id === session.selectedOperationId,
     );
@@ -728,13 +880,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
     const grid = get().structuralGrid;
     const assemblyId = assemblyIdFromElements(get().projectElements);
-    const opKind = op?.kind ?? "place_single_member";
+    const opKind = resolveSketchOperationKind(
+      op,
+      session.selectedOperationId,
+    );
 
     set({ isLoading: true, error: null, statuses: ["Placing sketched element…"] });
 
     try {
       let elements = get().projectElements;
       const changedIds: string[] = [];
+      const placedXLegIds: string[] = [];
       let statusNote = "";
 
       const template = {
@@ -755,26 +911,88 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       };
 
       if (opKind === "place_x_brace" || opKind === "place_multi_panel_x") {
+        const roofX =
+          op?.bracing_plane === "roof" ||
+          isTrussRoofBracing(locked.start, locked.end);
         const legPlacements =
           scope === "single"
             ? [template]
-            : findMatchingBracingPlacements(
-                elements,
-                template,
-                scope,
-                grid,
-                locked.start,
-                locked.end,
-              );
+            : roofX
+              ? findMatchingRoofXBraceLegs(
+                  elements,
+                  template,
+                  scope,
+                  grid,
+                  locked.start,
+                  locked.end,
+                )
+              : findMatchingBracingPlacements(
+                  elements,
+                  template,
+                  scope,
+                  grid,
+                  locked.start,
+                  locked.end,
+                );
+
         for (const p of dedupePlacements(legPlacements)) {
-          const result = await postPlaceXBraceFromLeg(
-            elements,
-            p.start,
-            p.end,
-            { profile, assemblyId },
-          );
+          const corners =
+            scope === "single"
+              ? resolveXBraceCorners(op, locked, elements)
+              : inferWallXBraceCorners(
+                  p.start,
+                  p.end,
+                  elements,
+                  locked.start.elementId,
+                  locked.end.elementId,
+                );
+
+          let result;
+          if (corners) {
+            result = await postPlaceBracingCross(
+              elements,
+              corners,
+              profile,
+              assemblyId,
+            );
+          } else {
+            result = await postPlaceXBraceFromLeg(
+              elements,
+              p.start,
+              p.end,
+              {
+                profile,
+                assemblyId,
+                startElementId: locked.start.elementId,
+                endElementId: locked.end.elementId,
+              },
+            );
+          }
+
           elements = applyElementsFromApi(result.projectElements, elements);
           changedIds.push(...result.changed_ids);
+
+          if (opKind === "place_x_brace") {
+            if (corners) {
+              const verified = verifyXBraceLegsInModel(elements, corners);
+              placedXLegIds.push(...verified.legIds);
+              if (verified.legCount < 2) {
+                throw new Error(
+                  `Full X-brace incomplete — only ${verified.legCount} diagonal found in the model. Pick column snap nodes at opposite corners of the bay.`,
+                );
+              }
+            } else {
+              const newLegs = result.changed_ids.filter((id) =>
+                id.includes("brace-custom"),
+              );
+              placedXLegIds.push(...newLegs);
+              if (newLegs.length < 2) {
+                throw new Error(
+                  "Full X-brace incomplete — only one diagonal was placed. Pick column snap nodes on opposite corners of the bay.",
+                );
+              }
+            }
+          }
         }
         if (
           opKind === "place_multi_panel_x" &&
@@ -828,6 +1046,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           : scope === "row"
             ? "this row"
             : "this location";
+      const xLegIds =
+        opKind === "place_x_brace"
+          ? [...new Set(placedXLegIds)]
+          : [];
+      const memberNote =
+        opKind === "place_x_brace" && xLegIds.length >= 2
+          ? ` (${xLegIds.length} diagonals)`
+          : "";
 
       set({
         projectElements: elements,
@@ -836,9 +1062,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         sketchSnapNodes: [],
         isLoading: false,
         statuses: [],
-        selectedElementId: changedIds[0] ?? null,
+        selectedElementId: xLegIds[0] ?? changedIds[0] ?? null,
         selectionContext: (() => {
-          const id = changedIds[0];
+          const id = xLegIds[0] ?? changedIds[0];
           if (!id) return null;
           const el = elements.find((e) => e.id === id);
           return el
@@ -851,7 +1077,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           ...get().messages,
           {
             role: "assistant",
-            content: `Placed ${label} (${profile}) across ${scopeLabel}.${statusNote}`,
+            content: `Placed ${label} (${profile})${memberNote} across ${scopeLabel}.${statusNote}`,
           },
         ],
       });
@@ -2522,6 +2748,7 @@ export function useViewportSchematicMode(): boolean {
   return (
     mode === "pick_nodes" ||
     mode === "pick_grid" ||
+    mode === "pick_panel" ||
     mode === "pick_column_nodes" ||
     mode === "sketch"
   );
@@ -2537,6 +2764,7 @@ export function useElementGhostOpacity(elementId: string): number {
   const schematic =
     viewportMode === "pick_nodes" ||
     viewportMode === "pick_column_nodes" ||
+    viewportMode === "pick_panel" ||
     viewportMode === "sketch";
   const memberPickActive =
     viewportMode === "pick_members_profile" && memberPickMode !== null;
@@ -2544,6 +2772,9 @@ export function useElementGhostOpacity(elementId: string): number {
     return isColumnElement(element) ? 1 : 0.12;
   }
   if (!schematic) return 1;
+  if (viewportMode === "sketch") {
+    return SKETCH_GHOST_FACE_OPACITY;
+  }
   if (elementId === selectedElementId) return 0.85;
   return 0.1;
 }

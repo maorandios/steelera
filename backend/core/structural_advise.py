@@ -61,14 +61,30 @@ def _bracing_plane(
     start: SketchSnapNode,
     end: SketchSnapNode,
 ) -> BracingPlane:
-    if start.y > HIGH_ROOF_Y_MM or end.y > HIGH_ROOF_Y_MM:
-        if _is_truss_member(start.element_id, start.element_type) or _is_truss_member(
-            end.element_id, end.element_type
-        ):
-            return "roof"
+    """Classify bracing plane from snap-node host members, not height alone."""
+    on_truss = _is_truss_member(start.element_id, start.element_type) or _is_truss_member(
+        end.element_id, end.element_type
+    )
+    on_column = _is_column(start.element_id, start.element_type) or _is_column(
+        end.element_id, end.element_type
+    )
+
+    if on_truss:
         return "roof"
+
+    if on_column:
+        return "wall_long"
+
+    dz = abs(end.z - start.z)
+    dx = abs(end.x - start.x)
+    if dz >= dx and dz > 200:
+        return "wall_long"
+    if dx > dz and dx > 200:
+        return "wall_long"
+
     if start.y < LOW_EAVE_Y_MM + 500 or end.y < LOW_EAVE_Y_MM + 500:
         return "wall_long"
+
     return "unknown"
 
 
@@ -122,6 +138,8 @@ def _sketch_operations(
                 slope_len, width_mm=width, height_mm=height
             )
 
+        roof_scope = "single" if plane == "roof" else scope
+
         if panel_count > 1 and plane == "roof":
             ops.append(
                 OperationProposal(
@@ -152,7 +170,7 @@ def _sketch_operations(
                     description="Complete X-brace (both diagonals) in the panel you sketched.",
                     recommended=False,
                     element_kind="bracing",
-                    scope_suggestion=scope,  # type: ignore[arg-type]
+                    scope_suggestion=roof_scope,  # type: ignore[arg-type]
                     warnings=[],
                     bracing_plane=plane,
                     panel_count=1,
@@ -174,7 +192,7 @@ def _sketch_operations(
                     ),
                     recommended=True,
                     element_kind="bracing",
-                    scope_suggestion=scope,  # type: ignore[arg-type]
+                    scope_suggestion=roof_scope,  # type: ignore[arg-type]
                     bracing_plane=plane,
                     panel_count=1,
                     leg_start_mm=leg_start,
@@ -192,7 +210,7 @@ def _sketch_operations(
                 description="Place exactly the line you drew (one brace leg).",
                 recommended=False,
                 element_kind="bracing",
-                scope_suggestion=scope,  # type: ignore[arg-type]
+                scope_suggestion=roof_scope,  # type: ignore[arg-type]
                 warnings=["Single diagonal carries tension only — not a complete brace."],
                 bracing_plane=plane,
                 leg_start_mm=leg_start,
