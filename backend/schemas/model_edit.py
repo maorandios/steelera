@@ -35,12 +35,33 @@ class PlaceBraceLegRequest(BaseModel):
     assembly_id: str | None = None
 
 
+class PlaceMemberBetweenPointsRequest(BaseModel):
+    start_mm: Point3Mm
+    end_mm: Point3Mm
+    profile: str | None = None
+    assembly_id: str | None = None
+    element_type: Literal[
+        "bracing",
+        "tie_beam",
+        "purlin",
+        "beam",
+    ] = "bracing"
+
+
 class PlaceBracingCrossRequest(BaseModel):
     """Two diagonals: start_a→end_a and start_b→end_b."""
     start_a_mm: Point3Mm
     end_a_mm: Point3Mm
     start_b_mm: Point3Mm
     end_b_mm: Point3Mm
+    profile: str | None = None
+    assembly_id: str | None = None
+
+
+class PlaceXBraceFromLegRequest(BaseModel):
+    """Infer complementary diagonal and place a full X from one sketched leg."""
+    start_mm: Point3Mm
+    end_mm: Point3Mm
     profile: str | None = None
     assembly_id: str | None = None
 

@@ -8,6 +8,8 @@ from core.model_edit import (
     place_bracing_cross,
     place_grid_column,
     place_grid_tie_beam,
+    place_member_between_points,
+    place_x_brace_from_leg,
     update_member_profiles,
 )
 from schemas.model_edit import (
@@ -15,7 +17,9 @@ from schemas.model_edit import (
     ModelEditBody,
     ModelEditResponse,
     PlaceBraceLegRequest,
+    PlaceMemberBetweenPointsRequest,
     PlaceBracingCrossRequest,
+    PlaceXBraceFromLegRequest,
     GroundPlacementNodesRequest,
     PlaceGridColumnRequest,
     PlaceGridTieBeamRequest,
@@ -37,7 +41,15 @@ class PlaceBraceLegBody(PlaceBraceLegRequest, ModelEditBody):
     pass
 
 
+class PlaceMemberBetweenPointsBody(PlaceMemberBetweenPointsRequest, ModelEditBody):
+    pass
+
+
 class PlaceBracingCrossBody(PlaceBracingCrossRequest, ModelEditBody):
+    pass
+
+
+class PlaceXBraceFromLegBody(PlaceXBraceFromLegRequest, ModelEditBody):
     pass
 
 
@@ -110,6 +122,28 @@ async def api_place_brace_leg(body: PlaceBraceLegBody) -> ModelEditResponse:
     )
 
 
+@router.post("/place-member-between-points", response_model=ModelEditResponse)
+async def api_place_member_between_points(
+    body: PlaceMemberBetweenPointsBody,
+) -> ModelEditResponse:
+    try:
+        updated, changed = place_member_between_points(
+            body.project_elements,
+            start_mm=(body.start_mm.x, body.start_mm.y, body.start_mm.z),
+            end_mm=(body.end_mm.x, body.end_mm.y, body.end_mm.z),
+            profile=body.profile,
+            assembly_id=body.assembly_id,
+            element_type=body.element_type,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return ModelEditResponse(
+        projectElements=updated,
+        changed_ids=changed,
+        message=f"Placed {body.element_type.replace('_', ' ')} between picked nodes.",
+    )
+
+
 @router.post("/place-bracing-cross", response_model=ModelEditResponse)
 async def api_place_bracing_cross(body: PlaceBracingCrossBody) -> ModelEditResponse:
     try:
@@ -128,6 +162,25 @@ async def api_place_bracing_cross(body: PlaceBracingCrossBody) -> ModelEditRespo
         projectElements=updated,
         changed_ids=created,
         message=f"Added X-bracing ({len(created)} members).",
+    )
+
+
+@router.post("/place-x-brace-from-leg", response_model=ModelEditResponse)
+async def api_place_x_brace_from_leg(body: PlaceXBraceFromLegBody) -> ModelEditResponse:
+    try:
+        updated, created = place_x_brace_from_leg(
+            body.project_elements,
+            start_mm=(body.start_mm.x, body.start_mm.y, body.start_mm.z),
+            end_mm=(body.end_mm.x, body.end_mm.y, body.end_mm.z),
+            profile=body.profile,
+            assembly_id=body.assembly_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return ModelEditResponse(
+        projectElements=updated,
+        changed_ids=created,
+        message=f"Added full X-brace ({len(created)} members).",
     )
 
 

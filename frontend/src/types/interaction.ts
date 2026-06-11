@@ -3,7 +3,8 @@ export type ViewportMode =
   | "pick_nodes"
   | "pick_grid"
   | "pick_members_profile"
-  | "pick_column_nodes";
+  | "pick_column_nodes"
+  | "sketch";
 
 export type PlacementIntent = "single_brace" | "full_x" | "insert_frame";
 

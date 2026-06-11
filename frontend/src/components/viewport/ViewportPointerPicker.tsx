@@ -42,14 +42,14 @@ export function ViewportPointerPicker() {
 
   useEffect(() => {
     const canvas = gl.domElement;
-    if (memberPickMode) {
+    if (memberPickMode || viewportMode === "sketch") {
       canvas.style.cursor = "crosshair";
       return () => {
         canvas.style.cursor = "";
       };
     }
     return undefined;
-  }, [gl, memberPickMode]);
+  }, [gl, memberPickMode, viewportMode]);
 
   useEffect(() => {
     const raycastHits = (clientX: number, clientY: number) => {
@@ -102,6 +102,10 @@ export function ViewportPointerPicker() {
       }
 
       if (mode === "pick_column_nodes") {
+        return;
+      }
+
+      if (mode === "sketch") {
         return;
       }
 

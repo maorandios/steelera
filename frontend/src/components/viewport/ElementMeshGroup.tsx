@@ -1,7 +1,8 @@
 "use client";
 
 import { Edges } from "@react-three/drei";
-import { useMemo, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import * as THREE from "three";
 
 import {
   elementRotationRad,
@@ -15,7 +16,7 @@ import { isElementRenderable } from "@/lib/elementValidation";
 import { hasNodeDrivenFrame, memberNodeFrame } from "@/lib/memberFrame";
 import { VIEWPORT_PICK_ROLE } from "@/lib/viewport-pick";
 import { viewportTheme } from "@/lib/viewport-theme";
-import { useIsElementHighlighted } from "@/store/project-store";
+import { useIsElementHighlighted, useSketchModeActive } from "@/store/project-store";
 import type { ProjectElementMm } from "@/types/project";
 
 interface ElementMeshGroupProps {
@@ -32,8 +33,15 @@ const memberPickUserData = (elementId: string) => ({
  * Node-driven frame (preferred): center + quaternion from start→end nodes.
  * Legacy fallback: axis origin + axis rotation + macro Euler for older payloads.
  */
+const noopRaycast = () => {};
+
 export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
   const isSelected = useIsElementHighlighted(element.id);
+  const sketchMode = useSketchModeActive();
+  const groupRef = useRef<THREE.Group>(null);
+  const savedRaycast = useRef(
+    new WeakMap<THREE.Mesh, THREE.Mesh["raycast"]>(),
+  );
 
   const nodeFrame = useMemo(
     () => (hasNodeDrivenFrame(element) ? memberNodeFrame(element) : null),
@@ -52,6 +60,24 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
     };
   }, [element, nodeFrame]);
 
+  useLayoutEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if (sketchMode) {
+        if (!savedRaycast.current.has(mesh)) {
+          savedRaycast.current.set(mesh, mesh.raycast.bind(mesh));
+        }
+        mesh.raycast = noopRaycast;
+      } else {
+        const restore = savedRaycast.current.get(mesh);
+        if (restore) mesh.raycast = restore;
+      }
+    });
+  }, [sketchMode, element.id]);
+
   if (!isElementRenderable(element)) {
     return null;
   }
@@ -68,19 +94,21 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
     return null;
   }
 
-  const pickMesh = (position: [number, number, number]) => (
-    <mesh position={position} userData={memberPickUserData(element.id)}>
-      <boxGeometry args={[lengthM, height, width]} />
-      <meshBasicMaterial visible={false} />
-      {isSelected && (
-        <Edges color={viewportTheme.selection.edge} threshold={15} />
-      )}
-    </mesh>
-  );
+  const pickMesh = (position: [number, number, number]) =>
+    sketchMode ? null : (
+      <mesh position={position} userData={memberPickUserData(element.id)}>
+        <boxGeometry args={[lengthM, height, width]} />
+        <meshBasicMaterial visible={false} />
+        {isSelected && (
+          <Edges color={viewportTheme.selection.edge} threshold={15} />
+        )}
+      </mesh>
+    );
 
   if (nodeFrame) {
     return (
       <group
+        ref={groupRef}
         position={nodeFrame.centerM}
         userData={memberPickUserData(element.id)}
       >
@@ -104,6 +132,7 @@ export function ElementMeshGroup({ element, children }: ElementMeshGroupProps) {
 
   return (
     <group
+      ref={groupRef}
       position={[originX, originY, originZ]}
       userData={memberPickUserData(element.id)}
     >

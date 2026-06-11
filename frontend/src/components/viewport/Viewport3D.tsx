@@ -1,10 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { Pencil } from "lucide-react";
 import { useCallback, useState } from "react";
 import * as THREE from "three";
 
 import { CanvasErrorBoundary } from "@/components/viewport/CanvasErrorBoundary";
+import { SketchIntentPanel } from "@/components/viewport/SketchIntentPanel";
 import { SceneContent } from "@/components/viewport/SceneContent";
 import { WebGLContextGuard } from "@/components/viewport/WebGLContextGuard";
 import { viewportTheme } from "@/lib/viewport-theme";
@@ -37,6 +39,9 @@ export function Viewport3D() {
   const cancelMemberPickMode = useProjectStore((s) => s.cancelMemberPickMode);
   const finishMemberPickMode = useProjectStore((s) => s.finishMemberPickMode);
   const cancelColumnPickMode = useProjectStore((s) => s.cancelColumnPickMode);
+  const startSketchMode = useProjectStore((s) => s.startSketchMode);
+  const cancelSketchMode = useProjectStore((s) => s.cancelSketchMode);
+  const sketchPhase = useProjectStore((s) => s.sketchSession.phase);
   const count = projectElements.length;
   const pickLabel =
     placementIntent === "full_x"
@@ -129,6 +134,35 @@ export function Viewport3D() {
             Cancel
           </button>
         </div>
+      ) : null}
+      {viewportMode === "sketch" ? (
+        <div className="pointer-events-auto absolute inset-x-3 top-12 z-10 flex items-center justify-between gap-2 rounded-md border border-indigo-200 bg-indigo-50/95 px-3 py-2 text-xs text-indigo-900 shadow-sm backdrop-blur-sm">
+          <span>
+            Sketch mode — click two nodes (blue = joint, green = mid-span).
+          </span>
+          <button
+            type="button"
+            className="shrink-0 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm"
+            onClick={cancelSketchMode}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
+      {viewportMode === "sketch" && sketchPhase === "dialogue" ? (
+        <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 max-h-[55vh] overflow-y-auto">
+          <SketchIntentPanel />
+        </div>
+      ) : null}
+      {viewportMode === "inspect" && count > 0 ? (
+        <button
+          type="button"
+          className="pointer-events-auto absolute bottom-3 left-3 z-10 flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-600 px-3.5 py-2 text-xs font-medium text-white shadow-md transition-colors hover:bg-indigo-700"
+          onClick={startSketchMode}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Add Element
+        </button>
       ) : null}
       <div className="pointer-events-none absolute bottom-3 right-3 z-10 rounded-md border border-slate-200 bg-white/90 px-2.5 py-2 shadow-sm backdrop-blur-sm">
         <svg

@@ -13,8 +13,11 @@ import {
   postPlaceBracingCross,
   postPlaceGridColumn,
   postPlaceGridTieBeam,
+  postPlaceMemberBetweenPoints,
+  postPlaceXBraceFromLeg,
   postProposeShed,
   postUpdateProfile,
+  fetchSketchAnalysis,
   type GenerateShedBody,
 } from "@/lib/api";
 import {
@@ -119,9 +122,97 @@ import type {
   SnapNode,
   ViewportMode,
 } from "@/types/interaction";
+import {
+  dedupePlacements,
+  findMatchingBracingPlacements,
+  findMatchingTieBeamSegments,
+} from "@/lib/sketch-bay-match";
+import { buildFallbackSketchAnalysis } from "@/lib/sketch-advise-fallback";
+import { buildSketchSnapNodes, findSketchNodeById } from "@/lib/sketch-nodes";
+import {
+  intentLabel,
+  normalizeProfile,
+  recognizeStructuralIntent,
+  recommendProfiles,
+} from "@/lib/structural-intent";
 import type { ColumnPickMode, GridSelectionContext, GroundPlacementNode } from "@/types/grid-selection";
+import type {
+  EnrichedSnapNode,
+  SketchApplyScope,
+  SketchSession,
+  StructuralIntentKind,
+} from "@/types/sketch";
 import type { TrussType } from "@/types/shed-config";
 import { emptyProjectState, normalizeElement } from "@/types/project";
+
+function emptySketchSession(): SketchSession {
+  return {
+    phase: "idle",
+    firstNodeId: null,
+    lockedLine: null,
+    intent: null,
+    intentOverride: null,
+    analysis: null,
+    analysisLoading: false,
+    selectedOperationId: null,
+    dialogueStep: 1,
+    selectedProfile: null,
+    applyScope: null,
+  };
+}
+
+async function loadSketchAnalysis(
+  get: () => ProjectStore,
+  set: (partial: Partial<ProjectStore> | ((state: ProjectStore) => Partial<ProjectStore>)) => void,
+  locked: { start: EnrichedSnapNode; end: EnrichedSnapNode },
+  intentOverride?: StructuralIntentKind | null,
+) {
+  try {
+    const analysis = await fetchSketchAnalysis({
+      projectElements: get().projectElements,
+      startNode: locked.start,
+      endNode: locked.end,
+      intentOverride: intentOverride ?? null,
+      siteContext: get().siteContext,
+      shedParams: get().shedAssemblyParams as Record<string, unknown> | null,
+      xCoordsMm: get().structuralGrid.xCoordsMm,
+      zCoordsMm: get().structuralGrid.zCoordsMm,
+    });
+    if (!analysis.operations?.length) {
+      const fallback = buildFallbackSketchAnalysis(
+        locked.start,
+        locked.end,
+        get().projectElements,
+      );
+      return {
+        analysis: {
+          ...fallback,
+          ...analysis,
+          operations: fallback.operations,
+          recommended_operation_id:
+            analysis.recommended_operation_id ?? fallback.recommended_operation_id,
+          summary: analysis.summary ?? analysis.message ?? fallback.summary,
+        },
+        intent: analysis.intent,
+      };
+    }
+    return { analysis, intent: analysis.intent };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Structural advise unavailable";
+    const fallback = buildFallbackSketchAnalysis(
+      locked.start,
+      locked.end,
+      get().projectElements,
+    );
+    set({
+      statuses: [
+        `Using offline advice (${message}). Start backend on port 8000 for full analysis.`,
+      ],
+    });
+    return { analysis: fallback, intent: fallback.intent };
+  }
+}
 
 /** Keep API payloads bounded so long chats stay responsive. */
 const API_MESSAGE_WINDOW = 24;
@@ -285,6 +376,17 @@ interface ProjectStore {
   isMacroLoading: boolean;
   error: string | null;
   memberPickMode: MemberPickMode | null;
+  sketchSession: SketchSession;
+  sketchSnapNodes: EnrichedSnapNode[];
+  startSketchMode: () => void;
+  cancelSketchMode: () => void;
+  pickSketchNode: (node: EnrichedSnapNode) => Promise<void>;
+  selectSketchOperation: (operationId: string) => void;
+  confirmSketchIntent: () => void;
+  setSketchIntentOverride: (kind: StructuralIntentKind) => Promise<void>;
+  selectSketchProfile: (profile: string) => void;
+  setSketchApplyScope: (scope: SketchApplyScope) => void;
+  commitSketchElement: () => Promise<void>;
   startMemberPickMode: (start: MemberPickStart) => void;
   applyMemberPick: (elementId: string) => Promise<void>;
   commitDeleteMemberPick: () => Promise<void>;
@@ -404,6 +506,361 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   isMacroLoading: false,
   error: null,
   memberPickMode: null,
+  sketchSession: emptySketchSession(),
+  sketchSnapNodes: [],
+
+  startSketchMode: () => {
+    const elements = get().projectElements;
+    if (elements.length === 0) {
+      set({ error: "Generate a structure before sketching elements." });
+      return;
+    }
+    const nodes = buildSketchSnapNodes(elements);
+    if (nodes.length < 2) {
+      set({ error: "Not enough connection points to sketch." });
+      return;
+    }
+    set({
+      viewportMode: "sketch",
+      sketchSession: emptySketchSession(),
+      sketchSnapNodes: nodes,
+      selectedElementId: null,
+      selectionContext: null,
+      gridSelectionContext: null,
+      placementIntent: null,
+      pickedNodes: [],
+      error: null,
+      statuses: [
+        "Sketch mode — click a blue (joint) or green (mid-span) node, then click a second node.",
+      ],
+    });
+  },
+
+  cancelSketchMode: () =>
+    set({
+      viewportMode: "inspect",
+      sketchSession: emptySketchSession(),
+      sketchSnapNodes: [],
+      statuses: [],
+    }),
+
+  pickSketchNode: async (node) => {
+    if (get().viewportMode !== "sketch") return;
+    const session = get().sketchSession;
+    if (session.phase === "dialogue") return;
+
+    const firstId = session.firstNodeId;
+    if (!firstId) {
+      set({
+        sketchSession: {
+          ...emptySketchSession(),
+          phase: "picking",
+          firstNodeId: node.id,
+        },
+        statuses: ["First node selected — click the second node."],
+      });
+      return;
+    }
+
+    const start = findSketchNodeById(get().sketchSnapNodes, firstId);
+    if (!start) {
+      set({ sketchSession: emptySketchSession() });
+      return;
+    }
+
+    if (node.id === firstId) {
+      set({
+        sketchSession: emptySketchSession(),
+        statuses: [
+          "Sketch mode — click a blue (joint) or green (mid-span) node, then click a second node.",
+        ],
+      });
+      return;
+    }
+
+    const locked = { start, end: node };
+    set({
+      sketchSession: {
+        ...emptySketchSession(),
+        phase: "dialogue",
+        lockedLine: locked,
+        analysisLoading: true,
+        dialogueStep: 1,
+      },
+      statuses: ["Analyzing sketch…"],
+    });
+
+    const { analysis, intent } = await loadSketchAnalysis(get, set, locked);
+    const recOp =
+      analysis?.recommended_operation_id ??
+      analysis?.operations?.[0]?.id ??
+      null;
+    set({
+      sketchSession: {
+        ...get().sketchSession,
+        intent: analysis?.intent ?? intent,
+        analysis,
+        analysisLoading: false,
+        selectedOperationId: recOp,
+        dialogueStep: 1,
+        selectedProfile:
+          analysis?.profiles?.[0]?.profile ??
+          analysis?.operations?.[0]?.profile_suggestions?.[0]?.profile ??
+          null,
+      },
+      statuses: get().statuses.length ? get().statuses : [],
+    });
+  },
+
+  selectSketchOperation: (operationId) => {
+    const session = get().sketchSession;
+    const op = session.analysis?.operations?.find((o) => o.id === operationId);
+    const profiles =
+      op?.profile_suggestions?.length
+        ? op.profile_suggestions
+        : session.analysis?.profiles ?? [];
+    set({
+      sketchSession: {
+        ...session,
+        selectedOperationId: operationId,
+        dialogueStep: 2,
+        selectedProfile: profiles[0]?.profile ?? session.selectedProfile,
+      },
+    });
+  },
+
+  confirmSketchIntent: () => {
+    const session = get().sketchSession;
+    const opId =
+      session.selectedOperationId ??
+      session.analysis?.recommended_operation_id ??
+      session.analysis?.operations?.[0]?.id;
+    if (opId) {
+      get().selectSketchOperation(opId);
+      return;
+    }
+    if (!session.intent && !session.intentOverride) return;
+    const kind = session.intentOverride ?? session.intent?.kind ?? "unknown";
+    const span = session.intent?.spanMm ?? 0;
+    const profileOptions =
+      session.analysis?.profiles ??
+      recommendProfiles(span, kind).map((profile, i) => ({
+        profile,
+        tier: (i === 0 ? "recommended" : "light") as import("@/types/sketch").SketchProfileTier,
+        tier_label: i === 0 ? "Optimal" : "Light",
+        utilization: 0,
+        governing: "span_rule",
+      }));
+    set({
+      sketchSession: {
+        ...session,
+        dialogueStep: 2,
+        selectedProfile: profileOptions[0]?.profile ?? null,
+      },
+    });
+  },
+
+  setSketchIntentOverride: async (kind) => {
+    const session = get().sketchSession;
+    const locked = session.lockedLine;
+    if (!locked) return;
+
+    set({
+      sketchSession: {
+        ...session,
+        intentOverride: kind,
+        dialogueStep: 1,
+        analysisLoading: true,
+      },
+    });
+
+    const { analysis } = await loadSketchAnalysis(get, set, locked, kind);
+    const span = session.intent?.spanMm ?? 0;
+    const fallbackProfile = recommendProfiles(span, kind)[0] ?? null;
+    const recOp =
+      analysis?.recommended_operation_id ??
+      analysis?.operations?.[0]?.id ??
+      null;
+    set({
+      sketchSession: {
+        ...get().sketchSession,
+        analysis: analysis ?? get().sketchSession.analysis,
+        intentOverride: kind,
+        dialogueStep: 1,
+        analysisLoading: false,
+        selectedOperationId: recOp,
+        selectedProfile: analysis?.profiles[0]?.profile ?? fallbackProfile,
+      },
+    });
+  },
+
+  selectSketchProfile: (profile) => {
+    const session = get().sketchSession;
+    set({
+      sketchSession: {
+        ...session,
+        selectedProfile: profile,
+        dialogueStep: 3,
+      },
+    });
+  },
+
+  setSketchApplyScope: (scope) => {
+    set({
+      sketchSession: { ...get().sketchSession, applyScope: scope },
+    });
+  },
+
+  commitSketchElement: async () => {
+    const session = get().sketchSession;
+    const locked = session.lockedLine;
+    const scope = session.applyScope ?? "single";
+    const op = session.analysis?.operations?.find(
+      (o) => o.id === session.selectedOperationId,
+    );
+    const kind =
+      (session.intentOverride ??
+        session.intent?.kind ??
+        op?.element_kind ??
+        "unknown") as StructuralIntentKind;
+    const profile = normalizeProfile(session.selectedProfile ?? "IPE200");
+    if (!locked) return;
+
+    const grid = get().structuralGrid;
+    const assemblyId = assemblyIdFromElements(get().projectElements);
+    const opKind = op?.kind ?? "place_single_member";
+
+    set({ isLoading: true, error: null, statuses: ["Placing sketched element…"] });
+
+    try {
+      let elements = get().projectElements;
+      const changedIds: string[] = [];
+      let statusNote = "";
+
+      const template = {
+        start: { x: locked.start.x, y: locked.start.y, z: locked.start.z },
+        end: { x: locked.end.x, y: locked.end.y, z: locked.end.z },
+      };
+
+      const elementTypeForKind = ():
+        | "bracing"
+        | "tie_beam"
+        | "purlin"
+        | "beam" => {
+        if (kind === "bracing") return "bracing";
+        if (kind === "purlin") return "purlin";
+        if (kind === "beam") return "beam";
+        if (kind === "tie_beam") return "tie_beam";
+        return "tie_beam";
+      };
+
+      if (opKind === "place_x_brace" || opKind === "place_multi_panel_x") {
+        const legPlacements =
+          scope === "single"
+            ? [template]
+            : findMatchingBracingPlacements(
+                elements,
+                template,
+                scope,
+                grid,
+                locked.start,
+                locked.end,
+              );
+        for (const p of dedupePlacements(legPlacements)) {
+          const result = await postPlaceXBraceFromLeg(
+            elements,
+            p.start,
+            p.end,
+            { profile, assemblyId },
+          );
+          elements = applyElementsFromApi(result.projectElements, elements);
+          changedIds.push(...result.changed_ids);
+        }
+        if (
+          opKind === "place_multi_panel_x" &&
+          op?.panel_count &&
+          op.panel_count > 1
+        ) {
+          statusNote = ` Placed X in sketched panel; ${op.panel_count} panels recommended along slope — enable roof bracing in shed settings for full auto-layout.`;
+        }
+      } else {
+        const placements =
+          kind === "bracing"
+            ? findMatchingBracingPlacements(
+                elements,
+                template,
+                scope,
+                grid,
+                locked.start,
+                locked.end,
+              )
+            : kind === "tie_beam" || kind === "beam"
+              ? findMatchingTieBeamSegments(
+                  template,
+                  grid,
+                  scope,
+                  locked.start,
+                  locked.end,
+                )
+              : [template];
+
+        const placeType = elementTypeForKind();
+        for (const p of dedupePlacements(placements)) {
+          const result = await postPlaceMemberBetweenPoints(
+            elements,
+            p.start,
+            p.end,
+            {
+              profile,
+              assemblyId,
+              elementType: placeType,
+            },
+          );
+          elements = applyElementsFromApi(result.projectElements, elements);
+          changedIds.push(...result.changed_ids);
+        }
+      }
+
+      const label = op?.label ?? intentLabel(kind);
+      const scopeLabel =
+        scope === "all_bays"
+          ? "all matching bays"
+          : scope === "row"
+            ? "this row"
+            : "this location";
+
+      set({
+        projectElements: elements,
+        viewportMode: "inspect",
+        sketchSession: emptySketchSession(),
+        sketchSnapNodes: [],
+        isLoading: false,
+        statuses: [],
+        selectedElementId: changedIds[0] ?? null,
+        selectionContext: (() => {
+          const id = changedIds[0];
+          if (!id) return null;
+          const el = elements.find((e) => e.id === id);
+          return el
+            ? resolveSelectionContext(el, elements, {
+                trussType: trussTypeHint(get().shedAssemblyParams),
+              })
+            : null;
+        })(),
+        messages: [
+          ...get().messages,
+          {
+            role: "assistant",
+            content: `Placed ${label} (${profile}) across ${scopeLabel}.${statusNote}`,
+          },
+        ],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to place sketched element";
+      set({ isLoading: false, error: message, statuses: [] });
+    }
+  },
 
   startMemberPickMode: (start) => {
     const pickHint =
@@ -2056,9 +2513,18 @@ export function useIsElementHighlighted(elementId: string): boolean {
   return selectedElementId === elementId;
 }
 
+export function useSketchModeActive(): boolean {
+  return useProjectStore((state) => state.viewportMode === "sketch");
+}
+
 export function useViewportSchematicMode(): boolean {
   const mode = useProjectStore((state) => state.viewportMode);
-  return mode === "pick_nodes" || mode === "pick_grid" || mode === "pick_column_nodes";
+  return (
+    mode === "pick_nodes" ||
+    mode === "pick_grid" ||
+    mode === "pick_column_nodes" ||
+    mode === "sketch"
+  );
 }
 
 export function useElementGhostOpacity(elementId: string): number {
@@ -2069,7 +2535,9 @@ export function useElementGhostOpacity(elementId: string): number {
     state.projectElements.find((el) => el.id === elementId),
   );
   const schematic =
-    viewportMode === "pick_nodes" || viewportMode === "pick_column_nodes";
+    viewportMode === "pick_nodes" ||
+    viewportMode === "pick_column_nodes" ||
+    viewportMode === "sketch";
   const memberPickActive =
     viewportMode === "pick_members_profile" && memberPickMode !== null;
   if (memberPickActive) {

@@ -21,7 +21,9 @@ export type IfcSchemaVersion = "IFC2X3" | "IFC4";
  */
 function apiBaseUrl(): string {
   if (typeof window !== "undefined") {
-    return process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+    // Same-origin /api/* → Next.js rewrite → FastAPI (avoids CORS on Windows).
+    const direct = process.env.NEXT_PUBLIC_API_URL?.trim();
+    return direct ? direct.replace(/\/$/, "") : "";
   }
   return (
     process.env.BACKEND_URL ??
@@ -35,6 +37,7 @@ const MACRO_TIMEOUT_MS = 60_000;
 const SITE_TIMEOUT_MS = 90_000;
 const PROPOSAL_TIMEOUT_MS = 120_000;
 const MODEL_EDIT_TIMEOUT_MS = 45_000;
+const SKETCH_TIMEOUT_MS = 30_000;
 const EXPORT_TIMEOUT_MS = 90_000;
 
 const BACKEND_HINT =
@@ -484,6 +487,26 @@ export async function postPlaceBraceLeg(
   });
 }
 
+export async function postPlaceMemberBetweenPoints(
+  projectElements: import("@/types/project").ProjectElementMm[],
+  start: { x: number; y: number; z: number },
+  end: { x: number; y: number; z: number },
+  options?: {
+    profile?: string | null;
+    assemblyId?: string | null;
+    elementType?: "bracing" | "tie_beam" | "purlin" | "beam";
+  },
+): Promise<ModelEditResponse> {
+  return postModelEdit("/api/model/place-member-between-points", {
+    project_elements: projectElements,
+    start_mm: start,
+    end_mm: end,
+    profile: options?.profile ?? null,
+    assembly_id: options?.assemblyId ?? null,
+    element_type: options?.elementType ?? "bracing",
+  });
+}
+
 export async function postPlaceBracingCross(
   projectElements: import("@/types/project").ProjectElementMm[],
   points: [
@@ -504,5 +527,170 @@ export async function postPlaceBracingCross(
     end_b_mm: d,
     profile: profile ?? null,
     assembly_id: assemblyId ?? null,
+  });
+}
+
+function sketchNodePayload(node: import("@/types/sketch").EnrichedSnapNode) {
+  return {
+    x: node.x,
+    y: node.y,
+    z: node.z,
+    element_id: node.elementId,
+    element_type: node.elementType,
+    tier: node.tier,
+    param_along_member: node.paramAlongMember,
+  };
+}
+
+function mapIntentFromApi(
+  intent: {
+    kind: import("@/types/sketch").StructuralIntentKind;
+    confidence: number;
+    label: string;
+    angle_class: import("@/types/sketch").StructuralIntentResult["angleClass"];
+    span_mm: number;
+    start_element_type: string;
+    end_element_type: string;
+    start_element_id: string;
+    end_element_id: string;
+  },
+  startNode: import("@/types/sketch").EnrichedSnapNode,
+  endNode: import("@/types/sketch").EnrichedSnapNode,
+): import("@/types/sketch").StructuralIntentResult {
+  return {
+    kind: intent.kind,
+    confidence: intent.confidence,
+    label: intent.label,
+    angleClass: intent.angle_class,
+    spanMm: intent.span_mm,
+    start: {
+      elementType: intent.start_element_type,
+      z: startNode.z,
+      elementId: intent.start_element_id,
+    },
+    end: {
+      elementType: intent.end_element_type,
+      z: endNode.z,
+      elementId: intent.end_element_id,
+    },
+  };
+}
+
+export async function fetchStructuralAdvise(body: {
+  trigger?: "sketch" | "selection";
+  projectElements: import("@/types/project").ProjectElementMm[];
+  startNode?: import("@/types/sketch").EnrichedSnapNode;
+  endNode?: import("@/types/sketch").EnrichedSnapNode;
+  selectionContext?: import("@/lib/selection-context-payload").SelectionContextPayload | null;
+  intentOverride?: import("@/types/sketch").StructuralIntentKind | null;
+  siteContext?: SiteContext | null;
+  shedParams?: Record<string, unknown> | null;
+  xCoordsMm?: number[];
+  zCoordsMm?: number[];
+}): Promise<import("@/types/structural-advise").StructuralAdviseResult> {
+  const { signal, clear } = abortAfterMs(SKETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/structural/advise`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({
+        trigger: body.trigger ?? (body.selectionContext ? "selection" : "sketch"),
+        project_elements: body.projectElements,
+        start_node: body.startNode ? sketchNodePayload(body.startNode) : null,
+        end_node: body.endNode ? sketchNodePayload(body.endNode) : null,
+        selection_context: body.selectionContext ?? null,
+        intent_override: body.intentOverride ?? null,
+        site_context: body.siteContext ?? null,
+        shed_params: body.shedParams ?? null,
+        x_coords_mm: body.xCoordsMm ?? null,
+        z_coords_mm: body.zCoordsMm ?? null,
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Structural advise failed (${res.status})`);
+    }
+    const data = (await res.json()) as {
+      summary: string;
+      intent: Parameters<typeof mapIntentFromApi>[0] | null;
+      operations: import("@/types/structural-advise").OperationProposal[];
+      recommended_operation_id: string | null;
+      profiles: import("@/types/sketch").SketchProfileOption[];
+      scope_suggestion: import("@/types/sketch").SketchApplyScope;
+      scope_reason: string;
+      alternatives: import("@/types/sketch").StructuralIntentKind[];
+      ai_available: boolean;
+    };
+    return {
+      summary: data.summary,
+      intent:
+        data.intent && body.startNode && body.endNode
+          ? mapIntentFromApi(data.intent, body.startNode, body.endNode)
+          : null,
+      operations: data.operations ?? [],
+      recommended_operation_id: data.recommended_operation_id,
+      profiles: data.profiles ?? [],
+      scope_suggestion: data.scope_suggestion,
+      scope_reason: data.scope_reason,
+      alternatives: data.alternatives ?? [],
+      ai_available: data.ai_available,
+    };
+  } catch (err) {
+    throw new Error(
+      formatApiError(err, {
+        timeout: "Structural analysis timed out.",
+        network: BACKEND_HINT,
+        fallback: "Failed to get structural advice.",
+      }),
+    );
+  } finally {
+    clear();
+  }
+}
+
+export async function fetchSketchAnalysis(body: {
+  projectElements: import("@/types/project").ProjectElementMm[];
+  startNode: import("@/types/sketch").EnrichedSnapNode;
+  endNode: import("@/types/sketch").EnrichedSnapNode;
+  intentOverride?: import("@/types/sketch").StructuralIntentKind | null;
+  siteContext?: SiteContext | null;
+  shedParams?: Record<string, unknown> | null;
+  xCoordsMm?: number[];
+  zCoordsMm?: number[];
+}): Promise<import("@/types/sketch").SketchAnalysisResult> {
+  const advise = await fetchStructuralAdvise({
+    trigger: "sketch",
+    ...body,
+  });
+  if (!advise.intent) {
+    throw new Error("No intent in structural advise response");
+  }
+  return {
+    intent: advise.intent,
+    profiles: advise.profiles,
+    message: advise.summary,
+    scope_suggestion: advise.scope_suggestion,
+    scope_reason: advise.scope_reason,
+    alternatives: advise.alternatives,
+    ai_available: advise.ai_available,
+    operations: advise.operations,
+    recommended_operation_id: advise.recommended_operation_id,
+    summary: advise.summary,
+  };
+}
+
+export async function postPlaceXBraceFromLeg(
+  projectElements: import("@/types/project").ProjectElementMm[],
+  start: { x: number; y: number; z: number },
+  end: { x: number; y: number; z: number },
+  options?: { profile?: string | null; assemblyId?: string | null },
+): Promise<ModelEditResponse> {
+  return postModelEdit("/api/model/place-x-brace-from-leg", {
+    project_elements: projectElements,
+    start_mm: start,
+    end_mm: end,
+    profile: options?.profile ?? null,
+    assembly_id: options?.assemblyId ?? null,
   });
 }

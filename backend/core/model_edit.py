@@ -22,6 +22,9 @@ _AXIS_SAFE_RE = re.compile(r"[^A-Za-z0-9]+")
 
 _BRACE_PAIR_RE = re.compile(r"^(?P<prefix>.+)-([ab])$", re.IGNORECASE)
 
+_ENDPOINT_ROUND_MM = 1.0
+_MIN_MEMBER_LENGTH_MM = 50.0
+
 
 def _brace_pair_prefix(element_id: str) -> str | None:
     match = _BRACE_PAIR_RE.match(element_id)
@@ -240,6 +243,81 @@ def _next_brace_index(elements: list[ProjectElementMm], assembly_id: str) -> int
     return count + 1
 
 
+def _next_sketch_member_index(
+    elements: list[ProjectElementMm],
+    assembly_id: str,
+    element_type: str,
+) -> int:
+    token = element_type.replace("_", "-")
+    count = sum(
+        1
+        for e in elements
+        if e.assembly_id == assembly_id and f"-sketch-{token}-" in e.id
+    )
+    return count + 1
+
+
+def _round_point(
+    point: tuple[float, float, float],
+    *,
+    step: float = _ENDPOINT_ROUND_MM,
+) -> tuple[float, float, float]:
+    return tuple(round(c / step) * step for c in point)
+
+
+def _span_key(
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    a = _round_point(start)
+    b = _round_point(end)
+    return tuple(sorted((a, b)))
+
+
+def _element_span_key(
+    element: ProjectElementMm,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:
+    nodes = element.nodes or {}
+    start = nodes.get("start") or nodes.get("bottom")
+    end = nodes.get("end") or nodes.get("top")
+    if not start or not end or len(start) < 3 or len(end) < 3:
+        return None
+    return _span_key(
+        (float(start[0]), float(start[1]), float(start[2])),
+        (float(end[0]), float(end[1]), float(end[2])),
+    )
+
+
+def _remove_members_at_span(
+    elements: list[ProjectElementMm],
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+) -> tuple[list[ProjectElementMm], list[str]]:
+    """Drop any member already occupying the same start/end nodes (any type)."""
+    key = _span_key(start, end)
+    removed: list[str] = []
+    out: list[ProjectElementMm] = []
+    for element in elements:
+        el_key = _element_span_key(element)
+        if el_key == key:
+            removed.append(element.id)
+        else:
+            out.append(element)
+    return out, removed
+
+
+def _insert_member_replace_by_span(
+    elements: list[ProjectElementMm],
+    new_el: ProjectElementMm,
+    *,
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+) -> tuple[list[ProjectElementMm], list[str]]:
+    out, removed = _remove_members_at_span(elements, start, end)
+    out.append(new_el)
+    return out, removed + [new_el.id]
+
+
 def _member_between_points(
     *,
     element_id: str,
@@ -269,6 +347,46 @@ def _member_between_points(
     return macro_member_to_project_element(macro)
 
 
+def place_member_between_points(
+    elements: list[ProjectElementMm],
+    *,
+    start_mm: tuple[float, float, float],
+    end_mm: tuple[float, float, float],
+    profile: str | None = None,
+    assembly_id: str | None = None,
+    element_type: str = "bracing",
+) -> tuple[list[ProjectElementMm], list[str]]:
+    ref = elements[0] if elements else None
+    aid = assembly_id or (ref.assembly_id if ref else None) or "shed_1"
+    defaults = {
+        "bracing": "L70x70x7",
+        "tie_beam": "IPE200",
+        "purlin": "C150x2",
+        "beam": "IPE200",
+    }
+    resolved_type = "tie_beam" if element_type == "beam" else element_type
+    prof = profile or defaults.get(element_type, defaults.get(resolved_type, "L70x70x7"))
+    if not has_profile(prof):
+        prof = "L50x50"
+    idx = _next_sketch_member_index(elements, aid, resolved_type)
+    token = resolved_type.replace("_", "-")
+    eid = f"{aid}-sketch-{token}-{idx}"
+    new_el = _member_between_points(
+        element_id=eid,
+        assembly_id=aid,
+        profile=prof,
+        start=start_mm,
+        end=end_mm,
+        element_type=resolved_type,
+    )
+    return _insert_member_replace_by_span(
+        elements,
+        new_el,
+        start=start_mm,
+        end=end_mm,
+    )
+
+
 def place_brace_leg(
     elements: list[ProjectElementMm],
     *,
@@ -277,21 +395,14 @@ def place_brace_leg(
     profile: str | None = None,
     assembly_id: str | None = None,
 ) -> tuple[list[ProjectElementMm], list[str]]:
-    ref = elements[0] if elements else None
-    aid = assembly_id or (ref.assembly_id if ref else None) or "shed_1"
-    prof = profile or "L70x70x7"
-    if not has_profile(prof):
-        prof = "L50x50"
-    idx = _next_brace_index(elements, aid)
-    eid = f"{aid}-brace-custom-{idx}-a"
-    new_el = _member_between_points(
-        element_id=eid,
-        assembly_id=aid,
-        profile=prof,
-        start=start_mm,
-        end=end_mm,
+    return place_member_between_points(
+        elements,
+        start_mm=start_mm,
+        end_mm=end_mm,
+        profile=profile,
+        assembly_id=assembly_id,
+        element_type="bracing",
     )
-    return [*elements, new_el], [eid]
 
 
 def place_bracing_cross(
@@ -324,10 +435,46 @@ def place_bracing_cross(
         start=start_b,
         end=end_b,
     )
-    return [*elements, leg_a, leg_b], [leg_a.id, leg_b.id]
+    out, changed_a = _insert_member_replace_by_span(
+        elements,
+        leg_a,
+        start=start_a,
+        end=end_a,
+    )
+    out, changed_b = _insert_member_replace_by_span(
+        out,
+        leg_b,
+        start=start_b,
+        end=end_b,
+    )
+    return out, list(dict.fromkeys(changed_a + changed_b))
 
 
-def _grid_axis_token(value: str) -> str:
+def place_x_brace_from_leg(
+    elements: list[ProjectElementMm],
+    *,
+    start_mm: tuple[float, float, float],
+    end_mm: tuple[float, float, float],
+    profile: str | None = None,
+    assembly_id: str | None = None,
+) -> tuple[list[ProjectElementMm], list[str]]:
+    from core.brace_geometry import infer_x_brace_corners
+
+    corners = infer_x_brace_corners(start_mm, end_mm, elements)
+    if corners is None:
+        raise ValueError(
+            "Could not infer X-brace corners from the sketched leg — try picking grid joints."
+        )
+    a, b, c, d = corners
+    return place_bracing_cross(
+        elements,
+        start_a=a,
+        end_a=b,
+        start_b=c,
+        end_b=d,
+        profile=profile,
+        assembly_id=assembly_id,
+    )
     """Encode grid axis for element ids (2+1/2 → 2p1p2)."""
     return _AXIS_SAFE_RE.sub("p", value.strip())
 
@@ -499,18 +646,19 @@ def place_grid_tie_beam(
         end_node=end_ref,
     )
     new_el = _member_to_element(member, assembly_id=aid, grid=engine)
-
-    replaced = False
-    out: list[ProjectElementMm] = []
-    for element in elements:
-        if element.id == eid:
-            out.append(new_el)
-            replaced = True
-        else:
-            out.append(element)
-    if not replaced:
-        out.append(new_el)
-    return out, [eid]
+    nodes = new_el.nodes or {}
+    start = nodes.get("start")
+    end = nodes.get("end")
+    if not start or not end:
+        raise ValueError("Tie beam nodes missing after placement")
+    start_mm = (float(start[0]), float(start[1]), float(start[2]))
+    end_mm = (float(end[0]), float(end[1]), float(end[2]))
+    return _insert_member_replace_by_span(
+        elements,
+        new_el,
+        start=start_mm,
+        end=end_mm,
+    )
 
 
 def collect_snap_nodes(

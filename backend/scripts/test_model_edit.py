@@ -6,6 +6,7 @@ from core.model_edit import (
     collect_snap_nodes,
     delete_members,
     place_brace_leg,
+    place_member_between_points,
     update_member_profiles,
 )
 from schemas.spatial_grid import GridNodeReference, StructuralMember
@@ -68,5 +69,51 @@ def test_update_profile_and_place():
     print("test_model_edit OK")
 
 
+def _tie_macro(eid: str, start, end):
+    dummy = GridNodeReference(x_axis="A", z_axis="1", elevation="ground")
+    member = StructuralMember(
+        id=eid,
+        element_type="tie_beam",
+        profile="IPE200",
+        start_node=dummy,
+        end_node=dummy,
+    )
+    macro = member_from_grid_nodes(
+        member,
+        assembly_id="shed_1",
+        start=start,
+        end=end,
+        grid=None,
+    )
+    assert macro is not None
+    return macro
+
+
+def test_replace_member_at_same_span():
+    start = (12000.0, 4000.0, 5714.0)
+    end = (12000.0, 4000.0, 11428.0)
+    macros = [
+        _tie_macro("shed_1-bctie-0", start, end),
+    ]
+    elements = macro_members_to_project_elements(macros)
+    assert len(elements) == 1
+    assert elements[0].element_type == "tie_beam"
+
+    replaced, changed = place_member_between_points(
+        elements,
+        start_mm=start,
+        end_mm=end,
+        profile="IPE200",
+        element_type="tie_beam",
+    )
+    assert len(replaced) == 1
+    assert replaced[0].id != "shed_1-bctie-0"
+    assert replaced[0].element_type == "tie_beam"
+    assert replaced[0].profile_name == "IPE200"
+    assert "shed_1-bctie-0" not in {e.id for e in replaced}
+    print("test_replace_member_at_same_span OK")
+
+
 if __name__ == "__main__":
     test_update_profile_and_place()
+    test_replace_member_at_same_span()

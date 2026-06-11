@@ -7,6 +7,12 @@ $backendDir = Join-Path $root "backend"
 $logDir = Join-Path $root ".dev-logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
+# Avoid stale uvicorn workers serving old code on :8000
+Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match 'uvicorn main:app.*--port 8000' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Seconds 1
+
 $backendArgs = @(
     "-m", "uvicorn", "main:app",
     "--reload", "--host", "127.0.0.1", "--port", "8000",

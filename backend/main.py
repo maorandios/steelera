@@ -12,6 +12,8 @@ from routers.export import router as export_router
 from routers.macro import router as macro_router
 from routers.model_edit import router as model_edit_router
 from routers.site import router as site_router
+from routers.sketch import router as sketch_router
+from routers.structural import router as structural_router
 from schemas.chat import ChatRequest, ChatResponse, ChatResponseMessage
 
 app = FastAPI(title="Steelera API", version="0.3.0-spatial")
@@ -19,6 +21,8 @@ app.include_router(macro_router)
 app.include_router(model_edit_router)
 app.include_router(export_router)
 app.include_router(site_router)
+app.include_router(sketch_router)
+app.include_router(structural_router)
 
 app.add_middleware(
     CORSMiddleware,
