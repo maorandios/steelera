@@ -13,8 +13,12 @@ export const COLUMN_SCOPE_OPTIONS: { scope: ColumnScopeChoice; label: string }[]
     { scope: "pick_members", label: "Pick members" },
   ];
 
-function isColumn(element: ProjectElementMm): boolean {
-  return (element.element_type ?? "") === "column";
+export function isColumnElement(
+  element: ProjectElementMm | null | undefined,
+): boolean {
+  if (!element) return false;
+  if ((element.element_type ?? "") === "column") return true;
+  return /-col-/i.test(element.id);
 }
 
 export function resolveColumnTargetIds(
@@ -23,14 +27,14 @@ export function resolveColumnTargetIds(
   scope: ColumnEditScope,
 ): string[] {
   const ref = elements.find((e) => e.id === referenceElementId);
-  if (!ref || !isColumn(ref)) return [];
+  if (!ref || !isColumnElement(ref)) return [];
 
   if (scope === "selection") {
     return [referenceElementId];
   }
 
   if (scope === "element_type") {
-    return elements.filter(isColumn).map((e) => e.id);
+    return elements.filter(isColumnElement).map((e) => e.id);
   }
 
   const frameZ = parseMemberId(referenceElementId).frameZ;
@@ -40,7 +44,7 @@ export function resolveColumnTargetIds(
 
   return elements
     .filter((e) => {
-      if (!isColumn(e)) return false;
+      if (!isColumnElement(e)) return false;
       return parseMemberId(e.id).frameZ === frameZ;
     })
     .map((e) => e.id);

@@ -4,6 +4,7 @@ import { create } from "zustand";
 
 import {
   geocodeLocation,
+  fetchGroundPlacementNodes,
   fetchSnapNodes,
   postChat,
   postDeleteMembers,
@@ -32,6 +33,7 @@ import {
 import {
   resolveColumnTargetIds,
   type ColumnEditScope,
+  isColumnElement,
 } from "@/lib/column-member-scope";
 import { resolveSelectionContext } from "@/lib/selection-context";
 import { selectionContextToPayload } from "@/lib/selection-context-payload";
@@ -117,7 +119,7 @@ import type {
   SnapNode,
   ViewportMode,
 } from "@/types/interaction";
-import type { GridSelectionContext } from "@/types/grid-selection";
+import type { ColumnPickMode, GridSelectionContext, GroundPlacementNode } from "@/types/grid-selection";
 import type { TrussType } from "@/types/shed-config";
 import { emptyProjectState, normalizeElement } from "@/types/project";
 
@@ -243,6 +245,8 @@ export type MemberPickMode = {
   rotation?: ElementRotation;
   alignment?: ElementAlignment;
   updatedCount: number;
+  /** Delete pick: columns staged for batch removal. */
+  pickedIds?: string[];
 };
 
 export type MemberPickStart =
@@ -268,6 +272,8 @@ interface ProjectStore {
   selectedElementId: string | null;
   selectionContext: SelectionContext | null;
   gridSelectionContext: GridSelectionContext | null;
+  groundPlacementNodes: GroundPlacementNode[];
+  columnPickMode: ColumnPickMode | null;
   viewportMode: ViewportMode;
   placementIntent: PlacementIntent | null;
   placementProfile: string | null;
@@ -281,6 +287,7 @@ interface ProjectStore {
   memberPickMode: MemberPickMode | null;
   startMemberPickMode: (start: MemberPickStart) => void;
   applyMemberPick: (elementId: string) => Promise<void>;
+  commitDeleteMemberPick: () => Promise<void>;
   finishMemberPickMode: () => void;
   cancelMemberPickMode: () => void;
   /** @deprecated use startMemberPickMode */
@@ -338,6 +345,14 @@ interface ProjectStore {
     profile?: string,
     elevation?: string,
   ) => Promise<void>;
+  startColumnPickMode: (options?: {
+    profile?: string;
+    tieProfile?: string;
+    addTieInBay?: boolean;
+    extraWallOffsetsMm?: number[];
+  }) => Promise<void>;
+  pickGroundPlacementNode: (node: GroundPlacementNode) => Promise<void>;
+  cancelColumnPickMode: () => void;
   startNodePlacement: (
     intent: Exclude<PlacementIntent, "insert_frame">,
     options?: { profile?: string },
@@ -376,6 +391,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   selectedElementId: null,
   selectionContext: null,
   gridSelectionContext: null,
+  groundPlacementNodes: [],
+  columnPickMode: null,
   viewportMode: "inspect",
   placementIntent: null,
   placementProfile: null,
@@ -389,15 +406,24 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   memberPickMode: null,
 
   startMemberPickMode: (start) => {
+    const pickHint =
+      start.intent === "delete"
+        ? "Click columns in the viewport to pick them, then click Remove."
+        : "Click columns in the viewport. Tap Done when finished.";
+    const keepSelection = start.intent === "delete";
     set({
       viewportMode: "pick_members_profile",
-      memberPickMode: { ...start, updatedCount: 0 },
-      selectedElementId: null,
-      selectionContext: null,
+      memberPickMode: {
+        ...start,
+        updatedCount: 0,
+        pickedIds: start.intent === "delete" ? [] : undefined,
+      },
+      selectedElementId: keepSelection ? get().selectedElementId : null,
+      selectionContext: keepSelection ? get().selectionContext : null,
       gridSelectionContext: null,
       placementIntent: null,
       pickedNodes: [],
-      statuses: ["Click columns in the viewport. Tap Done when finished."],
+      statuses: [pickHint],
     });
   },
 
@@ -409,7 +435,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const pick = get().memberPickMode;
     if (!pick) return;
     const element = get().projectElements.find((e) => e.id === elementId);
-    if (!element || element.element_type !== "column") return;
+    if (!element || !isColumnElement(element)) return;
 
     try {
       if (pick.intent === "profile" && pick.profile) {
@@ -465,26 +491,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       }
 
       if (pick.intent === "delete") {
-        set({ statuses: ["Removing column…"] });
-        const result = await postDeleteMembers(
-          get().projectElements,
-          elementId,
-          "selection",
-        );
-        const elements = applyElementsFromApi(
-          result.projectElements,
-          get().projectElements,
-        );
+        const picked = pick.pickedIds ?? [];
+        const next = picked.includes(elementId)
+          ? picked.filter((id) => id !== elementId)
+          : [...picked, elementId];
         set({
-          projectElements: elements,
           memberPickMode: {
             ...pick,
-            updatedCount: pick.updatedCount + 1,
+            pickedIds: next,
+            updatedCount: next.length,
           },
-          selectedElementId: null,
-          selectionContext: null,
-          statuses: [],
+          statuses:
+            next.length > 0
+              ? [
+                  `${next.length} column${next.length === 1 ? "" : "s"} picked. Click Remove to delete them all.`,
+                ]
+              : ["Click columns in the viewport to pick them."],
+          error: null,
         });
+        return;
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Update failed";
@@ -492,9 +517,51 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
+  commitDeleteMemberPick: async () => {
+    const pick = get().memberPickMode;
+    if (!pick || pick.intent !== "delete") return;
+    const ids = pick.pickedIds ?? [];
+    if (ids.length === 0) return;
+
+    set({
+      isLoading: true,
+      error: null,
+      statuses: [`Removing ${ids.length} column(s)…`],
+    });
+    try {
+      const result = await postDeleteMembers(
+        get().projectElements,
+        ids[0],
+        "selection",
+        ids,
+      );
+      const elements = applyElementsFromApi(
+        result.projectElements,
+        get().projectElements,
+      );
+      set({
+        projectElements: elements,
+        viewportMode: "inspect",
+        memberPickMode: null,
+        selectedElementId: null,
+        selectionContext: null,
+        isLoading: false,
+        statuses: [result.message],
+        error: null,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Remove failed";
+      set({ isLoading: false, statuses: [], error: message });
+    }
+  },
+
   finishMemberPickMode: () => {
     const pick = get().memberPickMode;
     if (!pick) return;
+    if (pick.intent === "delete") {
+      get().cancelMemberPickMode();
+      return;
+    }
     const { updatedCount } = pick;
     set({
       viewportMode: "inspect",
@@ -1283,6 +1350,142 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
+  startColumnPickMode: async (options) => {
+    const gridCtx = get().gridSelectionContext;
+    if (!gridCtx) {
+      set({ error: "Select a grid bay first." });
+      return;
+    }
+    const params =
+      get().shedAssemblyParams ??
+      inferShedParamsFromElements(get().projectElements);
+    if (!params) {
+      set({ error: "Generate a shed before placing columns." });
+      return;
+    }
+    const profile =
+      options?.profile?.trim().toUpperCase() ||
+      gridCtx.defaultColumnProfile;
+    const tieProfile =
+      options?.tieProfile?.trim().toUpperCase() ||
+      gridCtx.defaultTieProfile;
+    const pickMode: ColumnPickMode = {
+      profile,
+      tieProfile,
+      addTieInBay: options?.addTieInBay ?? false,
+      bayZStart: gridCtx.zStart,
+      bayZEnd: gridCtx.zEnd,
+    };
+    set({
+      viewportMode: "pick_column_nodes",
+      columnPickMode: pickMode,
+      groundPlacementNodes: [],
+      error: null,
+      statuses: ["Loading placement dots…"],
+    });
+    try {
+      const zLabels = zLabelsForGrid(get().structuralGrid);
+      const trussed = inferTrussedZLabels(
+        get().projectElements,
+        zLabels,
+        params.use_truss,
+      );
+      const nodes = await fetchGroundPlacementNodes(
+        {
+          grid: shedParamsToGridPlacement(params),
+          trussed_z_labels: trussed,
+          truss_type: params.truss_type ?? "pratt",
+          bay_z_start: gridCtx.zStart,
+          bay_z_end: gridCtx.zEnd,
+          extra_wall_offsets_mm: options?.extraWallOffsetsMm,
+        },
+        get().projectElements,
+      );
+      set({
+        groundPlacementNodes: nodes,
+        statuses: [
+          `Click a green dot to place ${profile}. Gold = wall offset (e.g. A + 1200 mm). Teal = truss panel.`,
+        ],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not load placement dots";
+      set({
+        viewportMode: "inspect",
+        columnPickMode: null,
+        groundPlacementNodes: [],
+        statuses: [],
+        error: message,
+      });
+    }
+  },
+
+  pickGroundPlacementNode: async (node) => {
+    const pick = get().columnPickMode;
+    const gridCtx = get().gridSelectionContext;
+    if (!pick || get().viewportMode !== "pick_column_nodes") return;
+    const params =
+      get().shedAssemblyParams ??
+      inferShedParamsFromElements(get().projectElements);
+    if (!params) return;
+
+    const zLabels = zLabelsForGrid(get().structuralGrid);
+    const trussed = inferTrussedZLabels(
+      get().projectElements,
+      zLabels,
+      params.use_truss,
+    );
+    const connectTo =
+      node.connect_to === "truss_bc"
+        ? "truss_bc"
+        : node.connect_to === "eave"
+          ? "eave"
+          : "auto";
+
+    set({ isLoading: true, error: null, statuses: ["Placing column…"] });
+    try {
+      const result = await postPlaceGridColumn(get().projectElements, {
+        x_axis: node.x_axis,
+        z_axis: node.z_axis,
+        profile: pick.profile,
+        offset_mm: node.offset_mm,
+        connect_to: connectTo,
+        truss_type: params.truss_type ?? "pratt",
+        add_tie_in_bay: pick.addTieInBay,
+        tie_profile: pick.tieProfile,
+        bay_z_start: gridCtx?.zStart ?? pick.bayZStart,
+        bay_z_end: gridCtx?.zEnd ?? pick.bayZEnd,
+        grid: shedParamsToGridPlacement(params),
+        trussed_z_labels: trussed,
+        assembly_id: assemblyIdFromElements(get().projectElements),
+      });
+      const elements = applyElementsFromApi(
+        result.projectElements,
+        get().projectElements,
+      );
+      set({
+        projectElements: elements,
+        isLoading: false,
+        viewportMode: "inspect",
+        columnPickMode: null,
+        groundPlacementNodes: [],
+        statuses: [result.message],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to place column";
+      set({ isLoading: false, statuses: [], error: message });
+    }
+  },
+
+  cancelColumnPickMode: () =>
+    set({
+      viewportMode: "inspect",
+      columnPickMode: null,
+      groundPlacementNodes: [],
+      statuses: [],
+    }),
+
   selectAssembly: (assemblyId, focusElementId = null) => {
     const { structuralTopology, projectElements } = get();
     const fromTopology =
@@ -1317,6 +1520,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       viewportMode: "inspect",
       placementIntent: null,
       pickedNodes: [],
+      columnPickMode: null,
+      groundPlacementNodes: [],
     }),
 
   startFramePlacement: () => {
@@ -1844,18 +2049,33 @@ export function useSelectedElement(): ProjectElementMm | null {
 
 export function useIsElementHighlighted(elementId: string): boolean {
   const selectedElementId = useProjectStore((state) => state.selectedElementId);
+  const memberPickMode = useProjectStore((state) => state.memberPickMode);
+  if (memberPickMode?.intent === "delete") {
+    return memberPickMode.pickedIds?.includes(elementId) ?? false;
+  }
   return selectedElementId === elementId;
 }
 
 export function useViewportSchematicMode(): boolean {
   const mode = useProjectStore((state) => state.viewportMode);
-  return mode === "pick_nodes" || mode === "pick_grid";
+  return mode === "pick_nodes" || mode === "pick_grid" || mode === "pick_column_nodes";
 }
 
 export function useElementGhostOpacity(elementId: string): number {
-  const schematic = useProjectStore((state) => state.viewportMode === "pick_nodes");
-  const selected = useProjectStore((state) => state.selectedElementId);
+  const viewportMode = useProjectStore((state) => state.viewportMode);
+  const memberPickMode = useProjectStore((state) => state.memberPickMode);
+  const selectedElementId = useProjectStore((state) => state.selectedElementId);
+  const element = useProjectStore((state) =>
+    state.projectElements.find((el) => el.id === elementId),
+  );
+  const schematic =
+    viewportMode === "pick_nodes" || viewportMode === "pick_column_nodes";
+  const memberPickActive =
+    viewportMode === "pick_members_profile" && memberPickMode !== null;
+  if (memberPickActive) {
+    return isColumnElement(element) ? 1 : 0.12;
+  }
   if (!schematic) return 1;
-  if (elementId === selected) return 0.85;
+  if (elementId === selectedElementId) return 0.85;
   return 0.1;
 }

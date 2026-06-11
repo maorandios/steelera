@@ -42,6 +42,19 @@ export function viewportPickTargetFromObject(
   return null;
 }
 
+/** Closest structural member hit — ignores grid bays and background planes. */
+export function viewportPickElementFromHits(
+  hits: THREE.Intersection[],
+): { type: typeof VIEWPORT_PICK_ROLE.ELEMENT; elementId: string } | null {
+  for (const hit of hits) {
+    const target = viewportPickTargetFromObject(hit.object);
+    if (target?.type === VIEWPORT_PICK_ROLE.ELEMENT) {
+      return target;
+    }
+  }
+  return null;
+}
+
 export function viewportPickTargetFromHits(
   hits: THREE.Intersection[],
 ): ViewportPickTarget | null {

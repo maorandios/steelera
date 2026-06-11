@@ -26,3 +26,24 @@ export type GridPlacementContext = {
   roof_style: string;
   mono_high_side: string;
 };
+
+export type GroundPlacementNode = {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  x_axis: string;
+  z_axis: string;
+  offset_mm: Record<string, number>;
+  label: string;
+  kind: string;
+  connect_to: "auto" | "truss_bc" | "eave" | string;
+};
+
+export type ColumnPickMode = {
+  profile: string;
+  tieProfile: string;
+  addTieInBay: boolean;
+  bayZStart: string;
+  bayZEnd: string;
+};

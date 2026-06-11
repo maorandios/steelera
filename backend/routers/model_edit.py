@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from core.ground_placement import collect_ground_placement_nodes
 from core.model_edit import (
     collect_snap_nodes,
     delete_members,
@@ -15,6 +16,7 @@ from schemas.model_edit import (
     ModelEditResponse,
     PlaceBraceLegRequest,
     PlaceBracingCrossRequest,
+    GroundPlacementNodesRequest,
     PlaceGridColumnRequest,
     PlaceGridTieBeamRequest,
     UpdateProfileRequest,
@@ -44,6 +46,10 @@ class PlaceGridColumnBody(PlaceGridColumnRequest, ModelEditBody):
 
 
 class PlaceGridTieBeamBody(PlaceGridTieBeamRequest, ModelEditBody):
+    pass
+
+
+class GroundPlacementNodesBody(GroundPlacementNodesRequest, ModelEditBody):
     pass
 
 
@@ -136,6 +142,13 @@ async def api_place_grid_column(body: PlaceGridColumnBody) -> ModelEditResponse:
             grid=body.grid,
             trussed_z_labels=body.trussed_z_labels,
             assembly_id=body.assembly_id,
+            offset_mm=body.offset_mm,
+            connect_to=body.connect_to,
+            truss_type=body.truss_type,
+            add_tie_in_bay=body.add_tie_in_bay,
+            tie_profile=body.tie_profile,
+            bay_z_start=body.bay_z_start,
+            bay_z_end=body.bay_z_end,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -169,6 +182,35 @@ async def api_place_grid_tie_beam(body: PlaceGridTieBeamBody) -> ModelEditRespon
             f"({body.z_start} → {body.z_end}, {body.elevation})."
         ),
     )
+
+
+@router.post("/ground-placement-nodes")
+async def api_ground_placement_nodes(body: GroundPlacementNodesBody) -> dict:
+    nodes = collect_ground_placement_nodes(
+        body.grid,
+        trussed_z_labels=body.trussed_z_labels,
+        truss_type=body.truss_type,
+        bay_z_start=body.bay_z_start,
+        bay_z_end=body.bay_z_end,
+        extra_wall_offsets_mm=body.extra_wall_offsets_mm or None,
+    )
+    return {
+        "nodes": [
+            {
+                "id": n.id,
+                "x": n.x,
+                "y": n.y,
+                "z": n.z,
+                "x_axis": n.x_axis,
+                "z_axis": n.z_axis,
+                "offset_mm": n.offset_mm,
+                "label": n.label,
+                "kind": n.kind,
+                "connect_to": n.connect_to,
+            }
+            for n in nodes
+        ]
+    }
 
 
 @router.post("/snap-nodes")

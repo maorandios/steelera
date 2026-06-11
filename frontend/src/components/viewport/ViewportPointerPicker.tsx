@@ -6,8 +6,10 @@ import * as THREE from "three";
 
 import {
   VIEWPORT_PICK_ROLE,
+  viewportPickElementFromHits,
   viewportPickTargetFromHits,
 } from "@/lib/viewport-pick";
+import { isColumnElement } from "@/lib/column-member-scope";
 import { useProjectStore } from "@/store/project-store";
 
 const PICK_MOVE_THRESHOLD_PX = 10;
@@ -23,6 +25,7 @@ export function ViewportPointerPicker() {
   const selectElement = useProjectStore((state) => state.selectElement);
   const selectGridBay = useProjectStore((state) => state.selectGridBay);
   const applyMemberPick = useProjectStore((state) => state.applyMemberPick);
+  const memberPickMode = useProjectStore((state) => state.memberPickMode);
   const clearSelection = useProjectStore((state) => state.clearSelection);
   const pickGridFrameLine = useProjectStore((state) => state.pickGridFrameLine);
   const raycaster = useMemo(() => {
@@ -36,6 +39,17 @@ export function ViewportPointerPicker() {
     y: number;
     pendingPick: boolean;
   } | null>(null);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    if (memberPickMode) {
+      canvas.style.cursor = "crosshair";
+      return () => {
+        canvas.style.cursor = "";
+      };
+    }
+    return undefined;
+  }, [gl, memberPickMode]);
 
   useEffect(() => {
     const raycastHits = (clientX: number, clientY: number) => {
@@ -87,6 +101,10 @@ export function ViewportPointerPicker() {
         return;
       }
 
+      if (mode === "pick_column_nodes") {
+        return;
+      }
+
       const hits = raycastHits(down.x, down.y);
       const target = viewportPickTargetFromHits(hits);
 
@@ -98,12 +116,13 @@ export function ViewportPointerPicker() {
       }
 
       if (mode === "pick_members_profile") {
-        if (target?.type === VIEWPORT_PICK_ROLE.ELEMENT) {
+        const elementHit = viewportPickElementFromHits(hits);
+        if (elementHit) {
           const el = useProjectStore
             .getState()
-            .projectElements.find((e) => e.id === target.elementId);
-          if (el?.element_type === "column") {
-            void applyMemberPick(target.elementId);
+            .projectElements.find((e) => e.id === elementHit.elementId);
+          if (isColumnElement(el)) {
+            void applyMemberPick(elementHit.elementId);
           }
         }
         return;
@@ -144,7 +163,7 @@ export function ViewportPointerPicker() {
     scene,
     selectElement,
     selectGridBay,
-    viewportMode,
+    memberPickMode,
   ]);
 
   return null;

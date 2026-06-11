@@ -348,6 +348,49 @@ export async function fetchSnapNodes(
   }
 }
 
+export async function fetchGroundPlacementNodes(
+  body: {
+    grid: import("@/types/grid-selection").GridPlacementContext;
+    trussed_z_labels?: string[];
+    truss_type?: string;
+    bay_z_start?: string | null;
+    bay_z_end?: string | null;
+    extra_wall_offsets_mm?: number[];
+  },
+  projectElements: import("@/types/project").ProjectElementMm[],
+): Promise<import("@/types/grid-selection").GroundPlacementNode[]> {
+  const { signal, clear } = abortAfterMs(MODEL_EDIT_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${apiBaseUrl()}/api/model/ground-placement-nodes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({
+        project_elements: projectElements,
+        ...body,
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || "Failed to load placement nodes");
+    }
+    const data = (await res.json()) as {
+      nodes: import("@/types/grid-selection").GroundPlacementNode[];
+    };
+    return data.nodes ?? [];
+  } catch (err) {
+    throw new Error(
+      formatApiError(err, {
+        timeout: "Loading placement nodes timed out.",
+        network: BACKEND_HINT,
+        fallback: "Failed to load placement nodes.",
+      }),
+    );
+  } finally {
+    clear();
+  }
+}
+
 export async function postUpdateProfile(
   projectElements: import("@/types/project").ProjectElementMm[],
   profile: string,
@@ -387,10 +430,21 @@ export async function postPlaceGridColumn(
     grid: import("@/types/grid-selection").GridPlacementContext;
     trussed_z_labels?: string[];
     assembly_id?: string | null;
+    offset_mm?: Record<string, number>;
+    connect_to?: "auto" | "truss_bc" | "eave";
+    truss_type?: string;
+    add_tie_in_bay?: boolean;
+    tie_profile?: string | null;
+    bay_z_start?: string | null;
+    bay_z_end?: string | null;
   },
 ): Promise<ModelEditResponse> {
   return postModelEdit("/api/model/place-grid-column", {
     project_elements: projectElements,
+    offset_mm: {},
+    connect_to: "auto",
+    truss_type: "pratt",
+    add_tie_in_bay: false,
     ...body,
   });
 }

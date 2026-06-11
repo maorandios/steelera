@@ -29,10 +29,14 @@ export function Viewport3D() {
   const projectElements = useProjectStore((state) => state.projectElements);
   const viewportMode = useProjectStore((s) => s.viewportMode);
   const memberPickMode = useProjectStore((s) => s.memberPickMode);
+  const columnPickMode = useProjectStore((s) => s.columnPickMode);
+  const groundPlacementNodes = useProjectStore((s) => s.groundPlacementNodes);
   const placementIntent = useProjectStore((s) => s.placementIntent);
   const pickedNodes = useProjectStore((s) => s.pickedNodes);
   const cancelNodePlacement = useProjectStore((s) => s.cancelNodePlacement);
   const cancelMemberPickMode = useProjectStore((s) => s.cancelMemberPickMode);
+  const finishMemberPickMode = useProjectStore((s) => s.finishMemberPickMode);
+  const cancelColumnPickMode = useProjectStore((s) => s.cancelColumnPickMode);
   const count = projectElements.length;
   const pickLabel =
     placementIntent === "full_x"
@@ -65,7 +69,9 @@ export function Viewport3D() {
             }`
           : "3D viewport — awaiting structure"}
       </div>
-      {viewportMode === "pick_members_profile" && memberPickMode ? (
+      {viewportMode === "pick_members_profile" &&
+      memberPickMode &&
+      memberPickMode.intent !== "delete" ? (
         <div className="pointer-events-auto absolute inset-x-3 top-12 z-10 flex items-center justify-between gap-2 rounded-md border border-violet-200 bg-violet-50/95 px-3 py-2 text-xs text-violet-900 shadow-sm backdrop-blur-sm">
           <span>
             Pick columns —{" "}
@@ -76,10 +82,35 @@ export function Viewport3D() {
               ? ` (${memberPickMode.updatedCount} done)`
               : ""}
           </span>
+          <div className="flex shrink-0 gap-1.5">
+            <button
+              type="button"
+              className="rounded-md bg-violet-600 px-2 py-1 text-[11px] font-medium text-white shadow-sm"
+              onClick={finishMemberPickMode}
+            >
+              Done
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm"
+              onClick={cancelMemberPickMode}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {viewportMode === "pick_column_nodes" && columnPickMode ? (
+        <div className="pointer-events-auto absolute inset-x-3 top-12 z-10 flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50/95 px-3 py-2 text-xs text-emerald-900 shadow-sm backdrop-blur-sm">
+          <span>
+            Place column — click a dot ({groundPlacementNodes.length} points).{" "}
+            {columnPickMode.profile}
+            {columnPickMode.addTieInBay ? " + tie beam" : ""}
+          </span>
           <button
             type="button"
             className="shrink-0 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm"
-            onClick={cancelMemberPickMode}
+            onClick={cancelColumnPickMode}
           >
             Cancel
           </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
@@ -96,24 +96,30 @@ export function ColumnSelectionPanel({ context }: ColumnSelectionPanelProps) {
     element,
     projectElements,
     busy,
+    memberPickMode,
     clearSelection,
     applyColumnProfile,
     applyColumnRotation,
     applyColumnAlignment,
     deleteColumnsScoped,
     startMemberPickMode,
+    commitDeleteMemberPick,
+    cancelMemberPickMode,
   } = useProjectStore(
     useShallow((s) => ({
       element:
         s.projectElements.find((e) => e.id === context.elementId) ?? null,
       projectElements: s.projectElements,
       busy: s.isLoading || s.isMacroLoading,
+      memberPickMode: s.memberPickMode,
       clearSelection: s.clearSelection,
       applyColumnProfile: s.applyColumnProfile,
       applyColumnRotation: s.applyColumnRotation,
       applyColumnAlignment: s.applyColumnAlignment,
       deleteColumnsScoped: s.deleteColumnsScoped,
       startMemberPickMode: s.startMemberPickMode,
+      commitDeleteMemberPick: s.commitDeleteMemberPick,
+      cancelMemberPickMode: s.cancelMemberPickMode,
     })),
   );
 
@@ -131,13 +137,50 @@ export function ColumnSelectionPanel({ context }: ColumnSelectionPanelProps) {
     );
   }, [projectElements, context.elementId, scope]);
 
+  const deletePickActive =
+    memberPickMode?.intent === "delete" && scope === "pick_members";
+  const pickedCount = memberPickMode?.pickedIds?.length ?? 0;
+
+  useEffect(() => {
+    if (
+      openSection === "remove" &&
+      scope === "pick_members" &&
+      memberPickMode?.intent !== "delete"
+    ) {
+      startMemberPickMode({ intent: "delete" });
+    }
+  }, [
+    openSection,
+    scope,
+    memberPickMode?.intent,
+    startMemberPickMode,
+  ]);
+
   if (!element) {
     return null;
   }
 
   const toggleSection = (section: PanelSection) => {
+    if (openSection === "remove" && section !== "remove" && deletePickActive) {
+      cancelMemberPickMode();
+    }
     setOpenSection((prev) => (prev === section ? null : section));
     setRemoveConfirmed(false);
+  };
+
+  const handleScopeChange = (nextScope: ColumnScopeChoice) => {
+    if (
+      scope === "pick_members" &&
+      nextScope !== "pick_members" &&
+      memberPickMode?.intent === "delete"
+    ) {
+      cancelMemberPickMode();
+    }
+    setScope(nextScope);
+    setRemoveConfirmed(false);
+    if (nextScope === "pick_members" && openSection === "remove") {
+      startMemberPickMode({ intent: "delete" });
+    }
   };
 
   const applyProfile = async () => {
@@ -352,18 +395,52 @@ export function ColumnSelectionPanel({ context }: ColumnSelectionPanelProps) {
       />
       {openSection === "remove" ? (
         <div className="border-b border-border/60 bg-background p-3">
-          <ScopePicker value={scope} onChange={setScope} />
-          {scope !== "pick_members" && removeConfirmed ? (
+          <ScopePicker value={scope} onChange={handleScopeChange} />
+          {scope === "pick_members" ? (
+            <div className="mb-3 space-y-2">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Click columns in the viewport to pick them (highlighted in
+                orange). Click again to unpick. Then remove all picked columns
+                at once.
+              </p>
+              <p className="text-xs font-medium text-foreground">
+                {pickedCount === 0
+                  ? "No columns picked yet."
+                  : `${pickedCount} column${pickedCount === 1 ? "" : "s"} picked.`}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                className="w-full bg-red-600 text-white hover:bg-red-700"
+                disabled={busy || pickedCount === 0}
+                onClick={() => void commitDeleteMemberPick()}
+              >
+                Remove {pickedCount > 0 ? `${pickedCount} ` : ""}
+                column{pickedCount === 1 ? "" : "s"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                disabled={busy}
+                onClick={cancelMemberPickMode}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : removeConfirmed ? (
             <p className="mb-2 text-xs leading-relaxed text-red-700">
               Delete {removeCount} column{removeCount === 1 ? "" : "s"}? This
               cannot be undone.
             </p>
-          ) : scope !== "pick_members" ? (
+          ) : (
             <p className="mb-2 text-xs text-muted-foreground">
               {removeCount} column{removeCount === 1 ? "" : "s"} will be
               removed.
             </p>
-          ) : null}
+          )}
+          {scope !== "pick_members" ? (
           <Button
             type="button"
             size="sm"
@@ -371,13 +448,10 @@ export function ColumnSelectionPanel({ context }: ColumnSelectionPanelProps) {
             disabled={busy}
             onClick={() => void handleRemove()}
           >
-            {scope === "pick_members"
-              ? "Pick in viewport to remove"
-              : removeConfirmed
-                ? "Confirm delete"
-                : "Delete"}
+            {removeConfirmed ? "Confirm delete" : "Delete"}
           </Button>
-          {removeConfirmed ? (
+          ) : null}
+          {scope !== "pick_members" && removeConfirmed ? (
             <Button
               type="button"
               variant="ghost"

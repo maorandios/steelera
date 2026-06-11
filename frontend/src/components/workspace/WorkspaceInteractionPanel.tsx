@@ -50,8 +50,12 @@ export function WorkspaceInteractionPanel() {
 
   const inSpecialMode =
     viewportMode !== "inspect" || memberPickMode !== null;
+  const deletePickActive =
+    memberPickMode?.intent === "delete" && viewportMode === "pick_members_profile";
   const isColumn =
-    selectionContext?.elementType === "column" && selected && !memberPickMode;
+    selectionContext?.elementType === "column" &&
+    (selected || deletePickActive) &&
+    (!memberPickMode || deletePickActive);
   const showGridSelection =
     Boolean(gridSelectionContext) && !memberPickMode && !inSpecialMode;
   const showGenericSelection =
@@ -83,7 +87,9 @@ export function WorkspaceInteractionPanel() {
         className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
       >
         <div className="flex flex-col gap-3 p-4">
-          {memberPickMode ? <MemberPickBanner /> : null}
+          {memberPickMode && memberPickMode.intent !== "delete" ? (
+            <MemberPickBanner />
+          ) : null}
 
           {showGridSelection && gridSelectionContext ? (
             <GridSelectionPanel

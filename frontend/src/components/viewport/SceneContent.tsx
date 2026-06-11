@@ -3,6 +3,7 @@
 import { Environment, PerspectiveCamera } from "@react-three/drei";
 import { useMemo } from "react";
 
+import { GroundPlacementOverlay } from "@/components/viewport/GroundPlacementOverlay";
 import { SteelMeshMaterial } from "@/components/viewport/SteelMeshMaterial";
 import { StructuralGrid } from "@/components/viewport/StructuralGrid";
 import { SchematicOverlay } from "@/components/viewport/SchematicOverlay";
@@ -94,6 +95,7 @@ export function SceneContent({ projectElements }: SceneContentProps) {
         />
       ))}
       <SchematicOverlay projectElements={renderableElements} />
+      <GroundPlacementOverlay />
       {renderableElements.length === 0 && (
         <mesh position={[0, 0, 0]}>
           <boxGeometry args={[1, 0.05, 1]} />

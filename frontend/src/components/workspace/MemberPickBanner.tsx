@@ -25,10 +25,14 @@ export function MemberPickBanner() {
         Pick columns · {actionLabel}
       </p>
       <p className="mt-1 text-xs leading-relaxed text-violet-800/90">
-        Click columns in the viewport.
+        {pick.intent === "delete"
+          ? "Each click removes one column. Done only exits pick mode."
+          : "Click columns in the viewport."}
         {pick.updatedCount > 0
-          ? ` ${pick.updatedCount} updated so far.`
-          : " None yet."}
+          ? ` ${pick.updatedCount} ${pick.intent === "delete" ? "removed" : "updated"} so far.`
+          : pick.intent === "delete"
+            ? " None removed yet."
+            : " None yet."}
       </p>
       <div className="mt-2 flex gap-2">
         <Button

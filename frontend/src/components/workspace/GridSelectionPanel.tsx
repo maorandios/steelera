@@ -46,7 +46,7 @@ function ListRow({
   );
 }
 
-type PanelSection = "add_column" | "add_tie" | null;
+type PanelSection = "add_column" | "add_tie" | "pick_plan" | null;
 
 export function GridSelectionPanel({ context }: { context: GridSelectionContext }) {
   const {
@@ -55,6 +55,8 @@ export function GridSelectionPanel({ context }: { context: GridSelectionContext 
     clearSelection,
     placeGridColumn,
     placeGridTieBeam,
+    startColumnPickMode,
+    viewportMode,
   } = useProjectStore(
     useShallow((s) => ({
       projectElements: s.projectElements,
@@ -62,15 +64,19 @@ export function GridSelectionPanel({ context }: { context: GridSelectionContext 
       clearSelection: s.clearSelection,
       placeGridColumn: s.placeGridColumn,
       placeGridTieBeam: s.placeGridTieBeam,
+      startColumnPickMode: s.startColumnPickMode,
+      viewportMode: s.viewportMode,
     })),
   );
 
-  const [openSection, setOpenSection] = useState<PanelSection>(null);
+  const [openSection, setOpenSection] = useState<PanelSection | "pick_plan">(null);
   const [xAxis, setXAxis] = useState(context.xLabels[0] ?? "A");
   const [position, setPosition] = useState<ColumnPosition>("mid");
   const [columnProfile, setColumnProfile] = useState(context.defaultColumnProfile);
   const [tieProfile, setTieProfile] = useState(context.defaultTieProfile);
   const [tieXAxis, setTieXAxis] = useState(context.xLabels[0] ?? "A");
+  const [addTieWithColumn, setAddTieWithColumn] = useState(false);
+  const [extraWallOffset, setExtraWallOffset] = useState("");
 
   const zForPosition = useMemo(() => {
     if (position === "start") return context.zStart;
@@ -89,8 +95,19 @@ export function GridSelectionPanel({ context }: { context: GridSelectionContext 
     [context.xLabels, context.zEnd, context.zStart, projectElements],
   );
 
-  const toggle = (section: PanelSection) => {
+  const toggle = (section: Exclude<PanelSection, null>) => {
     setOpenSection((prev) => (prev === section ? null : section));
+  };
+
+  const startPick = () => {
+    const extra = Number(extraWallOffset.trim());
+    void startColumnPickMode({
+      profile: columnProfile,
+      tieProfile,
+      addTieInBay: addTieWithColumn,
+      extraWallOffsetsMm:
+        Number.isFinite(extra) && extra > 0 ? [extra] : undefined,
+    });
   };
 
   const applyColumn = () => {
@@ -130,7 +147,66 @@ export function GridSelectionPanel({ context }: { context: GridSelectionContext 
       </div>
 
       <ListRow
-        label="Add column"
+        label="Pick column on plan"
+        detail={
+          viewportMode === "pick_column_nodes" ? "Click a dot…" : "Grid dots"
+        }
+        active={openSection === "pick_plan"}
+        onClick={() => toggle("pick_plan")}
+      />
+      {openSection === "pick_plan" ? (
+        <div className="space-y-3 border-b border-border/60 bg-background p-3">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Shows floor dots: grid lines, mid-bay, truss panel points, and wall
+            offsets (e.g. A + 1200 mm). Truss frames connect tops to bottom
+            chord level.
+          </p>
+          <Input
+            value={columnProfile}
+            onChange={(e) => setColumnProfile(e.target.value)}
+            placeholder="Column section e.g. HEA200"
+            className="h-9 text-sm"
+            disabled={busy}
+          />
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={addTieWithColumn}
+              onChange={(e) => setAddTieWithColumn(e.target.checked)}
+              disabled={busy}
+            />
+            Also add eave tie beam in this bay
+          </label>
+          {addTieWithColumn ? (
+            <Input
+              value={tieProfile}
+              onChange={(e) => setTieProfile(e.target.value)}
+              placeholder="Tie section e.g. IPE200"
+              className="h-9 text-sm"
+              disabled={busy}
+            />
+          ) : null}
+          <Input
+            value={extraWallOffset}
+            onChange={(e) => setExtraWallOffset(e.target.value)}
+            placeholder="Extra offset from wall mm (optional, e.g. 1200)"
+            className="h-9 text-sm"
+            disabled={busy}
+          />
+          <Button
+            type="button"
+            size="sm"
+            className="w-full"
+            disabled={busy || !columnProfile.trim()}
+            onClick={startPick}
+          >
+            Show dots in viewport
+          </Button>
+        </div>
+      ) : null}
+
+      <ListRow
+        label="Add column (grid lines)"
         detail={`${xAxis} · ${zForPosition}`}
         active={openSection === "add_column"}
         onClick={() => toggle("add_column")}

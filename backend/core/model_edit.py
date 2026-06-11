@@ -8,7 +8,10 @@ from typing import Iterable
 
 from catalog_loader import get_profile, has_profile
 from core.geometry_engine import macro_member_to_project_element
-from core.grid_member_catalog import _column_top_for_frame
+from core.ground_placement import (
+    collect_ground_placement_nodes,
+    structural_member_for_column,
+)
 from core.member_resolver import member_from_grid_nodes
 from core.spatial_grid import StructuralGridEngine
 from schemas.elements import ProjectElementMm, SectionDimensionsMm
@@ -379,12 +382,20 @@ def place_grid_column(
     grid: GridPlacementContext,
     trussed_z_labels: Iterable[str] | None = None,
     assembly_id: str | None = None,
+    offset_mm: dict[str, float] | None = None,
+    connect_to: str = "auto",
+    truss_type: str = "pratt",
+    add_tie_in_bay: bool = False,
+    tie_profile: str | None = None,
+    bay_z_start: str | None = None,
+    bay_z_end: str | None = None,
 ) -> tuple[list[ProjectElementMm], list[str]]:
     if not has_profile(profile):
         raise ValueError(f"Unknown profile: {profile}")
     engine = _grid_engine_from_context(grid)
     x = x_axis.strip().upper()
     z = z_axis.strip()
+    off = dict(offset_mm or {})
     try:
         engine.resolve_x_mm(x)
     except ValueError as exc:
@@ -394,33 +405,57 @@ def place_grid_column(
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
 
-    trussed = set(trussed_z_labels or [])
-    top = _column_top_for_frame(engine, x, z, trussed)
+    trussed = list(trussed_z_labels or [])
     aid = assembly_id or _infer_assembly_id(elements, "shed_1")
-    eid = f"{aid}-col-{x}-{_grid_axis_token(z)}"
+    off_token = ""
+    if off:
+        off_token = "-o" + _grid_axis_token(
+            "_".join(f"{k}{v}" for k, v in sorted(off.items()))
+        )
+    eid = f"{aid}-col-{x}-{_grid_axis_token(z)}{off_token}"
 
-    start_ref = GridNodeReference(x_axis=x, z_axis=z, elevation="ground")
-    end_ref = GridNodeReference(x_axis=x, z_axis=z, elevation=top)
-    member = StructuralMember(
-        id=eid,
-        element_type="column",
+    member = structural_member_for_column(
+        element_id=eid,
         profile=profile,
-        start_node=start_ref,
-        end_node=end_ref,
+        x_axis=x,
+        z_axis=z,
+        offset_mm=off,
+        engine=engine,
+        trussed_z_labels=trussed,
+        truss_type=truss_type,
+        connect_to=connect_to,
     )
     new_el = _member_to_element(member, assembly_id=aid, grid=engine)
 
-    replaced = False
     out: list[ProjectElementMm] = []
+    changed: list[str] = []
+    replaced = False
     for element in elements:
         if element.id == eid:
             out.append(new_el)
             replaced = True
+            changed.append(eid)
         else:
             out.append(element)
     if not replaced:
         out.append(new_el)
-    return out, [eid]
+        changed.append(eid)
+
+    if add_tie_in_bay and bay_z_start and bay_z_end:
+        tie_prof = tie_profile or "IPE200"
+        if has_profile(tie_prof):
+            out, tie_ids = place_grid_tie_beam(
+                out,
+                x_axis=x,
+                z_start=bay_z_start,
+                z_end=bay_z_end,
+                profile=tie_prof,
+                grid=grid,
+                assembly_id=aid,
+            )
+            changed.extend(tie_ids)
+
+    return out, changed
 
 
 def place_grid_tie_beam(
