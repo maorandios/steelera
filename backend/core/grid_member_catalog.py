@@ -10,6 +10,7 @@ pairs and sag-rod runs. All coordinates are resolved later by the spatial grid e
 from __future__ import annotations
 
 import math
+from typing import Literal
 
 from catalog_loader import get_profile
 from core import engineering_rules
@@ -240,6 +241,61 @@ def _x_ref_at_mm(grid: StructuralGridEngine, x_mm: float, *, denom: int = 120) -
             i = max(1, min(denom - 1, round(frac * denom)))
             return f"{labels[li]}+{i}/{denom}"
     return labels[0] if x_mm <= coords[labels[0]] else labels[-1]
+
+
+def _z_ref_at_mm(grid: StructuralGridEngine, z_mm: float, *, denom: int = 120) -> str:
+    """Resolvable Z reference for an arbitrary absolute Z position."""
+    labels = grid.z_labels
+    coords = grid.z_coords_mm
+    for lab in labels:
+        if abs(coords[lab] - z_mm) < 1.0:
+            return lab
+    for li in range(len(labels) - 1):
+        z0 = coords[labels[li]]
+        z1 = coords[labels[li + 1]]
+        if z0 - 1.0 <= z_mm <= z1 + 1.0 and z1 - z0 > 1e-6:
+            frac = (z_mm - z0) / (z1 - z0)
+            i = max(1, min(denom - 1, round(frac * denom)))
+            return f"{labels[li]}+{i}/{denom}"
+    return labels[0] if z_mm <= coords[labels[0]] else labels[-1]
+
+
+def _distinct_refs_at_mm(
+    grid: StructuralGridEngine,
+    mm_a: float,
+    mm_b: float,
+    axis: Literal["x", "z"],
+    *,
+    denom: int = 120,
+    span_tol_mm: float = 50.0,
+) -> tuple[str, str]:
+    """Grid refs for two positions, forcing distinct labels when they would collide."""
+    ref_at = _x_ref_at_mm if axis == "x" else _z_ref_at_mm
+    lo, hi = (mm_a, mm_b) if mm_a <= mm_b else (mm_b, mm_a)
+    start = ref_at(grid, lo, denom=denom)
+    end = ref_at(grid, hi, denom=denom)
+    if start != end or hi - lo <= 1.0:
+        return (start, end) if mm_a <= mm_b else (end, start)
+
+    labels = grid.x_labels if axis == "x" else grid.z_labels
+    coords = grid.x_coords_mm if axis == "x" else grid.z_coords_mm
+    for li in range(len(labels) - 1):
+        a = coords[labels[li]]
+        b = coords[labels[li + 1]]
+        if b <= a or lo < a - span_tol_mm or hi > b + span_tol_mm:
+            continue
+        frac_lo = max(0.0, min(1.0, (lo - a) / (b - a)))
+        frac_hi = max(0.0, min(1.0, (hi - a) / (b - a)))
+        num_lo = max(1, min(denom - 1, round(frac_lo * denom)))
+        num_hi = max(1, min(denom - 1, round(frac_hi * denom)))
+        if num_lo == num_hi:
+            num_hi = min(denom - 1, num_lo + 1)
+            if num_hi == num_lo:
+                num_lo = max(1, num_lo - 1)
+        start = f"{labels[li]}+{min(num_lo, num_hi)}/{denom}"
+        end = f"{labels[li]}+{max(num_lo, num_hi)}/{denom}"
+        break
+    return (start, end) if mm_a <= mm_b else (end, start)
 
 
 # --------------------------------------------------------------------------- #

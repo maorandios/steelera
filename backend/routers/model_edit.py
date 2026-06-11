@@ -258,6 +258,10 @@ async def api_place_wall_x_brace(body: PlaceWallXBraceBody) -> ModelEditResponse
             z_end=body.z_end,
             x_start=body.x_start,
             x_end=body.x_end,
+            elev_start=body.elev_start,
+            elev_end=body.elev_end,
+            slope_side=body.slope_side,
+            brace_count=body.brace_count,
             profile=body.profile,
             assembly_id=body.assembly_id,
             grid=body.grid,
@@ -266,11 +270,12 @@ async def api_place_wall_x_brace(body: PlaceWallXBraceBody) -> ModelEditResponse
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     scope_label = body.scope.replace("_", " ")
+    kind_label = "roof" if body.panel_kind == "roof" else "wall"
     return ModelEditResponse(
         projectElements=updated,
         changed_ids=created,
         message=(
-            f"Added wall X-bracing ({len(created)} members, {scope_label})."
+            f"Added {kind_label} X-bracing ({len(created)} members, {scope_label})."
         ),
     )
 

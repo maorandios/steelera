@@ -132,9 +132,19 @@ export function ViewportPointerPicker() {
               node.userData?.viewportPickRole === VIEWPORT_PICK_ROLE.WALL_PANEL
             ) {
               const grid = useProjectStore.getState().structuralGrid;
+              const params = useProjectStore.getState().shedAssemblyParams;
+              const roofParams = params
+                ? {
+                    height: params.height,
+                    roof_style: params.roof_style,
+                    roof_pitch_deg: params.roof_pitch_deg,
+                    mono_high_side: params.mono_high_side,
+                  }
+                : null;
               const panel = bracingPanelFromPickData(
                 node.userData as WallPanelPickData,
                 grid,
+                roofParams,
               );
               if (panel) {
                 selectWallPanel(panel);

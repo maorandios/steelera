@@ -1,20 +1,29 @@
+import { xPanelGridRefs, zPanelGridRefs } from "@/lib/bracing-panel-layout";
 import { gridLineLetter, gridLineNumber } from "@/lib/structural-grid";
 import type { StructuralGridState } from "@/lib/structural-grid";
+import type { ShedAssemblyParams } from "@/lib/shed-assembly";
+import {
+  computeRoofGeometry,
+  roofSlopeSegments,
+} from "@/lib/roof-panel-layout";
 import type {
   BracingPanel,
   GableEnd,
   GableWallPanel,
   LongWallPanel,
+  RoofPanel,
+  RoofSlopeSide,
   WallPanelSide,
 } from "@/types/add-element";
-
 export function bracingPanelKey(panel: BracingPanel): string {
   if (panel.kind === "long_wall") {
     return `long:${panel.wallXLabel}:${panel.z0Mm}:${panel.z1Mm}`;
   }
+  if (panel.kind === "roof") {
+    return `roof:${panel.slopeSide}:${panel.z0Mm}:${panel.z1Mm}`;
+  }
   return `gable:${panel.end}:${panel.x0Mm}:${panel.x1Mm}`;
 }
-
 /** @deprecated use bracingPanelKey */
 export const wallPanelKey = bracingPanelKey;
 
@@ -27,19 +36,14 @@ export function longWallPanelFromPick(
   xMm: number,
   grid: StructuralGridState,
 ): LongWallPanel {
-  const zStart = gridLineNumber(
-    grid.zCoordsMm.findIndex((z) => Math.abs(z - z0Mm) < 300),
-  );
-  const zEnd = gridLineNumber(
-    grid.zCoordsMm.findIndex((z) => Math.abs(z - z1Mm) < 300),
-  );
+  const [zStart, zEnd] = zPanelGridRefs(z0Mm, z1Mm, grid);
   return {
     kind: "long_wall",
     side,
     wallXLabel,
     bayIndex,
-    zStart: zStart === "?" ? String(bayIndex + 1) : zStart,
-    zEnd: zEnd === "?" ? String(bayIndex + 2) : zEnd,
+    zStart,
+    zEnd,
     z0Mm,
     z1Mm,
     xMm,
@@ -56,18 +60,7 @@ export function gableWallPanelFromPick(
   zMm: number,
   grid: StructuralGridState,
 ): GableWallPanel {
-  const xStart = gridLineLetter(
-    Math.max(
-      0,
-      grid.xCoordsMm.findIndex((x) => Math.abs(x - x0Mm) < 300),
-    ),
-  );
-  const xEnd = gridLineLetter(
-    Math.max(
-      0,
-      grid.xCoordsMm.findIndex((x) => Math.abs(x - x1Mm) < 300),
-    ),
-  );
+  const [xStart, xEnd] = xPanelGridRefs(x0Mm, x1Mm, grid);
   const frameZ = gridLineNumber(frameIndex);
   const endLabel = end === "near" ? "Near gable" : "Far gable";
   return {
@@ -85,6 +78,50 @@ export function gableWallPanelFromPick(
   };
 }
 
+export function roofPanelFromPick(
+  slopeSide: RoofSlopeSide,
+  slopeIndex: number,
+  bayIndex: number,
+  z0Mm: number,
+  z1Mm: number,
+  grid: StructuralGridState,
+  params: Pick<
+    ShedAssemblyParams,
+    "height" | "roof_style" | "roof_pitch_deg" | "mono_high_side"
+  >,
+): RoofPanel | null {
+  const roof = computeRoofGeometry(grid, params);
+  if (!roof) return null;
+  const [zStart, zEnd] = zPanelGridRefs(z0Mm, z1Mm, grid);
+  const slope = roofSlopeSegments(grid, roof).find(
+    (entry) => entry.slopeSide === slopeSide && entry.slopeIndex === slopeIndex,
+  );
+  if (!slope) return null;
+  const slopeLabel =
+    slope.slopeSide === "left"
+      ? "Left slope"
+      : slope.slopeSide === "right"
+        ? "Right slope"
+        : "Roof slope";
+  return {
+    kind: "roof",
+    slopeSide: slope.slopeSide,
+    slopeIndex: slope.slopeIndex,
+    bayIndex,
+    zStart,
+    zEnd,
+    z0Mm,
+    z1Mm,
+    xStart: slope.xStart,
+    xEnd: slope.xEnd,
+    x0Mm: slope.x0Mm,
+    x1Mm: slope.x1Mm,
+    elevStart: slope.elevStart,
+    elevEnd: slope.elevEnd,
+    label: `${slopeLabel} · Frame ${zStart} → ${zEnd}`,
+  };
+}
+
 export type WallPanelPickData = {
   panelKind?: string;
   side?: WallPanelSide;
@@ -99,12 +136,42 @@ export type WallPanelPickData = {
   x0Mm?: number;
   x1Mm?: number;
   zMm?: number;
+  slopeSide?: RoofSlopeSide;
+  slopeIndex?: number;
+  roofBayIndex?: number;
 };
 
 export function bracingPanelFromPickData(
   data: WallPanelPickData,
   grid: StructuralGridState,
+  roofParams?: Pick<
+    ShedAssemblyParams,
+    "height" | "roof_style" | "roof_pitch_deg" | "mono_high_side"
+  > | null,
 ): BracingPanel | null {
+  if (data.panelKind === "roof") {
+    if (
+      (data.slopeSide !== "left" &&
+        data.slopeSide !== "right" &&
+        data.slopeSide !== "mono") ||
+      typeof data.slopeIndex !== "number" ||
+      typeof data.roofBayIndex !== "number" ||
+      typeof data.z0Mm !== "number" ||
+      typeof data.z1Mm !== "number" ||
+      !roofParams
+    ) {
+      return null;
+    }
+    return roofPanelFromPick(
+      data.slopeSide,
+      data.slopeIndex,
+      data.roofBayIndex,
+      data.z0Mm,
+      data.z1Mm,
+      grid,
+      roofParams,
+    );
+  }
   if (data.panelKind === "gable_wall") {
     if (
       (data.gableEnd !== "near" && data.gableEnd !== "far") ||
@@ -169,6 +236,14 @@ export function oppositeSideWallLabel(
 
 export function oppositeGableEnd(end: GableEnd): GableEnd {
   return end === "near" ? "far" : "near";
+}
+
+export function oppositeRoofSlope(
+  slopeSide: RoofSlopeSide,
+): RoofSlopeSide | null {
+  if (slopeSide === "left") return "right";
+  if (slopeSide === "right") return "left";
+  return null;
 }
 
 export function defaultBracingProfile(

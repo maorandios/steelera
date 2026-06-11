@@ -705,7 +705,7 @@ export async function postPlaceXBraceFromLeg(
 export async function postPlaceWallXBrace(
   projectElements: import("@/types/project").ProjectElementMm[],
   body: {
-    panel_kind?: "long_wall" | "gable_wall";
+    panel_kind?: "long_wall" | "gable_wall" | "roof";
     wall_x: string;
     bay_index: number;
     frame_z?: string | null;
@@ -713,6 +713,10 @@ export async function postPlaceWallXBrace(
     z_end?: string | null;
     x_start?: string | null;
     x_end?: string | null;
+    elev_start?: string | null;
+    elev_end?: string | null;
+    slope_side?: "left" | "right" | "mono" | null;
+    brace_count?: number;
     profile?: string | null;
     assembly_id?: string | null;
     scope?: "this_panel" | "all_bays_wall" | "both_walls" | "parallel_bay" | "portal_bay";

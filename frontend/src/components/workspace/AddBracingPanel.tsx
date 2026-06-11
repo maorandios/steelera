@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BRACING_PROFILE_OPTIONS } from "@/lib/element-registry";
-import { oppositeGableEnd, oppositeSideWallLabel } from "@/lib/wall-panel";
+import { oppositeGableEnd, oppositeRoofSlope, oppositeSideWallLabel } from "@/lib/wall-panel";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
 import type { AddBracingScope } from "@/types/add-element";
@@ -49,16 +49,24 @@ export function AddBracingPanel() {
   const busy = useProjectStore((s) => s.isLoading || s.isMacroLoading);
   const cancelAddElement = useProjectStore((s) => s.cancelAddElement);
   const setAddBracingProfile = useProjectStore((s) => s.setAddBracingProfile);
+  const setAddBracingBraceCount = useProjectStore((s) => s.setAddBracingBraceCount);
   const commitAddBracing = useProjectStore((s) => s.commitAddBracing);
   const [profileInput, setProfileInput] = useState("");
+  const [braceCountDraft, setBraceCountDraft] = useState(1);
 
-  const profiles = useMemo(() => [...BRACING_PROFILE_OPTIONS], []);
+  const quickProfiles = useMemo(() => BRACING_PROFILE_OPTIONS.slice(0, 3), []);
 
   useEffect(() => {
     if (session?.type === "bracing" && session.step === "profile") {
       setProfileInput(session.profile);
     }
   }, [session?.step, session?.type, session?.profile]);
+
+  useEffect(() => {
+    if (session?.type === "bracing" && session.step === "brace_count") {
+      setBraceCountDraft(session.braceCount);
+    }
+  }, [session?.step, session?.type, session?.braceCount]);
 
   const scopeOptions = useMemo((): {
     id: AddBracingScope;
@@ -87,12 +95,47 @@ export function AddBracingPanel() {
           label: "All bays on this gable end",
           detail: `Every X bay along frame ${panel.frameZ}`,
         },
+      ];
+    }
+
+    if (panel.kind === "roof") {
+      const otherSlope = oppositeRoofSlope(panel.slopeSide);
+      const slopeLabel =
+        panel.slopeSide === "left"
+          ? "Left slope"
+          : panel.slopeSide === "right"
+            ? "Right slope"
+            : "Roof slope";
+      const options: {
+        id: AddBracingScope;
+        label: string;
+        detail: string;
+      }[] = [
         {
-          id: "both_walls",
-          label: "Both gable ends",
-          detail: "Near and far end walls, all X bays",
+          id: "this_panel",
+          label: "This panel only",
+          detail: `${slopeLabel} · Frame ${panel.zStart} → ${panel.zEnd}`,
         },
       ];
+      if (otherSlope) {
+        const otherLabel = otherSlope === "left" ? "Left slope" : "Right slope";
+        options.push({
+          id: "parallel_bay",
+          label: "Other roof slope too",
+          detail: `${otherLabel} · Frame ${panel.zStart} → ${panel.zEnd}`,
+        });
+      }
+      options.push({
+        id: "portal_bay",
+        label: "Full portal frame",
+        detail: `Both side walls (every column bay) + all roof slopes · Frame ${panel.zStart} → ${panel.zEnd}`,
+      });
+      options.push({
+        id: "all_bays_wall",
+        label: "All frame bays on this slope",
+        detail: `Full X on ${slopeLabel.toLowerCase()} at every frame bay`,
+      });
+      return options;
     }
 
     const parallelWall = oppositeSideWallLabel(panel.wallXLabel, structuralGrid);
@@ -136,13 +179,21 @@ export function AddBracingPanel() {
 
   const stepTitle =
     session.step === "pick_panel"
-      ? "Pick wall panel"
+      ? "Pick bracing panel"
       : session.step === "profile"
         ? "Section profile"
-        : "Apply scope";
+        : session.step === "brace_count"
+          ? "X-braces per panel"
+          : "Apply scope";
 
   const stepNum =
-    session.step === "pick_panel" ? 1 : session.step === "profile" ? 2 : 3;
+    session.step === "pick_panel"
+      ? 1
+      : session.step === "profile"
+        ? 2
+        : session.step === "brace_count"
+          ? 3
+          : 4;
 
   const applyProfileInput = () => {
     const value = profileInput.trim().toUpperCase();
@@ -160,12 +211,15 @@ export function AddBracingPanel() {
       <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Add bracing · step {stepNum}/3
+            Add bracing · step {stepNum}/4
           </p>
           <p className="truncate text-sm font-medium">{stepTitle}</p>
           {session.panel ? (
             <p className="truncate text-xs text-muted-foreground">
-              {session.panel.label} · Full X
+              {session.panel.label}
+              {session.step === "scope"
+                ? ` · ${session.braceCount} X${session.braceCount > 1 ? "s" : ""} · ${session.profile}`
+                : " · Full X"}
             </p>
           ) : null}
         </div>
@@ -181,16 +235,30 @@ export function AddBracingPanel() {
 
       {session.step === "pick_panel" ? (
         <p className="px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-          Hover a panel between columns — side walls and gable ends highlight
-          blue. Click to select one bay.
+          Hover a panel on side walls, gable ends, or roof slopes — they
+          highlight blue. Click to select one bay.
         </p>
       ) : null}
 
       {session.step === "profile" ? (
         <div>
-          <div className="space-y-2 border-b border-border/60 px-3 py-3">
+          <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Common sections
+          </p>
+          {quickProfiles.map((profile) => (
+            <OptionRow
+              key={profile}
+              label={profile}
+              active={session.profile === profile}
+              onClick={() => setAddBracingProfile(profile)}
+            />
+          ))}
+          <div className="space-y-2 border-t border-border/60 px-3 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Custom section
+            </p>
             <p className="text-xs text-muted-foreground">
-              Type any catalog section (e.g. L80x80x8, SHS100x100x5)
+              Type any catalog designation (e.g. L80x80x8, SHS100x100x5)
             </p>
             <div className="flex gap-2">
               <Input
@@ -199,7 +267,6 @@ export function AddBracingPanel() {
                 placeholder="Profile designation…"
                 className="h-9 flex-1 text-sm"
                 autoComplete="off"
-                autoFocus
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -218,17 +285,41 @@ export function AddBracingPanel() {
               </Button>
             </div>
           </div>
-          <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Common sections
+        </div>
+      ) : null}
+
+      {session.step === "brace_count" ? (
+        <div className="space-y-3 px-3 py-3">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Split tall walls, gable ends, or wide roof panels into stacked X-braces
+            instead of one long diagonal.
           </p>
-          {profiles.map((profile) => (
-            <OptionRow
-              key={profile}
-              label={profile}
-              active={session.profile === profile}
-              onClick={() => setAddBracingProfile(profile)}
-            />
-          ))}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium">X-braces per panel</span>
+            <span className="tabular-nums text-sm font-semibold">{braceCountDraft}</span>
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={5}
+            step={1}
+            value={braceCountDraft}
+            onChange={(e) => setBraceCountDraft(Number(e.target.value))}
+            className="h-2 w-full cursor-pointer accent-primary"
+            aria-label="X-braces per panel"
+          />
+          <div className="flex justify-between text-[10px] text-muted-foreground">
+            <span>1</span>
+            <span>5</span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="h-9 w-full"
+            onClick={() => setAddBracingBraceCount(braceCountDraft)}
+          >
+            Continue
+          </Button>
         </div>
       ) : null}
 

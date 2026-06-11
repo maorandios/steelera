@@ -121,12 +121,12 @@ class PlaceGridTieBeamRequest(BaseModel):
 
 
 class PlaceWallXBraceRequest(BaseModel):
-    """Full X-brace in a wall panel — long side wall or gable end wall."""
+    """Full X-brace in a wall panel — long side wall, gable end wall, or roof slope."""
 
-    panel_kind: Literal["long_wall", "gable_wall"] = "long_wall"
+    panel_kind: Literal["long_wall", "gable_wall", "roof"] = "long_wall"
     wall_x: str = Field(
         ...,
-        description='Long wall: grid line e.g. "A". Gable: X-bay start line e.g. "A".',
+        description='Long wall: grid line e.g. "A". Gable/roof: X-bay start line e.g. "A".',
     )
     bay_index: int = Field(
         ...,
@@ -151,7 +151,25 @@ class PlaceWallXBraceRequest(BaseModel):
     )
     x_end: str | None = Field(
         default=None,
-        description="Gable panel end grid line (overrides X bay lookup).",
+        description="Gable/roof panel end grid line (overrides X bay lookup).",
+    )
+    elev_start: str | None = Field(
+        default=None,
+        description='Roof slope start elevation e.g. "eave" or "apex".',
+    )
+    elev_end: str | None = Field(
+        default=None,
+        description='Roof slope end elevation e.g. "eave" or "apex".',
+    )
+    slope_side: Literal["left", "right", "mono"] | None = Field(
+        default=None,
+        description="Roof slope side for scoped placement.",
+    )
+    brace_count: int = Field(
+        default=1,
+        ge=1,
+        le=5,
+        description="Stacked X-brace pairs per panel (1–5).",
     )
     profile: str | None = None
     assembly_id: str | None = None

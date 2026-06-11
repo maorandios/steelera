@@ -95,6 +95,16 @@ export function SceneContent({ projectElements }: SceneContentProps) {
         xCoordsMm={structuralGrid.xCoordsMm}
         zCoordsMm={structuralGrid.zCoordsMm}
         eaveHeightMm={shedAssemblyParams?.height ?? 6000}
+        roofParams={
+          shedAssemblyParams
+            ? {
+                height: shedAssemblyParams.height,
+                roof_style: shedAssemblyParams.roof_style,
+                roof_pitch_deg: shedAssemblyParams.roof_pitch_deg,
+                mono_high_side: shedAssemblyParams.mono_high_side,
+              }
+            : null
+        }
       />
       {renderableElements.map((element) => (
         <StructuralElementMesh

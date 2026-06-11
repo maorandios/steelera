@@ -339,6 +339,9 @@ function applyElementsFromApi(
       rotation_euler_deg:
         element.rotation_euler_deg ?? prior?.rotation_euler_deg ?? null,
     });
+  }).filter((element, index, array) => {
+    const first = array.findIndex((item) => item.id === element.id);
+    return first === index;
   });
 }
 
@@ -422,6 +425,7 @@ interface ProjectStore {
   selectWallPanel: (panel: BracingPanel) => void;
   setHoveredWallPanel: (panel: BracingPanel | null) => void;
   setAddBracingProfile: (profile: string) => void;
+  setAddBracingBraceCount: (count: number) => void;
   commitAddBracing: (scope: AddBracingScope) => Promise<void>;
   startSketchMode: () => void;
   cancelSketchMode: () => void;
@@ -569,6 +573,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         step: "pick_panel",
         panel: null,
         profile: defaultBracingProfile(elements),
+        braceCount: 1,
       },
       hoveredWallPanel: null,
       selectedElementId: null,
@@ -577,7 +582,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       placementIntent: null,
       pickedNodes: [],
       error: null,
-      statuses: ["Click a side-wall panel in the viewport."],
+      statuses: ["Click a wall, gable, or roof panel in the viewport."],
     });
   },
 
@@ -609,6 +614,19 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       addElementSession: {
         ...session,
         profile: profile.trim().toUpperCase(),
+        step: "brace_count",
+      },
+    });
+  },
+
+  setAddBracingBraceCount: (count) => {
+    const session = get().addElementSession;
+    if (!session || session.type !== "bracing") return;
+    const braceCount = Math.min(5, Math.max(1, Math.round(count)));
+    set({
+      addElementSession: {
+        ...session,
+        braceCount,
         step: "scope",
       },
     });
@@ -624,19 +642,50 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({ error: "Generate a shed before placing bracing." });
       return;
     }
-    set({ isLoading: true, error: null, statuses: ["Placing wall X-bracing…"] });
+    set({ isLoading: true, error: null, statuses: ["Placing X-bracing…"] });
     try {
       const panel = session.panel;
+      const panelKind =
+        panel.kind === "gable_wall"
+          ? "gable_wall"
+          : panel.kind === "roof"
+            ? "roof"
+            : "long_wall";
       const result = await postPlaceWallXBrace(get().projectElements, {
-        panel_kind: panel.kind === "gable_wall" ? "gable_wall" : "long_wall",
+        panel_kind: panelKind,
         wall_x:
-          panel.kind === "gable_wall" ? panel.xStart : panel.wallXLabel,
-        bay_index: panel.kind === "gable_wall" ? 0 : panel.bayIndex,
+          panel.kind === "gable_wall"
+            ? panel.xStart
+            : panel.kind === "roof"
+              ? panel.xStart
+              : panel.wallXLabel,
+        bay_index:
+          panel.kind === "long_wall"
+            ? panel.bayIndex
+            : panel.kind === "roof"
+              ? panel.bayIndex
+              : 0,
         frame_z: panel.kind === "gable_wall" ? panel.frameZ : null,
-        x_start: panel.kind === "gable_wall" ? panel.xStart : null,
-        x_end: panel.kind === "gable_wall" ? panel.xEnd : null,
-        z_start: panel.kind === "long_wall" ? panel.zStart : null,
-        z_end: panel.kind === "long_wall" ? panel.zEnd : null,
+        x_start:
+          panel.kind === "gable_wall" || panel.kind === "roof"
+            ? panel.xStart
+            : null,
+        x_end:
+          panel.kind === "gable_wall" || panel.kind === "roof"
+            ? panel.xEnd
+            : null,
+        z_start:
+          panel.kind === "long_wall" || panel.kind === "roof"
+            ? panel.zStart
+            : null,
+        z_end:
+          panel.kind === "long_wall" || panel.kind === "roof"
+            ? panel.zEnd
+            : null,
+        elev_start: panel.kind === "roof" ? panel.elevStart : null,
+        elev_end: panel.kind === "roof" ? panel.elevEnd : null,
+        slope_side: panel.kind === "roof" ? panel.slopeSide : null,
+        brace_count: session.braceCount,
         profile: session.profile,
         scope,
         grid: shedParamsToGridPlacement(params),

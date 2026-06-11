@@ -3,6 +3,8 @@ import { gridLineLetter, gridLineNumber } from "@/lib/structural-grid";
 import type { StructuralGridState } from "@/lib/structural-grid";
 import { memberEndpointsMm } from "@/lib/memberFrame";
 import { isColumnElement } from "@/lib/column-member-scope";
+import { buildRoofPanels } from "@/lib/roof-panel-layout";
+import type { ShedAssemblyParams } from "@/lib/shed-assembly";
 import type {
   BracingPanel,
   GableEnd,
@@ -12,6 +14,101 @@ import type {
 import type { ProjectElementMm } from "@/types/project";
 
 const TOL_MM = 300;
+const GRID_LINE_SNAP_TOL_MM = 50;
+const PANEL_REF_DENOM = 120;
+
+function mmToPanelGridRef(
+  valueMm: number,
+  coords: number[],
+  formatLabel: (index: number) => string,
+): string {
+  for (let i = 0; i < coords.length; i += 1) {
+    if (Math.abs(coords[i] - valueMm) < GRID_LINE_SNAP_TOL_MM) {
+      return formatLabel(i);
+    }
+  }
+  for (let i = 0; i < coords.length - 1; i += 1) {
+    const a = coords[i];
+    const b = coords[i + 1];
+    if (
+      valueMm < a - GRID_LINE_SNAP_TOL_MM ||
+      valueMm > b + GRID_LINE_SNAP_TOL_MM ||
+      b <= a
+    ) {
+      continue;
+    }
+    const frac = (valueMm - a) / (b - a);
+    if (frac <= 0.01) return formatLabel(i);
+    if (frac >= 0.99) return formatLabel(i + 1);
+    const num = Math.max(
+      1,
+      Math.min(PANEL_REF_DENOM - 1, Math.round(frac * PANEL_REF_DENOM)),
+    );
+    return `${formatLabel(i)}+${num}/${PANEL_REF_DENOM}`;
+  }
+  return mmToFractionalGridRef(valueMm, coords, formatLabel);
+}
+
+/** Distinct grid refs for two column positions (avoids both snapping to one line). */
+function panelGridRefsFromMm(
+  mmA: number,
+  mmB: number,
+  coords: number[],
+  formatLabel: (index: number) => string,
+): [string, string] {
+  const lo = Math.min(mmA, mmB);
+  const hi = Math.max(mmA, mmB);
+
+  let start = mmToPanelGridRef(lo, coords, formatLabel);
+  let end = mmToPanelGridRef(hi, coords, formatLabel);
+
+  if (start === end && hi - lo > 1) {
+    for (let i = 0; i < coords.length - 1; i += 1) {
+      const a = coords[i];
+      const b = coords[i + 1];
+      if (b <= a || lo < a - GRID_LINE_SNAP_TOL_MM || hi > b + GRID_LINE_SNAP_TOL_MM) {
+        continue;
+      }
+      const fracLo = Math.max(0, Math.min(1, (lo - a) / (b - a)));
+      const fracHi = Math.max(0, Math.min(1, (hi - a) / (b - a)));
+      let numLo = Math.max(
+        1,
+        Math.min(PANEL_REF_DENOM - 1, Math.round(fracLo * PANEL_REF_DENOM)),
+      );
+      let numHi = Math.max(
+        1,
+        Math.min(PANEL_REF_DENOM - 1, Math.round(fracHi * PANEL_REF_DENOM)),
+      );
+      if (numLo === numHi) {
+        numHi = Math.min(PANEL_REF_DENOM - 1, numLo + 1);
+        if (numHi === numLo) {
+          numLo = Math.max(1, numLo - 1);
+        }
+      }
+      start = `${formatLabel(i)}+${Math.min(numLo, numHi)}/${PANEL_REF_DENOM}`;
+      end = `${formatLabel(i)}+${Math.max(numLo, numHi)}/${PANEL_REF_DENOM}`;
+      break;
+    }
+  }
+
+  return lo === mmA ? [start, end] : [end, start];
+}
+
+export function xPanelGridRefs(
+  x0Mm: number,
+  x1Mm: number,
+  grid: StructuralGridState,
+): [string, string] {
+  return panelGridRefsFromMm(x0Mm, x1Mm, grid.xCoordsMm, gridLineLetter);
+}
+
+export function zPanelGridRefs(
+  z0Mm: number,
+  z1Mm: number,
+  grid: StructuralGridState,
+): [string, string] {
+  return panelGridRefsFromMm(z0Mm, z1Mm, grid.zCoordsMm, gridLineNumber);
+}
 
 function footMm(
   element: ProjectElementMm,
@@ -72,14 +169,6 @@ function mmToFractionalGridRef(
     { index: 0, dist: Infinity },
   );
   return formatLabel(nearest.index);
-}
-
-function xMmToGridRef(xMm: number, grid: StructuralGridState): string {
-  return mmToFractionalGridRef(xMm, grid.xCoordsMm, gridLineLetter);
-}
-
-function zMmToGridRef(zMm: number, grid: StructuralGridState): string {
-  return mmToFractionalGridRef(zMm, grid.zCoordsMm, gridLineNumber);
 }
 
 function longWallColumnZPositions(
@@ -153,8 +242,7 @@ export function buildLongWallPanelsFromColumns(
     for (let bayIndex = 0; bayIndex < zPositions.length - 1; bayIndex += 1) {
       const z0Mm = zPositions[bayIndex];
       const z1Mm = zPositions[bayIndex + 1];
-      const zStart = zMmToGridRef(z0Mm, grid);
-      const zEnd = zMmToGridRef(z1Mm, grid);
+      const [zStart, zEnd] = zPanelGridRefs(z0Mm, z1Mm, grid);
       out.push({
         kind: "long_wall",
         side: wall.side,
@@ -206,8 +294,7 @@ export function buildGableWallPanelsFromColumns(
     for (let xBayIndex = 0; xBayIndex < xPositions.length - 1; xBayIndex += 1) {
       const x0Mm = xPositions[xBayIndex];
       const x1Mm = xPositions[xBayIndex + 1];
-      const xStart = xMmToGridRef(x0Mm, grid);
-      const xEnd = xMmToGridRef(x1Mm, grid);
+      const [xStart, xEnd] = xPanelGridRefs(x0Mm, x1Mm, grid);
       const endLabel = gable.end === "near" ? "Near gable" : "Far gable";
       out.push({
         kind: "gable_wall",
@@ -231,12 +318,20 @@ export function buildGableWallPanelsFromColumns(
 export function buildBracingPanelsFromColumns(
   elements: ProjectElementMm[],
   grid: StructuralGridState,
+  roofParams?: Pick<
+    ShedAssemblyParams,
+    "height" | "roof_style" | "roof_pitch_deg" | "mono_high_side"
+  > | null,
 ): BracingPanel[] {
   if (elements.length === 0) {
     return [];
   }
-  return [
+  const wallPanels = [
     ...buildLongWallPanelsFromColumns(elements, grid),
     ...buildGableWallPanelsFromColumns(elements, grid),
   ];
+  if (!roofParams || roofParams.roof_style === "flat") {
+    return wallPanels;
+  }
+  return [...wallPanels, ...buildRoofPanels(grid, roofParams)];
 }
