@@ -1525,6 +1525,10 @@ def place_grid_tie_beam(
     profile: str,
     elevation: str = "eave",
     placement_label: str | None = None,
+    truss_chord: Literal["tc", "bc"] | None = None,
+    truss_type: str = "pratt",
+    slope_side: str | None = None,
+    tie_location: str | None = None,
     grid: GridPlacementContext,
     assembly_id: str | None = None,
 ) -> tuple[list[ProjectElementMm], list[str]]:
@@ -1561,28 +1565,75 @@ def place_grid_tie_beam(
         start_ref = GridNodeReference(x_axis=xa, z_axis=zs, elevation=elev)
         end_ref = GridNodeReference(x_axis=xb, z_axis=zs, elevation=elev)
     else:
-        x = x_axis.strip().upper()
         zs = z_start.strip()
         ze = z_end.strip()
-        if not x or not zs or not ze:
+        if not zs or not ze:
             raise ValueError(
-                "Tie beam along Z requires x_axis, z_start, and z_end."
+                "Tie beam along Z requires z_start and z_end."
             )
-        try:
-            engine.resolve_x_mm(x)
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
         for label in (zs, ze):
             try:
                 engine.resolve_z_mm(label)
             except ValueError as exc:
                 raise ValueError(str(exc)) from exc
-        eid = (
-            f"{aid}-tie-bay-{x}-{_grid_axis_token(zs)}-"
-            f"{_grid_axis_token(ze)}-{elev}{label_suffix}"
-        )
-        start_ref = GridNodeReference(x_axis=x, z_axis=zs, elevation=elev)
-        end_ref = GridNodeReference(x_axis=x, z_axis=ze, elevation=elev)
+
+        if truss_chord in ("tc", "bc") and tie_location:
+            from core.grid_member_catalog import (
+                _ridge_label,
+                truss_chord_panel_refs,
+                truss_slope_panel_indices,
+                truss_tie_panel_index,
+            )
+
+            ridge = _ridge_label(engine)
+            panel_indices = truss_slope_panel_indices(
+                engine,
+                truss_type=truss_type,
+                slope_side=slope_side,
+                ridge_label=ridge,
+            )
+            panel_i = truss_tie_panel_index(panel_indices, tie_location)
+            refs_zs = truss_chord_panel_refs(
+                engine,
+                zs,
+                truss_type=truss_type,
+                chord=truss_chord,
+                ridge_label=ridge,
+            )
+            refs_ze = truss_chord_panel_refs(
+                engine,
+                ze,
+                truss_type=truss_type,
+                chord=truss_chord,
+                ridge_label=ridge,
+            )
+            if panel_i >= len(refs_zs) or panel_i >= len(refs_ze):
+                raise ValueError(
+                    f"Truss panel index {panel_i} out of range for {truss_chord} chord."
+                )
+            start_ref = refs_zs[panel_i]
+            end_ref = refs_ze[panel_i]
+            x_token = _grid_axis_token(start_ref.x_axis)
+            eid = (
+                f"{aid}-tie-truss-{truss_chord}-{x_token}-"
+                f"{_grid_axis_token(zs)}-{_grid_axis_token(ze)}-p{panel_i}{label_suffix}"
+            )
+        else:
+            x = x_axis.strip().upper()
+            if not x:
+                raise ValueError(
+                    "Tie beam along Z requires x_axis, z_start, and z_end."
+                )
+            try:
+                engine.resolve_x_mm(x)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+            eid = (
+                f"{aid}-tie-bay-{x}-{_grid_axis_token(zs)}-"
+                f"{_grid_axis_token(ze)}-{elev}{label_suffix}"
+            )
+            start_ref = GridNodeReference(x_axis=x, z_axis=zs, elevation=elev)
+            end_ref = GridNodeReference(x_axis=x, z_axis=ze, elevation=elev)
     member = StructuralMember(
         id=eid,
         element_type="tie_beam",

@@ -90,8 +90,11 @@ export type BracingPanel = LongWallPanel | GableWallPanel | RoofPanel;
 export type TieBeamPanel =
   | LongWallPanel
   | GableWallPanel
+  | RoofPanel
   | TrussTcPanel
   | TrussBcPanel;
+
+export type TieBeamChord = "tc" | "bc" | "both";
 
 export type PickablePanel = BracingPanel | TieBeamPanel;
 
@@ -116,7 +119,18 @@ export type TieBeamLocation =
   | "two_thirds"
   | "end";
 
-export type AddTieBeamStep = "pick_panel" | "profile" | "location";
+export type AddTieBeamScope =
+  | "this_panel"
+  | "all_bays_slope"
+  | "parallel_slope"
+  | "all_trusses";
+
+export type AddTieBeamStep =
+  | "pick_panel"
+  | "chord"
+  | "profile"
+  | "location"
+  | "scope";
 
 export type AddElementSession =
   | { step: "choose_kind" }
@@ -132,6 +146,8 @@ export type AddElementSession =
       type: "tie_beam";
       step: AddTieBeamStep;
       panel: TieBeamPanel | null;
+      /** Set when panel is a roof/truss bay — top chord, bottom chord, or both. */
+      chord: TieBeamChord | null;
       profile: string;
       location: TieBeamLocation | null;
     };

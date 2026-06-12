@@ -151,10 +151,12 @@ import {
 } from "@/lib/structural-intent";
 import type {
   AddBracingScope,
+  AddTieBeamScope,
   AddElementKind,
   AddElementSession,
   BracingPanel,
   PickablePanel,
+  TieBeamChord,
   TieBeamLocation,
   TieBeamPanel,
 } from "@/types/add-element";
@@ -163,7 +165,7 @@ import type {
   GridSelectionContext,
   GroundPlacementNode,
 } from "@/types/grid-selection";
-import { resolveTieBeamPlacement } from "@/lib/tie-panel-placement";
+import { resolveTieBeamPlacementsWithScope } from "@/lib/tie-panel-placement";
 import { defaultBracingProfile, defaultTieBeamProfile } from "@/lib/wall-panel";
 import type {
   EnrichedSnapNode,
@@ -451,7 +453,14 @@ interface ProjectStore {
   selectWallPanel: (panel: PickablePanel) => void;
   setHoveredWallPanel: (panel: PickablePanel | null) => void;
   setAddBracingProfile: (profile: string) => void;
+  setAddTieBeamChord: (chord: TieBeamChord) => void;
   setAddTieBeamProfile: (profile: string) => void;
+  selectAddTieBeamLocation: (location: TieBeamLocation) => void;
+  commitAddTieBeamScope: (
+    scope: AddTieBeamScope,
+    locationOverride?: TieBeamLocation,
+  ) => Promise<void>;
+  /** @deprecated use selectAddTieBeamLocation / commitAddTieBeamScope */
   commitAddTieBeam: (location: TieBeamLocation) => Promise<void>;
   setAddBracingBraceCount: (count: number) => void;
   commitAddBracing: (scope: AddBracingScope) => Promise<void>;
@@ -635,6 +644,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
               type: "tie_beam",
               step: "pick_panel",
               panel: null,
+              chord: null,
               profile,
               location: null,
             },
@@ -680,16 +690,39 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       });
       return;
     }
-    if (panel.kind === "roof") return;
+    const tiePanel = panel as TieBeamPanel;
     set({
       addElementSession: {
         ...session,
-        panel: panel as TieBeamPanel,
-        step: "profile",
+        panel: tiePanel,
+        chord: null,
+        step: tiePanel.kind === "roof" ? "chord" : "profile",
       },
       viewportMode: "inspect",
       hoveredWallPanel: null,
-      statuses: [],
+      statuses:
+        tiePanel.kind === "roof"
+          ? ["Choose top chord, bottom chord, or both."]
+          : [],
+    });
+  },
+
+  setAddTieBeamChord: (chord) => {
+    const session = get().addElementSession;
+    if (
+      !session ||
+      !("type" in session) ||
+      session.type !== "tie_beam" ||
+      session.panel?.kind !== "roof"
+    ) {
+      return;
+    }
+    set({
+      addElementSession: {
+        ...session,
+        chord,
+        step: "profile",
+      },
     });
   },
 
@@ -732,7 +765,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
   },
 
-  commitAddTieBeam: async (location: TieBeamLocation) => {
+  selectAddTieBeamLocation: (location) => {
     const session = get().addElementSession;
     if (
       !session ||
@@ -740,6 +773,34 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       session.type !== "tie_beam" ||
       !session.panel
     ) {
+      return;
+    }
+    if (session.panel.kind === "roof") {
+      set({
+        addElementSession: {
+          ...session,
+          location,
+          step: "scope",
+        },
+      });
+      return;
+    }
+    void get().commitAddTieBeamScope("this_panel", location);
+  },
+
+  commitAddTieBeamScope: async (scope, locationOverride) => {
+    const session = get().addElementSession;
+    if (
+      !session ||
+      !("type" in session) ||
+      session.type !== "tie_beam" ||
+      !session.panel
+    ) {
+      return;
+    }
+    const location = locationOverride ?? session.location;
+    if (!location) {
+      set({ error: "Choose a tie beam location first." });
       return;
     }
     const params =
@@ -752,54 +813,84 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const panel = session.panel;
     const profile = session.profile.trim().toUpperCase();
     if (!profile) return;
+    if (panel.kind === "roof" && !session.chord) {
+      set({ error: "Choose a chord before placing the tie beam." });
+      return;
+    }
 
-    const placement = resolveTieBeamPlacement(
+    const roofParams = {
+      height: params.height,
+      roof_style: params.roof_style,
+      roof_pitch_deg: params.roof_pitch_deg,
+      mono_high_side: params.mono_high_side,
+    };
+    const placements = resolveTieBeamPlacementsWithScope(
       panel,
       location,
+      scope,
       get().structuralGrid,
+      session.chord,
+      get().projectElements,
+      panel.kind === "roof" ? roofParams : null,
     );
     const gridCtx = gridPlacementFromStructuralGrid(
       get().structuralGrid,
       params,
     );
-    const body: Parameters<typeof postPlaceGridTieBeam>[1] = {
-      orientation: placement.orientation,
-      x_axis: placement.x_axis,
-      z_start: placement.z_start,
-      z_end: placement.z_end,
-      z_axis: placement.z_axis,
-      x_start: placement.x_start,
-      x_end: placement.x_end,
-      profile,
-      elevation: placement.elevation,
-      placement_label: location,
-      grid: gridCtx,
-      assembly_id: assemblyIdFromElements(get().projectElements),
-    };
+    const assemblyId = assemblyIdFromElements(get().projectElements);
 
-    set({ isLoading: true, error: null, statuses: ["Placing tie beam…"] });
+    set({
+      isLoading: true,
+      error: null,
+      statuses: [`Placing ${placements.length} tie beam(s)…`],
+    });
     try {
-      const result = await postPlaceGridTieBeam(
-        get().projectElements,
-        body,
-      );
-      const elements = applyElementsFromApi(
-        result.projectElements,
-        get().projectElements,
-      );
+      let elements = get().projectElements;
+      const messages: string[] = [];
+      for (const placement of placements) {
+        const body: Parameters<typeof postPlaceGridTieBeam>[1] = {
+          orientation: placement.orientation,
+          x_axis: placement.x_axis,
+          z_start: placement.z_start,
+          z_end: placement.z_end,
+          z_axis: placement.z_axis,
+          x_start: placement.x_start,
+          x_end: placement.x_end,
+          profile,
+          elevation: placement.elevation,
+          placement_label: placement.placement_label,
+          truss_chord: placement.truss_chord ?? null,
+          truss_type: params.truss_type ?? "pratt",
+          slope_side: placement.slope_side ?? null,
+          tie_location: placement.tie_location ?? null,
+          grid: gridCtx,
+          assembly_id: assemblyId,
+        };
+        const result = await postPlaceGridTieBeam(elements, body);
+        elements = applyElementsFromApi(result.projectElements, elements);
+        messages.push(result.message);
+      }
       set({
         projectElements: elements,
         isLoading: false,
         viewportMode: "inspect",
         addElementSession: null,
         hoveredWallPanel: null,
-        statuses: [result.message],
+        statuses: [
+          placements.length > 1
+            ? `Placed ${placements.length} tie beams.`
+            : messages[messages.length - 1] ?? "Tie beam placed.",
+        ],
       });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to place tie beam";
       set({ isLoading: false, statuses: [], error: message });
     }
+  },
+
+  commitAddTieBeam: async (location) => {
+    await get().commitAddTieBeamScope("this_panel", location);
   },
 
   commitAddBracing: async (scope) => {

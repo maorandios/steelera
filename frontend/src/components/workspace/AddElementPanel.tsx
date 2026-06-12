@@ -14,10 +14,13 @@ import {
   oppositeRoofSlope,
   oppositeSideWallLabel,
 } from "@/lib/wall-panel";
-import { TIE_BEAM_LOCATION_OPTIONS } from "@/lib/tie-panel-placement";
+import {
+  TIE_BEAM_LOCATION_OPTIONS,
+  TIE_BEAM_TRUSS_LOCATION_OPTIONS,
+} from "@/lib/tie-panel-placement";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
-import type { AddBracingScope } from "@/types/add-element";
+import type { AddBracingScope, AddTieBeamScope } from "@/types/add-element";
 
 function OptionRow({
   label,
@@ -58,10 +61,12 @@ export function AddElementPanel() {
   const cancelAddElement = useProjectStore((s) => s.cancelAddElement);
   const selectAddElementKind = useProjectStore((s) => s.selectAddElementKind);
   const setAddBracingProfile = useProjectStore((s) => s.setAddBracingProfile);
+  const setAddTieBeamChord = useProjectStore((s) => s.setAddTieBeamChord);
   const setAddTieBeamProfile = useProjectStore((s) => s.setAddTieBeamProfile);
   const setAddBracingBraceCount = useProjectStore((s) => s.setAddBracingBraceCount);
   const commitAddBracing = useProjectStore((s) => s.commitAddBracing);
-  const commitAddTieBeam = useProjectStore((s) => s.commitAddTieBeam);
+  const selectAddTieBeamLocation = useProjectStore((s) => s.selectAddTieBeamLocation);
+  const commitAddTieBeamScope = useProjectStore((s) => s.commitAddTieBeamScope);
   const [profileInput, setProfileInput] = useState("");
   const [braceCountDraft, setBraceCountDraft] = useState(1);
 
@@ -197,6 +202,67 @@ export function AddElementPanel() {
     ];
   }, [session, structuralGrid]);
 
+  const tieScopeOptions = useMemo((): {
+    id: AddTieBeamScope;
+    label: string;
+    detail: string;
+  }[] => {
+    const panel =
+      session && "type" in session && session.type === "tie_beam"
+        ? session.panel
+        : null;
+    if (!panel || panel.kind !== "roof") return [];
+
+    const slopeLabel =
+      panel.slopeSide === "left"
+        ? "Left slope"
+        : panel.slopeSide === "right"
+          ? "Right slope"
+          : "Roof slope";
+    const otherSlope = oppositeRoofSlope(panel.slopeSide);
+    const locationLabel =
+      session &&
+      "type" in session &&
+      session.type === "tie_beam" &&
+      session.location
+        ? TIE_BEAM_TRUSS_LOCATION_OPTIONS.find((o) => o.id === session.location)
+            ?.label ?? session.location
+        : "selected location";
+
+    const options: {
+      id: AddTieBeamScope;
+      label: string;
+      detail: string;
+    }[] = [
+      {
+        id: "this_panel",
+        label: "This panel only",
+        detail: `${slopeLabel} · Frame ${panel.zStart} → ${panel.zEnd} · ${locationLabel}`,
+      },
+      {
+        id: "all_bays_slope",
+        label: "Full row on this slope",
+        detail: `Every frame bay on ${slopeLabel.toLowerCase()} at ${locationLabel}`,
+      },
+    ];
+
+    if (otherSlope) {
+      const otherLabel = otherSlope === "left" ? "Left slope" : "Right slope";
+      options.push({
+        id: "parallel_slope",
+        label: "Both roof slopes",
+        detail: `${slopeLabel} and ${otherLabel} · Frame ${panel.zStart} → ${panel.zEnd} · ${locationLabel}`,
+      });
+      options.push({
+        id: "all_trusses",
+        label: "All trusses both slopes",
+        detail: `Every frame bay on both slopes at ${locationLabel}`,
+      });
+    }
+
+    return options;
+  }, [session]);
+
   if (!session) {
     return null;
   }
@@ -245,6 +311,7 @@ export function AddElementPanel() {
 
   const isBracing = session.type === "bracing";
   const isTie = session.type === "tie_beam";
+  const isRoofTiePanel = isTie && session.panel?.kind === "roof";
 
   const stepTitle = isBracing
     ? session.step === "pick_panel"
@@ -256,9 +323,13 @@ export function AddElementPanel() {
           : "Apply scope"
     : session.step === "pick_panel"
       ? "Pick tie beam panel"
-      : session.step === "profile"
-        ? "Section profile"
-        : "Pick location";
+      : session.step === "chord"
+        ? "Chord"
+        : session.step === "profile"
+          ? "Section profile"
+          : session.step === "location"
+            ? "Pick location"
+            : "Apply scope";
 
   const stepNum = isBracing
     ? session.step === "pick_panel"
@@ -270,11 +341,23 @@ export function AddElementPanel() {
           : 5
     : session.step === "pick_panel"
       ? 2
-      : session.step === "profile"
+      : session.step === "chord"
         ? 3
-        : 4;
+        : session.step === "profile"
+          ? isRoofTiePanel
+            ? 4
+            : 3
+          : session.step === "location"
+            ? isRoofTiePanel
+              ? 5
+              : 4
+            : 6;
 
-  const totalSteps = isBracing ? 5 : 4;
+  const totalSteps = isBracing ? 5 : isRoofTiePanel ? 6 : 4;
+
+  const tieLocationOptions = isRoofTiePanel
+    ? TIE_BEAM_TRUSS_LOCATION_OPTIONS
+    : TIE_BEAM_LOCATION_OPTIONS;
 
   const applyProfileInput = () => {
     const value = profileInput.trim().toUpperCase();
@@ -304,7 +387,9 @@ export function AddElementPanel() {
               {session.panel.label}
               {isBracing && session.step === "scope"
                 ? ` · ${session.braceCount} X${session.braceCount > 1 ? "s" : ""} · ${session.profile}`
-                : isTie && session.step === "profile"
+                : isTie && session.step === "scope" && session.location
+                  ? ` · ${TIE_BEAM_TRUSS_LOCATION_OPTIONS.find((o) => o.id === session.location)?.label ?? session.location} · ${session.profile}`
+                  : isTie && session.step === "profile"
                   ? ""
                   : isBracing
                     ? " · Full X"
@@ -326,7 +411,7 @@ export function AddElementPanel() {
         <p className="px-3 py-3 text-xs leading-relaxed text-muted-foreground">
           {isBracing
             ? "Hover a panel on side walls, gable ends, or roof slopes — they highlight blue. Click to select one bay."
-            : "Hover a wall, gable, or truss panel between columns or truss frames. Click to select the tie span."}
+            : "Hover a wall, gable, or roof panel between truss frames. Click to select the tie bay."}
         </p>
       ) : null}
 
@@ -384,18 +469,59 @@ export function AddElementPanel() {
         </div>
       ) : null}
 
+      {isTie && session.step === "chord" ? (
+        <div>
+          <p className="px-3 pt-2 pb-1 text-xs leading-relaxed text-muted-foreground">
+            Tie runs between truss frames along Z. Choose which chord to follow on
+            the selected roof slope.
+          </p>
+          <OptionRow
+            label="Top chord (TC)"
+            detail="Along the sloped top chord between truss frames"
+            onClick={() => setAddTieBeamChord("tc")}
+          />
+          <OptionRow
+            label="Bottom chord (BC)"
+            detail="Along the bottom chord at eave level"
+            onClick={() => setAddTieBeamChord("bc")}
+          />
+          <OptionRow
+            label="Both chords"
+            detail="Place a tie on TC and BC at the same location"
+            onClick={() => setAddTieBeamChord("both")}
+          />
+        </div>
+      ) : null}
+
       {isTie && session.step === "location" ? (
         <div>
           <p className="px-3 pt-2 pb-1 text-xs leading-relaxed text-muted-foreground">
-            Choose height along the column — tie spans the full bay between columns
-            at ground, 33%, middle, 66%, or eave level.
+            {isRoofTiePanel
+              ? "Position along the truss chord from eave to ridge — tie spans the full bay between truss frames."
+              : "Choose height along the column — tie spans the full bay between columns at ground, 33%, middle, 66%, or eave level."}
           </p>
-          {TIE_BEAM_LOCATION_OPTIONS.map((opt) => (
+          {tieLocationOptions.map((opt) => (
             <OptionRow
               key={opt.id}
               label={opt.label}
               detail={opt.detail}
-              onClick={() => void commitAddTieBeam(opt.id)}
+              onClick={() => selectAddTieBeamLocation(opt.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {isTie && session.step === "scope" ? (
+        <div>
+          <p className="px-3 pt-2 pb-1 text-xs leading-relaxed text-muted-foreground">
+            Choose how many bays and slopes get a tie at the selected chord location.
+          </p>
+          {tieScopeOptions.map((opt) => (
+            <OptionRow
+              key={opt.id}
+              label={opt.label}
+              detail={opt.detail}
+              onClick={() => void commitAddTieBeamScope(opt.id)}
             />
           ))}
         </div>

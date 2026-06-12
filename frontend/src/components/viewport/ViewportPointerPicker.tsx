@@ -150,6 +150,7 @@ export function ViewportPointerPicker() {
                   ? tiePanelFromPickData(
                       node.userData as WallPanelPickData,
                       grid,
+                      roofParams,
                     )
                   : bracingPanelFromPickData(
                       node.userData as WallPanelPickData,

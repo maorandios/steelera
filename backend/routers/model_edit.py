@@ -235,6 +235,10 @@ async def api_place_grid_tie_beam(body: PlaceGridTieBeamBody) -> ModelEditRespon
             profile=body.profile,
             elevation=body.elevation,
             placement_label=body.placement_label,
+            truss_chord=body.truss_chord,
+            truss_type=body.truss_type,
+            slope_side=body.slope_side,
+            tie_location=body.tie_location,
             grid=body.grid,
             assembly_id=body.assembly_id,
         )

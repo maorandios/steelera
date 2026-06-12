@@ -179,7 +179,7 @@ function panelFromUserData(
   }
   const data = userData as WallPanelPickData;
   if (pickMode === "tie_beam") {
-    return tiePanelFromPickData(data, grid);
+    return tiePanelFromPickData(data, grid, roofParams);
   }
   return bracingPanelFromPickData(data, grid, roofParams);
 }
@@ -210,17 +210,16 @@ export function PanelPickOverlay({
     const gridState = { ...structuralGrid, xCoordsMm, zCoordsMm };
     const pickPanels: PickablePanel[] =
       pickMode === "tie_beam"
-        ? buildTieBeamPanels(projectElements, gridState)
+        ? buildTieBeamPanels(projectElements, gridState, roofParams ?? null)
         : buildBracingPanelsFromColumns(
             projectElements,
             gridState,
             roofParams ?? null,
           );
 
-    const roof =
-      pickMode === "bracing" && roofParams
-        ? computeRoofGeometry(gridState, roofParams)
-        : null;
+    const roof = roofParams
+      ? computeRoofGeometry(gridState, roofParams)
+      : null;
     const trussSegments =
       pickMode === "tie_beam" ? collectTrussSegments(projectElements) : [];
 

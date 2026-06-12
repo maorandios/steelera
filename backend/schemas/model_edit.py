@@ -136,6 +136,21 @@ class PlaceGridTieBeamRequest(BaseModel):
         default=None,
         description="Optional disambiguator for multiple ties in one bay (e.g. start, middle).",
     )
+    truss_chord: Literal["tc", "bc"] | None = Field(
+        default=None,
+        description="When set, snap tie endpoints to truss chord panel nodes.",
+    )
+    truss_type: str = Field(default="pratt")
+    slope_side: Literal["left", "right", "mono"] | None = Field(
+        default=None,
+        description="Roof slope for truss panel index selection.",
+    )
+    tie_location: Literal["start", "third", "middle", "two_thirds", "end"] | None = (
+        Field(
+            default=None,
+            description="Position along truss chord (eave → ridge).",
+        )
+    )
     assembly_id: str | None = None
     grid: GridPlacementContext
 

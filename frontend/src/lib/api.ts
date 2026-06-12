@@ -465,6 +465,10 @@ export async function postPlaceGridTieBeam(
     profile: string;
     elevation?: string;
     placement_label?: string | null;
+    truss_chord?: "tc" | "bc" | null;
+    truss_type?: string;
+    slope_side?: "left" | "right" | "mono" | null;
+    tie_location?: string | null;
     grid: import("@/types/grid-selection").GridPlacementContext;
     assembly_id?: string | null;
   },

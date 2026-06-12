@@ -79,7 +79,27 @@ function trussXLayout(segments: TrussSegment[], kind: "tc" | "bc"): number[] {
   return clusterSorted(xs);
 }
 
-function hasTrussSegments(elements: ProjectElementMm[]): boolean {
+export function trussChordXStationsInSpan(
+  elements: ProjectElementMm[],
+  chord: "tc" | "bc",
+  eaveX: number,
+  ridgeX: number,
+): number[] {
+  const lo = Math.min(eaveX, ridgeX);
+  const hi = Math.max(eaveX, ridgeX);
+  const xs: number[] = [eaveX, ridgeX];
+  for (const segment of collectTrussSegments(elements)) {
+    if (segment.kind !== chord) continue;
+    for (const x of [segment.start.x, segment.end.x]) {
+      if (x >= lo - TOL_MM && x <= hi + TOL_MM) {
+        xs.push(x);
+      }
+    }
+  }
+  return clusterSorted(xs);
+}
+
+export function hasTrussSegments(elements: ProjectElementMm[]): boolean {
   return collectTrussSegments(elements).length > 0;
 }
 

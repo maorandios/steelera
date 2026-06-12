@@ -1223,6 +1223,107 @@ def _truss_top_panel_refs(
     ]
 
 
+def _truss_bottom_panel_refs(
+    grid: StructuralGridEngine,
+    z_label: str,
+    ridge_label: str | None,
+    truss_type: str,
+) -> list[GridNodeReference]:
+    """Bottom-chord panel nodes for one frame (same refs as the frame builder)."""
+    xlabels, ridge_i, case, x_offsets = _truss_panel_layout(
+        grid, ridge_label, truss_type
+    )
+    eave_y = grid.roof.eave_y
+    flat_depth = max(600.0, grid.total_width_mm / 20.0) if case == "flat" else 0.0
+    offsets = x_offsets or _panel_offsets(len(xlabels))
+    refs: list[GridNodeReference] = []
+    for i, xl in enumerate(xlabels):
+        x_off = offsets[i]
+        if case == "flat":
+            refs.append(
+                _ref(
+                    xl,
+                    z_label,
+                    "eave",
+                    _merge_node_offset({"y": -flat_depth}, x_off),
+                )
+            )
+        elif case == "scissor":
+            y_bc = _scissor_bottom_chord_y_mm(grid, xlabels, offsets, i, ridge_i or 0)
+            y_off = y_bc - eave_y
+            refs.append(
+                _ref(
+                    xl,
+                    z_label,
+                    "eave",
+                    _merge_node_offset(
+                        {"y": y_off} if y_off > 1.0 else None, x_off
+                    ),
+                )
+            )
+        else:
+            refs.append(_ref(xl, z_label, "eave", x_off or None))
+    return refs
+
+
+def truss_chord_panel_refs(
+    grid: StructuralGridEngine,
+    z_label: str,
+    *,
+    truss_type: str,
+    chord: str,
+    ridge_label: str | None = None,
+) -> list[GridNodeReference]:
+    """Panel-node refs for one truss frame chord (tc or bc)."""
+    ridge = ridge_label if ridge_label is not None else _ridge_label(grid)
+    if chord == "bc":
+        return _truss_bottom_panel_refs(grid, z_label, ridge, truss_type)
+    return _truss_top_panel_refs(grid, z_label, ridge, truss_type)
+
+
+def truss_slope_panel_indices(
+    grid: StructuralGridEngine,
+    *,
+    truss_type: str,
+    slope_side: str | None = None,
+    ridge_label: str | None = None,
+) -> list[int]:
+    """Panel-node indices along one roof slope (eave → ridge)."""
+    ridge = ridge_label if ridge_label is not None else _ridge_label(grid)
+    xlabels, ridge_i, case, _ = _truss_panel_layout(grid, ridge, truss_type)
+    count = len(xlabels)
+    if count == 0:
+        return []
+    if case == "mono" or slope_side in (None, "mono"):
+        return list(range(count))
+    if ridge_i is None:
+        return list(range(count))
+    if slope_side == "left":
+        return list(range(0, ridge_i + 1))
+    if slope_side == "right":
+        # xlabels run ridge → eave on the right slope; reverse so index 0 = eave.
+        return list(reversed(range(ridge_i, count)))
+    return list(range(count))
+
+
+_TIE_LOCATION_FRAC = {
+    "start": 0.0,
+    "third": 1.0 / 3.0,
+    "middle": 0.5,
+    "two_thirds": 2.0 / 3.0,
+    "end": 1.0,
+}
+
+
+def truss_tie_panel_index(panel_indices: list[int], tie_location: str) -> int:
+    """Map a tie location label to a truss panel-node index on the slope."""
+    if not panel_indices:
+        raise ValueError("No truss panel nodes on the selected roof slope.")
+    frac = _TIE_LOCATION_FRAC.get(tie_location.strip().lower(), 0.5)
+    pos = round(frac * (len(panel_indices) - 1))
+    return panel_indices[max(0, min(len(panel_indices) - 1, pos))]
+
+
 def _eave_ridge_ties(
     grid: StructuralGridEngine,
     aid: str,

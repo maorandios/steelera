@@ -196,7 +196,34 @@ function trussPanelFromPick(
 export function tiePanelFromPickData(
   data: WallPanelPickData,
   grid: StructuralGridState,
+  roofParams?: Pick<
+    ShedAssemblyParams,
+    "height" | "roof_style" | "roof_pitch_deg" | "mono_high_side"
+  > | null,
 ): TieBeamPanel | null {
+  if (data.panelKind === "roof") {
+    if (
+      (data.slopeSide !== "left" &&
+        data.slopeSide !== "right" &&
+        data.slopeSide !== "mono") ||
+      typeof data.slopeIndex !== "number" ||
+      typeof data.roofBayIndex !== "number" ||
+      typeof data.z0Mm !== "number" ||
+      typeof data.z1Mm !== "number" ||
+      !roofParams
+    ) {
+      return null;
+    }
+    return roofPanelFromPick(
+      data.slopeSide,
+      data.slopeIndex,
+      data.roofBayIndex,
+      data.z0Mm,
+      data.z1Mm,
+      grid,
+      roofParams,
+    );
+  }
   if (data.panelKind === "truss_tc" || data.panelKind === "truss_bc") {
     const chord = data.panelKind === "truss_tc" ? "tc" : "bc";
     if (
