@@ -108,7 +108,34 @@ export type AddBracingScope =
   | "parallel_bay"
   | "portal_bay";
 
-export type AddElementKind = "bracing" | "tie_beam";
+export type ColumnPanel = LongWallPanel | GableWallPanel | RoofPanel;
+
+/** Position along a wall/gable bay or truss chord (same fractions as tie beam). */
+export type ColumnBayPosition =
+  | "start"
+  | "third"
+  | "middle"
+  | "two_thirds"
+  | "end";
+
+export type ColumnConnectTo = "auto" | "eave" | "truss_bc";
+
+export type AddColumnScope =
+  | "this_panel"
+  | "all_bays_wall"
+  | "both_walls"
+  | "all_bays_slope"
+  | "parallel_slope"
+  | "all_trusses";
+
+export type AddColumnStep =
+  | "pick_panel"
+  | "profile"
+  | "position"
+  | "connect"
+  | "scope";
+
+export type AddElementKind = "bracing" | "tie_beam" | "column";
 
 export type AddBracingStep = "pick_panel" | "profile" | "brace_count" | "scope";
 
@@ -150,4 +177,12 @@ export type AddElementSession =
       chord: TieBeamChord | null;
       profile: string;
       location: TieBeamLocation | null;
+    }
+  | {
+      type: "column";
+      step: AddColumnStep;
+      panel: ColumnPanel | null;
+      profile: string;
+      position: ColumnBayPosition | null;
+      connectTo: ColumnConnectTo;
     };

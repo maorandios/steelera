@@ -440,6 +440,8 @@ export async function postPlaceGridColumn(
     tie_profile?: string | null;
     bay_z_start?: string | null;
     bay_z_end?: string | null;
+    tie_location?: "start" | "third" | "middle" | "two_thirds" | "end" | null;
+    slope_side?: "left" | "right" | "mono" | null;
   },
 ): Promise<ModelEditResponse> {
   return postModelEdit("/api/model/place-grid-column", {

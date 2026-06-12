@@ -12,6 +12,7 @@ import {
 import { isColumnElement } from "@/lib/column-member-scope";
 import {
   bracingPanelFromPickData,
+  columnPanelFromPickData,
   tiePanelFromPickData,
   type WallPanelPickData,
 } from "@/lib/wall-panel";
@@ -152,11 +153,17 @@ export function ViewportPointerPicker() {
                       grid,
                       roofParams,
                     )
-                  : bracingPanelFromPickData(
-                      node.userData as WallPanelPickData,
-                      grid,
-                      roofParams,
-                    );
+                  : pickMode === "column"
+                    ? columnPanelFromPickData(
+                        node.userData as WallPanelPickData,
+                        grid,
+                        roofParams,
+                      )
+                    : bracingPanelFromPickData(
+                        node.userData as WallPanelPickData,
+                        grid,
+                        roofParams,
+                      );
               if (panel) {
                 selectWallPanel(panel);
               }

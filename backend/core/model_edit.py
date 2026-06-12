@@ -604,6 +604,36 @@ def _member_to_element(
     return macro_member_to_project_element(macro)
 
 
+def _column_x_axis_from_truss(
+    engine: StructuralGridEngine,
+    *,
+    truss_type: str,
+    tie_location: str,
+    slope_side: str,
+) -> str:
+    from core.grid_member_catalog import (
+        _ridge_label,
+        _truss_panel_layout,
+        truss_slope_panel_indices,
+        truss_tie_panel_index,
+    )
+
+    ridge = _ridge_label(engine)
+    xlabels, _, _, _ = _truss_panel_layout(engine, ridge, truss_type)
+    panel_indices = truss_slope_panel_indices(
+        engine,
+        truss_type=truss_type,
+        slope_side=slope_side,
+        ridge_label=ridge,
+    )
+    panel_i = truss_tie_panel_index(panel_indices, tie_location)
+    if panel_i < 0 or panel_i >= len(xlabels):
+        raise ValueError(
+            f"Truss panel index {panel_i} out of range for column placement."
+        )
+    return xlabels[panel_i]
+
+
 def place_grid_column(
     elements: list[ProjectElementMm],
     *,
@@ -620,17 +650,27 @@ def place_grid_column(
     tie_profile: str | None = None,
     bay_z_start: str | None = None,
     bay_z_end: str | None = None,
+    tie_location: str | None = None,
+    slope_side: str | None = None,
 ) -> tuple[list[ProjectElementMm], list[str]]:
     if not has_profile(profile):
         raise ValueError(f"Unknown profile: {profile}")
     engine = _grid_engine_from_context(grid)
-    x = x_axis.strip().upper()
+    if tie_location and slope_side:
+        x = _column_x_axis_from_truss(
+            engine,
+            truss_type=truss_type,
+            tie_location=tie_location,
+            slope_side=slope_side,
+        )
+    else:
+        x = x_axis.strip().upper()
+        try:
+            engine.resolve_x_mm(x)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
     z = z_axis.strip()
     off = dict(offset_mm or {})
-    try:
-        engine.resolve_x_mm(x)
-    except ValueError as exc:
-        raise ValueError(str(exc)) from exc
     try:
         engine.resolve_z_mm(z)
     except ValueError as exc:

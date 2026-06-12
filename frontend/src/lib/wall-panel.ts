@@ -15,6 +15,7 @@ import type {
   RoofPanel,
   RoofSlopeSide,
   TieBeamPanel,
+  ColumnPanel,
   TrussBcPanel,
   TrussTcPanel,
   WallPanelSide,
@@ -191,6 +192,79 @@ function trussPanelFromPick(
     return { kind: "truss_tc", ...base, elevation: "roof" as const };
   }
   return { kind: "truss_bc", ...base, elevation: "eave" as const };
+}
+
+export function columnPanelFromPickData(
+  data: WallPanelPickData,
+  grid: StructuralGridState,
+  roofParams?: Pick<
+    ShedAssemblyParams,
+    "height" | "roof_style" | "roof_pitch_deg" | "mono_high_side"
+  > | null,
+): ColumnPanel | null {
+  if (data.panelKind === "roof") {
+    if (
+      (data.slopeSide !== "left" &&
+        data.slopeSide !== "right" &&
+        data.slopeSide !== "mono") ||
+      typeof data.slopeIndex !== "number" ||
+      typeof data.roofBayIndex !== "number" ||
+      typeof data.z0Mm !== "number" ||
+      typeof data.z1Mm !== "number" ||
+      !roofParams
+    ) {
+      return null;
+    }
+    return roofPanelFromPick(
+      data.slopeSide,
+      data.slopeIndex,
+      data.roofBayIndex,
+      data.z0Mm,
+      data.z1Mm,
+      grid,
+      roofParams,
+    );
+  }
+  if (data.panelKind === "gable_wall") {
+    if (
+      (data.gableEnd !== "near" && data.gableEnd !== "far") ||
+      typeof data.frameIndex !== "number" ||
+      typeof data.xBayIndex !== "number" ||
+      typeof data.x0Mm !== "number" ||
+      typeof data.x1Mm !== "number" ||
+      typeof data.zMm !== "number"
+    ) {
+      return null;
+    }
+    return gableWallPanelFromPick(
+      data.gableEnd,
+      data.frameIndex,
+      data.xBayIndex,
+      data.x0Mm,
+      data.x1Mm,
+      data.zMm,
+      grid,
+    );
+  }
+  if (
+    (data.side !== "A" && data.side !== "B") ||
+    typeof data.wallXLabel !== "string" ||
+    typeof data.bayIndex !== "number" ||
+    typeof data.z0Mm !== "number" ||
+    typeof data.z1Mm !== "number" ||
+    typeof data.xMm !== "number"
+  ) {
+    return null;
+  }
+  return longWallPanelFromPick(
+    data.side,
+    data.wallXLabel,
+    data.bayIndex,
+    data.z0Mm,
+    data.z1Mm,
+    data.xMm,
+    grid,
+  );
 }
 
 export function tiePanelFromPickData(

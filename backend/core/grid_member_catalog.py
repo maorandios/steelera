@@ -1324,6 +1324,11 @@ def truss_tie_panel_index(panel_indices: list[int], tie_location: str) -> int:
     return panel_indices[max(0, min(len(panel_indices) - 1, pos))]
 
 
+def _grid_axis_token(label: str) -> str:
+    """Safe token for element ids (fractional grid refs like 2+4/120)."""
+    return str(label).strip().replace("+", "p").replace("/", "_")
+
+
 def _eave_ridge_ties(
     grid: StructuralGridEngine,
     aid: str,
@@ -1331,29 +1336,40 @@ def _eave_ridge_ties(
     *,
     tie_profile: str = "IPE200",
 ) -> list[StructuralMember]:
-    z_first, z_last = grid.z_labels[0], grid.z_labels[-1]
+    if len(grid.z_labels) < 2:
+        return []
     out: list[StructuralMember] = []
     for x_label in (grid.x_labels[0], grid.x_labels[-1]):
         elev = _column_top_elev(grid, x_label)
-        out.append(
-            StructuralMember(
-                id=f"{aid}-tie-{x_label}",
-                element_type="tie_beam",
-                profile=tie_profile,
-                start_node=_ref(x_label, z_first, elev),
-                end_node=_ref(x_label, z_last, elev),
+        for i in range(len(grid.z_labels) - 1):
+            z_start, z_end = grid.z_labels[i], grid.z_labels[i + 1]
+            out.append(
+                StructuralMember(
+                    id=(
+                        f"{aid}-tie-bay-{x_label}-"
+                        f"{_grid_axis_token(z_start)}-{_grid_axis_token(z_end)}"
+                    ),
+                    element_type="tie_beam",
+                    profile=tie_profile,
+                    start_node=_ref(x_label, z_start, elev),
+                    end_node=_ref(x_label, z_end, elev),
+                )
             )
-        )
     if ridge_label is not None and not grid.roof.is_flat:
-        out.append(
-            StructuralMember(
-                id=f"{aid}-tie-ridge",
-                element_type="tie_beam",
-                profile=tie_profile,
-                start_node=_ref(ridge_label, z_first, "apex"),
-                end_node=_ref(ridge_label, z_last, "apex"),
+        for i in range(len(grid.z_labels) - 1):
+            z_start, z_end = grid.z_labels[i], grid.z_labels[i + 1]
+            out.append(
+                StructuralMember(
+                    id=(
+                        f"{aid}-tie-ridge-"
+                        f"{_grid_axis_token(z_start)}-{_grid_axis_token(z_end)}"
+                    ),
+                    element_type="tie_beam",
+                    profile=tie_profile,
+                    start_node=_ref(ridge_label, z_start, "apex"),
+                    end_node=_ref(ridge_label, z_end, "apex"),
+                )
             )
-        )
     return out
 
 

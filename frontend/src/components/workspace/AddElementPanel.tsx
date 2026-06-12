@@ -7,8 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   BRACING_PROFILE_OPTIONS,
+  COLUMN_PROFILE_OPTIONS,
   RAFTER_PROFILE_OPTIONS,
 } from "@/lib/element-registry";
+import {
+  COLUMN_TRUSS_POSITION_OPTIONS,
+  COLUMN_WALL_POSITION_OPTIONS,
+} from "@/lib/column-panel-placement";
 import {
   oppositeGableEnd,
   oppositeRoofSlope,
@@ -20,7 +25,7 @@ import {
 } from "@/lib/tie-panel-placement";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/store/project-store";
-import type { AddBracingScope, AddTieBeamScope } from "@/types/add-element";
+import type { AddBracingScope, AddColumnScope, AddTieBeamScope } from "@/types/add-element";
 
 function OptionRow({
   label,
@@ -63,6 +68,10 @@ export function AddElementPanel() {
   const setAddBracingProfile = useProjectStore((s) => s.setAddBracingProfile);
   const setAddTieBeamChord = useProjectStore((s) => s.setAddTieBeamChord);
   const setAddTieBeamProfile = useProjectStore((s) => s.setAddTieBeamProfile);
+  const setAddColumnProfile = useProjectStore((s) => s.setAddColumnProfile);
+  const selectAddColumnPosition = useProjectStore((s) => s.selectAddColumnPosition);
+  const setAddColumnConnect = useProjectStore((s) => s.setAddColumnConnect);
+  const commitAddColumnScope = useProjectStore((s) => s.commitAddColumnScope);
   const setAddBracingBraceCount = useProjectStore((s) => s.setAddBracingBraceCount);
   const commitAddBracing = useProjectStore((s) => s.commitAddBracing);
   const selectAddTieBeamLocation = useProjectStore((s) => s.selectAddTieBeamLocation);
@@ -72,6 +81,7 @@ export function AddElementPanel() {
 
   const quickBracingProfiles = useMemo(() => BRACING_PROFILE_OPTIONS.slice(0, 3), []);
   const quickTieProfiles = useMemo(() => RAFTER_PROFILE_OPTIONS.slice(0, 3), []);
+  const quickColumnProfiles = useMemo(() => COLUMN_PROFILE_OPTIONS.slice(0, 3), []);
 
   useEffect(() => {
     if (
@@ -263,6 +273,105 @@ export function AddElementPanel() {
     return options;
   }, [session]);
 
+  const columnScopeOptions = useMemo((): {
+    id: AddColumnScope;
+    label: string;
+    detail: string;
+  }[] => {
+    const panel =
+      session && "type" in session && session.type === "column"
+        ? session.panel
+        : null;
+    if (!panel) return [];
+
+    const positionLabel =
+      session &&
+      "type" in session &&
+      session.type === "column" &&
+      session.position
+        ? (panel.kind === "roof"
+            ? COLUMN_TRUSS_POSITION_OPTIONS
+            : COLUMN_WALL_POSITION_OPTIONS
+          ).find((o) => o.id === session.position)?.label ?? session.position
+        : "selected position";
+
+    if (panel.kind === "gable_wall") {
+      return [
+        {
+          id: "this_panel",
+          label: "This panel only",
+          detail: `Frame ${panel.frameZ} · ${panel.xStart} → ${panel.xEnd} · ${positionLabel}`,
+        },
+        {
+          id: "all_bays_wall",
+          label: "All bays on this gable end",
+          detail: `Every X bay along frame ${panel.frameZ} at ${positionLabel}`,
+        },
+      ];
+    }
+
+    if (panel.kind === "roof") {
+      const slopeLabel =
+        panel.slopeSide === "left"
+          ? "Left slope"
+          : panel.slopeSide === "right"
+            ? "Right slope"
+            : "Roof slope";
+      const otherSlope = oppositeRoofSlope(panel.slopeSide);
+      const options: {
+        id: AddColumnScope;
+        label: string;
+        detail: string;
+      }[] = [
+        {
+          id: "this_panel",
+          label: "This panel only",
+          detail: `${slopeLabel} · Frame ${panel.zStart} → ${panel.zEnd} · ${positionLabel}`,
+        },
+        {
+          id: "all_bays_slope",
+          label: "Full row on this slope",
+          detail: `Every frame bay on ${slopeLabel.toLowerCase()} at ${positionLabel}`,
+        },
+      ];
+      if (otherSlope) {
+        const otherLabel = otherSlope === "left" ? "Left slope" : "Right slope";
+        options.push({
+          id: "parallel_slope",
+          label: "Both roof slopes",
+          detail: `${slopeLabel} and ${otherLabel} · Frame ${panel.zStart} → ${panel.zEnd} · ${positionLabel}`,
+        });
+        options.push({
+          id: "all_trusses",
+          label: "All trusses both slopes",
+          detail: `Every frame bay on both slopes at ${positionLabel}`,
+        });
+      }
+      return options;
+    }
+
+    const parallelWall = oppositeSideWallLabel(panel.wallXLabel, structuralGrid);
+    return [
+      {
+        id: "this_panel",
+        label: "This panel only",
+        detail: `Wall ${panel.wallXLabel} · Bay ${panel.zStart} → ${panel.zEnd} · ${positionLabel}`,
+      },
+      {
+        id: "all_bays_wall",
+        label: "All bays on this wall",
+        detail: `Every bay along wall ${panel.wallXLabel} at ${positionLabel}`,
+      },
+      {
+        id: "both_walls",
+        label: "Both side walls",
+        detail: parallelWall
+          ? `Walls ${panel.wallXLabel} and ${parallelWall} at ${positionLabel}`
+          : `Both side walls at ${positionLabel}`,
+      },
+    ];
+  }, [session, structuralGrid]);
+
   if (!session) {
     return null;
   }
@@ -301,6 +410,11 @@ export function AddElementPanel() {
           detail="Longitudinal tie on wall, gable, or truss panels"
           onClick={() => selectAddElementKind("tie_beam")}
         />
+        <OptionRow
+          label="Column"
+          detail="Vertical column in a wall bay or under trusses / rafters"
+          onClick={() => selectAddElementKind("column")}
+        />
       </div>
     );
   }
@@ -311,7 +425,9 @@ export function AddElementPanel() {
 
   const isBracing = session.type === "bracing";
   const isTie = session.type === "tie_beam";
+  const isColumn = session.type === "column";
   const isRoofTiePanel = isTie && session.panel?.kind === "roof";
+  const isRoofColumnPanel = isColumn && session.panel?.kind === "roof";
 
   const stepTitle = isBracing
     ? session.step === "pick_panel"
@@ -321,15 +437,25 @@ export function AddElementPanel() {
         : session.step === "brace_count"
           ? "X-braces per panel"
           : "Apply scope"
-    : session.step === "pick_panel"
-      ? "Pick tie beam panel"
-      : session.step === "chord"
-        ? "Chord"
+    : isColumn
+      ? session.step === "pick_panel"
+        ? "Pick column bay"
         : session.step === "profile"
           ? "Section profile"
-          : session.step === "location"
-            ? "Pick location"
-            : "Apply scope";
+          : session.step === "position"
+            ? "Pick position"
+            : session.step === "connect"
+              ? "Top connection"
+              : "Apply scope"
+      : session.step === "pick_panel"
+        ? "Pick tie beam panel"
+        : session.step === "chord"
+          ? "Chord"
+          : session.step === "profile"
+            ? "Section profile"
+            : session.step === "location"
+              ? "Pick location"
+              : "Apply scope";
 
   const stepNum = isBracing
     ? session.step === "pick_panel"
@@ -339,31 +465,57 @@ export function AddElementPanel() {
         : session.step === "brace_count"
           ? 4
           : 5
-    : session.step === "pick_panel"
-      ? 2
-      : session.step === "chord"
-        ? 3
+    : isColumn
+      ? session.step === "pick_panel"
+        ? 2
         : session.step === "profile"
-          ? isRoofTiePanel
+          ? 3
+          : session.step === "position"
             ? 4
-            : 3
-          : session.step === "location"
-            ? isRoofTiePanel
+            : session.step === "connect"
               ? 5
-              : 4
-            : 6;
+              : isRoofColumnPanel
+                ? 6
+                : 5
+      : session.step === "pick_panel"
+        ? 2
+        : session.step === "chord"
+          ? 3
+          : session.step === "profile"
+            ? isRoofTiePanel
+              ? 4
+              : 3
+            : session.step === "location"
+              ? isRoofTiePanel
+                ? 5
+                : 4
+              : 6;
 
-  const totalSteps = isBracing ? 5 : isRoofTiePanel ? 6 : 4;
+  const totalSteps = isBracing
+    ? 5
+    : isColumn
+      ? isRoofColumnPanel
+        ? 6
+        : 5
+      : isRoofTiePanel
+        ? 6
+        : 4;
 
   const tieLocationOptions = isRoofTiePanel
     ? TIE_BEAM_TRUSS_LOCATION_OPTIONS
     : TIE_BEAM_LOCATION_OPTIONS;
+
+  const columnPositionOptions = isRoofColumnPanel
+    ? COLUMN_TRUSS_POSITION_OPTIONS
+    : COLUMN_WALL_POSITION_OPTIONS;
 
   const applyProfileInput = () => {
     const value = profileInput.trim().toUpperCase();
     if (!value) return;
     if (isBracing) {
       setAddBracingProfile(value);
+    } else if (isColumn) {
+      setAddColumnProfile(value);
     } else {
       setAddTieBeamProfile(value);
     }
@@ -379,7 +531,7 @@ export function AddElementPanel() {
       <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Add {isBracing ? "bracing" : "tie beam"} · step {stepNum}/{totalSteps}
+            Add {isBracing ? "bracing" : isColumn ? "column" : "tie beam"} · step {stepNum}/{totalSteps}
           </p>
           <p className="truncate text-sm font-medium">{stepTitle}</p>
           {session.panel ? (
@@ -411,7 +563,9 @@ export function AddElementPanel() {
         <p className="px-3 py-3 text-xs leading-relaxed text-muted-foreground">
           {isBracing
             ? "Hover a panel on side walls, gable ends, or roof slopes — they highlight blue. Click to select one bay."
-            : "Hover a wall, gable, or roof panel between truss frames. Click to select the tie bay."}
+            : isColumn
+              ? "Hover a wall, gable, or roof bay between frames — they highlight amber. Click to select."
+              : "Hover a wall, gable, or roof panel between truss frames. Click to select the tie bay."}
         </p>
       ) : null}
 
@@ -420,7 +574,12 @@ export function AddElementPanel() {
           <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Common sections
           </p>
-          {(isBracing ? quickBracingProfiles : quickTieProfiles).map((profile) => (
+          {(isBracing
+            ? quickBracingProfiles
+            : isColumn
+              ? quickColumnProfiles
+              : quickTieProfiles
+          ).map((profile) => (
             <OptionRow
               key={profile}
               label={profile}
@@ -428,7 +587,9 @@ export function AddElementPanel() {
               onClick={() =>
                 isBracing
                   ? setAddBracingProfile(profile)
-                  : setAddTieBeamProfile(profile)
+                  : isColumn
+                    ? setAddColumnProfile(profile)
+                    : setAddTieBeamProfile(profile)
               }
             />
           ))}
@@ -439,7 +600,9 @@ export function AddElementPanel() {
             <p className="text-xs text-muted-foreground">
               {isBracing
                 ? "Type any catalog designation (e.g. L80x80x8, SHS100x100x5)"
-                : "Type any catalog designation (e.g. IPE200, IPE240)"}
+                : isColumn
+                  ? "Type any catalog designation (e.g. HEA200, HEA240)"
+                  : "Type any catalog designation (e.g. IPE200, IPE240)"}
             </p>
             <div className="flex gap-2">
               <Input
@@ -466,6 +629,63 @@ export function AddElementPanel() {
               </Button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {isColumn && session.step === "position" ? (
+        <div>
+          <p className="px-3 pt-2 pb-1 text-xs leading-relaxed text-muted-foreground">
+            {isRoofColumnPanel
+              ? "Position under the truss from eave to ridge — column spans from ground to the selected connection."
+              : "Position along the bay — column spans from ground to eave at the start frame, 33%, middle, 66%, or end frame."}
+          </p>
+          {columnPositionOptions.map((opt) => (
+            <OptionRow
+              key={opt.id}
+              label={opt.label}
+              detail={opt.detail}
+              onClick={() => selectAddColumnPosition(opt.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {isColumn && session.step === "connect" ? (
+        <div>
+          <p className="px-3 pt-2 pb-1 text-xs leading-relaxed text-muted-foreground">
+            Choose where the column top connects under the truss or rafter.
+          </p>
+          <OptionRow
+            label="Automatic"
+            detail="Connect to truss bottom chord when present, otherwise eave"
+            onClick={() => setAddColumnConnect("auto")}
+          />
+          <OptionRow
+            label="Truss bottom chord"
+            detail="Top of column meets the truss BC at this X panel node"
+            onClick={() => setAddColumnConnect("truss_bc")}
+          />
+          <OptionRow
+            label="Eave level"
+            detail="Top of column stops at eave beam height"
+            onClick={() => setAddColumnConnect("eave")}
+          />
+        </div>
+      ) : null}
+
+      {isColumn && session.step === "scope" ? (
+        <div>
+          <p className="px-3 pt-2 pb-1 text-xs leading-relaxed text-muted-foreground">
+            Choose how many bays get a column at the selected position.
+          </p>
+          {columnScopeOptions.map((opt) => (
+            <OptionRow
+              key={opt.id}
+              label={opt.label}
+              detail={opt.detail}
+              onClick={() => void commitAddColumnScope(opt.id)}
+            />
+          ))}
         </div>
       ) : null}
 

@@ -5,6 +5,7 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 
 import { buildBracingPanelsFromColumns } from "@/lib/bracing-panel-layout";
+import { buildColumnPanels } from "@/lib/column-panel-layout";
 import {
   computeRoofGeometry,
   roofPanelCornersMm,
@@ -19,6 +20,7 @@ import {
 import type { ShedAssemblyParams } from "@/lib/shed-assembly";
 import {
   bracingPanelFromPickData,
+  columnPanelFromPickData,
   pickPanelKey,
   tiePanelFromPickData,
   type WallPanelPickData,
@@ -172,7 +174,7 @@ function panelFromUserData(
   userData: THREE.Object3D["userData"],
   grid: ReturnType<typeof useProjectStore.getState>["structuralGrid"],
   roofParams: PanelPickOverlayProps["roofParams"],
-  pickMode: "bracing" | "tie_beam",
+  pickMode: "bracing" | "tie_beam" | "column",
 ): PickablePanel | null {
   if (userData?.viewportPickRole !== VIEWPORT_PICK_ROLE.WALL_PANEL) {
     return null;
@@ -180,6 +182,9 @@ function panelFromUserData(
   const data = userData as WallPanelPickData;
   if (pickMode === "tie_beam") {
     return tiePanelFromPickData(data, grid, roofParams);
+  }
+  if (pickMode === "column") {
+    return columnPanelFromPickData(data, grid, roofParams);
   }
   return bracingPanelFromPickData(data, grid, roofParams);
 }
@@ -211,11 +216,13 @@ export function PanelPickOverlay({
     const pickPanels: PickablePanel[] =
       pickMode === "tie_beam"
         ? buildTieBeamPanels(projectElements, gridState, roofParams ?? null)
-        : buildBracingPanelsFromColumns(
-            projectElements,
-            gridState,
-            roofParams ?? null,
-          );
+        : pickMode === "column"
+          ? buildColumnPanels(projectElements, gridState, roofParams ?? null)
+          : buildBracingPanelsFromColumns(
+              projectElements,
+              gridState,
+              roofParams ?? null,
+            );
 
     const roof = roofParams
       ? computeRoofGeometry(gridState, roofParams)
@@ -372,7 +379,12 @@ export function PanelPickOverlay({
   }
 
   const hoveredKey = hoveredWallPanel ? pickPanelKey(hoveredWallPanel) : null;
-  const highlightColor = pickMode === "tie_beam" ? "#10b981" : "#3b82f6";
+  const highlightColor =
+    pickMode === "tie_beam"
+      ? "#10b981"
+      : pickMode === "column"
+        ? "#f59e0b"
+        : "#3b82f6";
 
   return (
     <group>

@@ -152,9 +152,13 @@ import {
 import type {
   AddBracingScope,
   AddTieBeamScope,
+  AddColumnScope,
   AddElementKind,
   AddElementSession,
   BracingPanel,
+  ColumnBayPosition,
+  ColumnConnectTo,
+  ColumnPanel,
   PickablePanel,
   TieBeamChord,
   TieBeamLocation,
@@ -165,7 +169,9 @@ import type {
   GridSelectionContext,
   GroundPlacementNode,
 } from "@/types/grid-selection";
+import { resolveColumnPlacementsWithScope } from "@/lib/column-panel-placement";
 import { resolveTieBeamPlacementsWithScope } from "@/lib/tie-panel-placement";
+import { defaultColumnProfile } from "@/lib/grid-selection";
 import { defaultBracingProfile, defaultTieBeamProfile } from "@/lib/wall-panel";
 import type {
   EnrichedSnapNode,
@@ -455,6 +461,10 @@ interface ProjectStore {
   setAddBracingProfile: (profile: string) => void;
   setAddTieBeamChord: (chord: TieBeamChord) => void;
   setAddTieBeamProfile: (profile: string) => void;
+  setAddColumnProfile: (profile: string) => void;
+  selectAddColumnPosition: (position: ColumnBayPosition) => void;
+  setAddColumnConnect: (connectTo: ColumnConnectTo) => void;
+  commitAddColumnScope: (scope: AddColumnScope) => Promise<void>;
   selectAddTieBeamLocation: (location: TieBeamLocation) => void;
   commitAddTieBeamScope: (
     scope: AddTieBeamScope,
@@ -613,7 +623,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       placementIntent: null,
       pickedNodes: [],
       error: null,
-      statuses: ["Choose what to add — bracing or tie beam."],
+      statuses: ["Choose what to add — bracing, tie beam, or column."],
     });
   },
 
@@ -628,7 +638,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const profile =
       kind === "bracing"
         ? defaultBracingProfile(elements)
-        : defaultTieBeamProfile(elements);
+        : kind === "tie_beam"
+          ? defaultTieBeamProfile(elements)
+          : defaultColumnProfile(elements);
     set({
       viewportMode: "pick_panel",
       addElementSession:
@@ -640,19 +652,30 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
               profile,
               braceCount: 1,
             }
-          : {
-              type: "tie_beam",
-              step: "pick_panel",
-              panel: null,
-              chord: null,
-              profile,
-              location: null,
-            },
+          : kind === "tie_beam"
+            ? {
+                type: "tie_beam",
+                step: "pick_panel",
+                panel: null,
+                chord: null,
+                profile,
+                location: null,
+              }
+            : {
+                type: "column",
+                step: "pick_panel",
+                panel: null,
+                profile,
+                position: null,
+                connectTo: "auto",
+              },
       hoveredWallPanel: null,
       statuses: [
         kind === "bracing"
           ? "Click a wall, gable, or roof panel in the viewport."
-          : "Click a wall, gable, or truss panel in the viewport.",
+          : kind === "tie_beam"
+            ? "Click a wall, gable, or truss panel in the viewport."
+            : "Click a wall, gable, or roof bay in the viewport.",
       ],
     });
   },
@@ -682,6 +705,26 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         addElementSession: {
           ...session,
           panel: panel as BracingPanel,
+          step: "profile",
+        },
+        viewportMode: "inspect",
+        hoveredWallPanel: null,
+        statuses: [],
+      });
+      return;
+    }
+    if (session.type === "column") {
+      if (
+        panel.kind !== "long_wall" &&
+        panel.kind !== "gable_wall" &&
+        panel.kind !== "roof"
+      ) {
+        return;
+      }
+      set({
+        addElementSession: {
+          ...session,
+          panel: panel as ColumnPanel,
           step: "profile",
         },
         viewportMode: "inspect",
@@ -763,6 +806,151 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         step: "location",
       },
     });
+  },
+
+  setAddColumnProfile: (profile) => {
+    const session = get().addElementSession;
+    if (!session || !("type" in session) || session.type !== "column") return;
+    set({
+      addElementSession: {
+        ...session,
+        profile: profile.trim().toUpperCase(),
+        step: "position",
+      },
+    });
+  },
+
+  selectAddColumnPosition: (position) => {
+    const session = get().addElementSession;
+    if (
+      !session ||
+      !("type" in session) ||
+      session.type !== "column" ||
+      !session.panel
+    ) {
+      return;
+    }
+    set({
+      addElementSession: {
+        ...session,
+        position,
+        step: session.panel.kind === "roof" ? "connect" : "scope",
+      },
+    });
+  },
+
+  setAddColumnConnect: (connectTo) => {
+    const session = get().addElementSession;
+    if (
+      !session ||
+      !("type" in session) ||
+      session.type !== "column" ||
+      session.panel?.kind !== "roof"
+    ) {
+      return;
+    }
+    set({
+      addElementSession: {
+        ...session,
+        connectTo,
+        step: "scope",
+      },
+    });
+  },
+
+  commitAddColumnScope: async (scope) => {
+    const session = get().addElementSession;
+    if (
+      !session ||
+      !("type" in session) ||
+      session.type !== "column" ||
+      !session.panel ||
+      !session.position
+    ) {
+      return;
+    }
+    const params =
+      get().shedAssemblyParams ??
+      inferShedParamsFromElements(get().projectElements);
+    if (!params) {
+      set({ error: "Generate a shed before placing columns." });
+      return;
+    }
+    const profile = session.profile.trim().toUpperCase();
+    if (!profile) return;
+
+    const roofParams = {
+      height: params.height,
+      roof_style: params.roof_style,
+      roof_pitch_deg: params.roof_pitch_deg,
+      mono_high_side: params.mono_high_side,
+    };
+    const placements = resolveColumnPlacementsWithScope(
+      session.panel,
+      session.position,
+      scope,
+      session.connectTo,
+      get().structuralGrid,
+      get().projectElements,
+      session.panel.kind === "roof" ? roofParams : null,
+    );
+    const gridCtx = gridPlacementFromStructuralGrid(
+      get().structuralGrid,
+      params,
+    );
+    const assemblyId = assemblyIdFromElements(get().projectElements);
+    const zLabels = zLabelsForGrid(get().structuralGrid);
+    const trussed = inferTrussedZLabels(
+      get().projectElements,
+      zLabels,
+      params.use_truss,
+    );
+
+    set({
+      isLoading: true,
+      error: null,
+      statuses: [`Placing ${placements.length} column(s)…`],
+    });
+    try {
+      let elements = get().projectElements;
+      const messages: string[] = [];
+      for (const placement of placements) {
+        const xFallback =
+          session.panel.kind === "long_wall"
+            ? session.panel.wallXLabel
+            : session.panel.xStart;
+        const result = await postPlaceGridColumn(elements, {
+          x_axis: placement.x_axis || xFallback,
+          z_axis: placement.z_axis,
+          profile,
+          grid: gridCtx,
+          trussed_z_labels: trussed,
+          assembly_id: assemblyId,
+          connect_to: placement.connect_to,
+          truss_type: params.truss_type ?? "pratt",
+          tie_location: placement.tie_location ?? null,
+          slope_side: placement.slope_side ?? null,
+        });
+        elements = applyElementsFromApi(result.projectElements, elements);
+        messages.push(result.message);
+      }
+      set({
+        projectElements: elements,
+        isLoading: false,
+        viewportMode: "inspect",
+        addElementSession: null,
+        hoveredWallPanel: null,
+        statuses: [
+          placements.length > 1
+            ? `Placed ${placements.length} columns.`
+            : messages[messages.length - 1] ?? "Column placed.",
+        ],
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to place column";
+      set({ isLoading: false, statuses: [], error: message });
+    }
   },
 
   selectAddTieBeamLocation: (location) => {

@@ -86,7 +86,7 @@ class GridPlacementContext(BaseModel):
 
 
 class PlaceGridColumnRequest(BaseModel):
-    x_axis: str = Field(..., description='X grid line e.g. "A"')
+    x_axis: str = Field(default="", description='X grid line e.g. "A"')
     z_axis: str = Field(..., description='Z grid line or sub-node e.g. "2" or "2+1/2"')
     profile: str = Field(..., description="Catalog column section e.g. HEA200")
     offset_mm: dict[str, float] = Field(default_factory=dict)
@@ -99,6 +99,16 @@ class PlaceGridColumnRequest(BaseModel):
     assembly_id: str | None = None
     grid: GridPlacementContext
     trussed_z_labels: list[str] = Field(default_factory=list)
+    tie_location: Literal["start", "third", "middle", "two_thirds", "end"] | None = (
+        Field(
+            default=None,
+            description="Snap X to truss panel node under rafters/trusses.",
+        )
+    )
+    slope_side: Literal["left", "right", "mono"] | None = Field(
+        default=None,
+        description="Roof slope for truss panel X resolution.",
+    )
 
 
 class GroundPlacementNodesRequest(BaseModel):

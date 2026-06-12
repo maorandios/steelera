@@ -210,6 +210,8 @@ async def api_place_grid_column(body: PlaceGridColumnBody) -> ModelEditResponse:
             tie_profile=body.tie_profile,
             bay_z_start=body.bay_z_start,
             bay_z_end=body.bay_z_end,
+            tie_location=body.tie_location,
+            slope_side=body.slope_side,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
